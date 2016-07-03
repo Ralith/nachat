@@ -25,10 +25,10 @@ MainWindow::MainWindow(QWidget *parent)
 
   ui->status_bar->addPermanentWidget(progress_);
 
-  connect(ui->action_log_out, &QAction::triggered, [this]() { log_out(); });
+  connect(ui->action_log_out, &QAction::triggered, this, &MainWindow::log_out);
 
   ui->action_quit->setShortcuts(QKeySequence::Quit);
-  connect(ui->action_quit, &QAction::triggered, [this]() { quit(); });
+  connect(ui->action_quit, &QAction::triggered, this, &MainWindow::quit);
 }
 
 MainWindow::~MainWindow() { delete ui; }
