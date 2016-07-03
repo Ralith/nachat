@@ -8,37 +8,19 @@
 #include <QJsonArray>
 #include <QDebug>
 
+#include "matrix.hpp"
+
 namespace matrix {
 
-void User::dispatch(const proto::Event &state) {
-  auto membership = state.content["membership"].toString();
-  bool old_invite_pending = invite_pending_;
-  if(membership == "invite") {
-    invite_pending_ = true;
-  } else if(membership == "join") {
-    invite_pending_ = false;
-  }
-  if(invite_pending_ != old_invite_pending) {
-    invite_pending_changed();
-  }
-
-  auto i = state.content.find("displayname");
-  if(i != state.content.end()) {
-    display_name_ = i->toString();
-    display_name_changed();
-  }
-  i = state.content.find("avatar_url");
-  if(i != state.content.end()) {
-    avatar_url_ = QUrl(i->toString());
-    avatar_url_changed();
-  }
-}
-
-QString Room::display_name() const {
-  if(name_) return *name_;
+QString Room::pretty_name() const {
+  if(!name_.isEmpty()) return name_;
   if(!aliases_.empty()) return aliases_[0];
   // TOOD: Fall back to membership list
   return id_;
+}
+
+std::vector<const User *> Room::users() const {
+  return std::vector<const User *>(users_.begin(), users_.end());
 }
 
 void Room::dispatch(const proto::JoinedRoom &joined) {
@@ -52,24 +34,21 @@ void Room::dispatch(const proto::JoinedRoom &joined) {
       std::transform(data.begin(), data.end(), std::inserter(aliases, aliases.end()),
                      [](const QJsonValue &v){ return v.toString().toStdString(); });
     } else if(state.type == "m.room.name") {
+      auto old_name = std::move(name_);
       name_ = state.content["name"].toString();
-      name_changed();
+      if(name_ != old_name) name_changed();
     } else if(state.type == "m.room.member") {
-      auto key = state.state_key.toStdString();
-      auto it = users_.find(key);
+      User &user = universe_.get_user(state.state_key);
       auto membership = state.content["membership"].toString();
-      if(it == users_.end() && (membership == "join" || membership == "invite")) {
-        it = users_.emplace(std::piecewise_construct,
-                            std::forward_as_tuple(key),
-                            std::forward_as_tuple(state.state_key)).first;
-      }
-      if(it != users_.end()) {
-        it->second.dispatch(state);
 
-        if(membership == "leave" || membership == "ban") {
-          users_.erase(key);
-          users_left = true;
-        }
+      user.dispatch(state);
+
+      if(membership == "join" || membership == "invite") {
+        users_.insert(&user);
+        new_users.push_back(&user);
+      } else if(membership == "leave" || membership == "ban") {
+        users_.erase(&user);
+        users_left = true;
       }
     } else {
       qDebug() << tr("Unrecognized message type: ") << state.type;

@@ -52,8 +52,8 @@ static Response decode(QNetworkReply *reply) {
   return r;
 }
 
-Session::Session(QNetworkAccessManager& net, QUrl homeserver, QString access_token)
-    : net_(net), homeserver_(homeserver), access_token_(access_token), synced_(false) {
+Session::Session(Matrix& universe, QUrl homeserver, QString access_token)
+    : universe_(universe), homeserver_(homeserver), access_token_(access_token), synced_(false) {
   QUrlQuery query;
   query.addQueryItem("filter", encode({
         {"room", QJsonObject{
@@ -66,10 +66,15 @@ Session::Session(QNetworkAccessManager& net, QUrl homeserver, QString access_tok
           }}
       }));
   query.addQueryItem("full_state", "true");
-  auto reply = net_.get(request("client/r0/sync", query));
+  sync(query);
+}
+
+void Session::sync(QUrlQuery query) {
+  auto reply = universe_.net.get(request("client/r0/sync", query));
   connect(reply, &QNetworkReply::finished, [this, reply](){
       handle_sync_reply(reply);
     });
+  connect(reply, &QNetworkReply::downloadProgress, this, &Session::sync_progress);
 }
 
 void Session::handle_sync_reply(QNetworkReply *reply) {
@@ -82,19 +87,17 @@ void Session::handle_sync_reply(QNetworkReply *reply) {
     synced_ = true;
     auto s = parse_sync(r.object);
     next_batch_ = s.next_batch;
-    process_sync(std::move(s));
+    dispatch(std::move(s));
   }
+  if(was_synced != synced_) synced_changed();
 
   QUrlQuery query;
   query.addQueryItem("since", next_batch_);
   query.addQueryItem("timeout", "50000");
-
-  if(was_synced != synced_) synced_changed();
-  auto next_reply = net_.get(request("client/r0/sync", query));
-  connect(next_reply, &QNetworkReply::finished, [this, next_reply](){ handle_sync_reply(next_reply); });
+  sync(query);
 }
 
-void Session::process_sync(proto::Sync sync) {
+void Session::dispatch(proto::Sync sync) {
   bool joined_rooms = false;
   for(auto &joined : sync.rooms.join) {
     auto key = joined.id.toStdString();
@@ -102,7 +105,7 @@ void Session::process_sync(proto::Sync sync) {
     if(it == rooms_.end()) {
       it = rooms_.emplace(std::piecewise_construct,
                           std::forward_as_tuple(key),
-                          std::forward_as_tuple(joined.id)).first;
+                          std::forward_as_tuple(universe_, joined.id)).first;
       joined_rooms = true;
     }
     it->second.dispatch(joined);
@@ -111,7 +114,7 @@ void Session::process_sync(proto::Sync sync) {
 }
 
 void Session::log_out() {
-  auto reply = net_.post(request("client/r0/logout"), encode({}));
+  auto reply = universe_.net.post(request("client/r0/logout"), encode({}));
   connect(reply, &QNetworkReply::finished, [this, reply](){
       auto r = decode(reply);
       if(!r.error || r.code == 404) {  // 404 = already logged out
@@ -141,7 +144,7 @@ QNetworkRequest Session::request(QString path, QUrlQuery query) {
   return req;
 }
 
-Matrix::Matrix(QNetworkAccessManager &net, QObject *parent) : QObject(parent), net_(net) {}
+Matrix::Matrix(QNetworkAccessManager &net, QObject *parent) : QObject(parent), net(net) {}
 
 void Matrix::login(QUrl homeserver, QString username, QString password) {
   QUrl login_url(homeserver);
@@ -154,7 +157,7 @@ void Matrix::login(QUrl homeserver, QString username, QString password) {
       {"password", password}
     };
 
-  auto reply = net_.post(request, encode(body));
+  auto reply = net.post(request, encode(body));
 
   connect(reply, &QNetworkReply::finished, [this, reply, homeserver](){
       auto r = decode(reply);
@@ -171,8 +174,19 @@ void Matrix::login(QUrl homeserver, QString username, QString password) {
         login_error(tr("Malformed response from server"));
         return;
       }
-      logged_in(new Session(net_, homeserver, token.toString()));
+      logged_in(new Session(*this, homeserver, token.toString()));
     });
+}
+
+User &Matrix::get_user(const QString &id) {
+  auto key = id.toStdString();
+  auto it = users_.find(key);
+  if(it == users_.end()) {
+    it = users_.emplace(std::piecewise_construct,
+                        std::forward_as_tuple(key),
+                        std::forward_as_tuple(id)).first;
+  }
+  return it->second;
 }
 
 }

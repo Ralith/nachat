@@ -1,7 +1,11 @@
 #ifndef CHATWINDOW_H
 #define CHATWINDOW_H
 
+#include <unordered_map>
+
 #include <QMainWindow>
+
+class RoomView;
 
 namespace matrix {
 class Room;
@@ -19,10 +23,14 @@ public:
   explicit ChatWindow(QWidget *parent = 0);
   ~ChatWindow();
 
-  void add_room(matrix::Room &room);
+  void add_or_focus_room(matrix::Room &room);
 
 private:
   Ui::ChatWindow *ui;
+
+  std::unordered_map<matrix::Room *, RoomView *> tabs_;
+
+  void update_label(matrix::Room &, RoomView &);
 };
 
 #endif // CHATWINDOW_H

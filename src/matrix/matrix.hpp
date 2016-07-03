@@ -9,6 +9,7 @@
 
 #include "span.h"
 
+#include "User.hpp"
 #include "Room.hpp"
 
 namespace matrix {
@@ -17,11 +18,16 @@ namespace proto {
 struct Sync;
 }
 
+class Matrix;
+
 class Session : public QObject {
   Q_OBJECT
 
 public:
-  explicit Session(QNetworkAccessManager& net, QUrl homeserver, QString access_token);
+  Session(Matrix& universe, QUrl homeserver, QString access_token);
+
+  Session(const Session &) = delete;
+  Session &operator=(const Session &) = delete;
 
   QString const& access_token() const { return access_token_; }
 
@@ -35,9 +41,10 @@ signals:
   void error(QString message);
   void synced_changed();
   void rooms_changed();
+  void sync_progress(qint64 received, qint64 total);
 
 private:
-  QNetworkAccessManager& net_;
+  Matrix &universe_;
   const QUrl homeserver_;
   QString access_token_;
   std::unordered_map<std::string, Room> rooms_;
@@ -46,24 +53,32 @@ private:
 
   QNetworkRequest request(QString path, QUrlQuery query = QUrlQuery());
 
+  void sync(QUrlQuery query);
   void handle_sync_reply(QNetworkReply *);
-  void process_sync(proto::Sync sync);
+  void dispatch(proto::Sync sync);
 };
 
 class Matrix : public QObject {
   Q_OBJECT
 
 public:
+  QNetworkAccessManager &net;
+
   explicit Matrix(QNetworkAccessManager &net, QObject *parent = 0);
 
+  Matrix(const Matrix &) = delete;
+  Matrix &operator=(const Matrix &) = delete;
+
   void login(QUrl homeserver, QString username, QString password);
+
+  User &get_user(const QString &id);
 
 signals:
   void logged_in(Session* session);
   void login_error(QString message);
 
 private:
-  QNetworkAccessManager &net_;
+  std::unordered_map<std::string, User> users_;
 };
 
 }

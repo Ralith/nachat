@@ -2,59 +2,35 @@
 #define NATIVE_CHAT_MATRIX_ROOM_H_
 
 #include <vector>
-#include <experimental/optional>
-#include <unordered_map>
+#include <list>
+#include <unordered_set>
 
 #include <QString>
 #include <QObject>
-#include <QUrl>
 
 #include <span.h>
 
 namespace matrix {
 
+class User;
+class Matrix;
+
 namespace proto {
 struct JoinedRoom;
-struct Event;
 }
 
 struct Message {
   QString body;
 };
 
-class User : public QObject {
-  Q_OBJECT
-
-public:
-  User(QString id) : id_(id) {}
-
-  const QString &id() const { return id_; }
-  const std::experimental::optional<QString> &display_name() const { return display_name_; }
-  const std::experimental::optional<QUrl> &avatar_url() const { return avatar_url_; }
-  bool invite_pending() const { return invite_pending_; }
-
-  void dispatch(const proto::Event &);
-
-signals:
-  void joined();
-  void left();
-  void banned();
-  void display_name_changed();
-  void avatar_url_changed();
-  void invite_pending_changed();
-
-private:
-  const QString id_;
-  std::experimental::optional<QString> display_name_;
-  std::experimental::optional<QUrl> avatar_url_;
-  bool invite_pending_ = false;
-};
-
 class Room : public QObject {
   Q_OBJECT
 
 public:
-  Room(QString id) : id_(id) {}
+  Room(Matrix &universe, QString id) : universe_(universe), id_(id) {}
+
+  Room(const Room &) = delete;
+  Room &operator=(const Room &) = delete;
 
   const QString &id() const { return id_; }
 
@@ -62,10 +38,12 @@ public:
   std::vector<const Message *> messages() const;
 
   gsl::span<const QString> aliases() const { return aliases_; }
-  const std::experimental::optional<QString> &name() const { return name_; }
-  QString display_name() const;
+  const QString &name() const { return name_; }
   uint64_t highlight_count() const { return highlight_count_; }
   uint64_t notification_count() const { return notification_count_; }
+  const std::list<Message> &messages() { return messages_; }
+
+  QString pretty_name() const;
 
   void dispatch(const proto::JoinedRoom &);
 
@@ -78,10 +56,12 @@ signals:
   void notification_count_changed();
 
 private:
+  Matrix &universe_;
   QString id_;
   std::vector<QString> aliases_;
-  std::experimental::optional<QString> name_;
-  std::unordered_map<std::string, User> users_;
+  QString name_;
+  std::unordered_set<User *> users_;
+  std::list<Message> messages_;
   uint64_t highlight_count_ = 0, notification_count_ = 0;
 };
 

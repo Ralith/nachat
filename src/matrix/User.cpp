@@ -18,12 +18,19 @@ void User::dispatch(const proto::Event &state) {
 
   auto i = state.content.find("displayname");
   if(i != state.content.end()) {
+    auto old_name = std::move(display_name_);
     display_name_ = i->toString();
-    display_name_changed();
+    if(display_name_ != old_name) display_name_changed();
   }
   i = state.content.find("avatar_url");
   if(i != state.content.end()) {
-    avatar_url_ = QUrl(i->toString());
+    auto old_avatar = avatar_url_;
+    auto str = i->toString();
+    if(str == "") {
+      avatar_url_ = QUrl();
+    } else {
+      avatar_url_ = QUrl(str);
+    }
     avatar_url_changed();
   }
 }

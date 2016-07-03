@@ -3,38 +3,79 @@
 
 #include <algorithm>
 
-#include "matrix/Room.hpp"
+#include <QSettings>
+#include <QProgressBar>
+#include <QLabel>
 
-#include "LabeledProgressBar.hpp"
+#include "matrix/Room.hpp"
 
 namespace {
 
 QString room_sort_key(const matrix::Room &r) {
-  const auto &n = r.display_name();
+  const auto &n = r.pretty_name();
   auto i = std::find_if(n.begin(), n.end(),
                         [](QChar c) { return c != '#'; });
   if(i != n.end()) return n;
-  return QString(n.data() + (i - n.begin()), n.end() - i).toLower();
+  return QString(n.data() + (i - n.begin()), n.end() - i).toCaseFolded();
 }
 
 }
 
-MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), ui(new Ui::MainWindow), progress_(new LabeledProgressBar) {
+MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> session)
+    : ui(new Ui::MainWindow), settings_(settings), session_(std::move(session)),
+      progress_(new QProgressBar(this)), sync_label_(new QLabel(this)) {
   ui->setupUi(this);
 
+  ui->status_bar->addPermanentWidget(sync_label_);
   ui->status_bar->addPermanentWidget(progress_);
 
-  connect(ui->action_log_out, &QAction::triggered, this, &MainWindow::log_out);
+  connect(ui->action_log_out, &QAction::triggered, session_.get(), &matrix::Session::log_out);
+  connect(session_.get(), &matrix::Session::logged_out, [this]() {
+      settings_.remove("login/access_token");
+      ui->action_quit->trigger();
+    });
+
+  connect(session_.get(), &matrix::Session::error, [this](QString msg) {
+      qDebug() << msg;
+    });
+
+  connect(session_.get(), &matrix::Session::synced_changed, [this]() {
+      if(session_->synced()) {
+        sync_label_->hide();
+      } else {
+        sync_label_->setText(tr("Disconnected"));
+        sync_label_->show();
+      }
+    });
+
+  connect(session_.get(), &matrix::Session::sync_progress, this, &MainWindow::sync_progress);
+  connect(session_.get(), &matrix::Session::rooms_changed, this, &MainWindow::update_rooms);
 
   ui->action_quit->setShortcuts(QKeySequence::Quit);
-  connect(ui->action_quit, &QAction::triggered, this, &MainWindow::quit);
+  connect(ui->action_quit, &QAction::triggered, this, &MainWindow::close);
+
+  connect(ui->room_list, &QListWidget::itemActivated, [this](QListWidgetItem *item){
+      auto &room = *reinterpret_cast<matrix::Room *>(item->data(Qt::UserRole).value<void*>());
+      auto it = chat_windows_.find(&room);
+      if(it == chat_windows_.end()) {
+        it = chat_windows_.emplace(
+          std::piecewise_construct,
+          std::forward_as_tuple(&room),
+          std::forward_as_tuple(this)).first;
+      }
+      auto &window = it->second;
+      window.add_or_focus_room(room);
+      window.show();
+      window.activateWindow();
+    });
+
+  sync_progress(0, -1);
 }
 
 MainWindow::~MainWindow() { delete ui; }
 
-void MainWindow::set_rooms(gsl::span<matrix::Room *const> rooms_in) {
-  std::vector<matrix::Room *> rooms(rooms_in.begin(), rooms_in.end());
+void MainWindow::update_rooms() {
+  auto rooms = session_->rooms();
   std::sort(rooms.begin(), rooms.end(),
             [](const matrix::Room *a, const matrix::Room *b) {
               return room_sort_key(*a) < room_sort_key(*b);
@@ -42,17 +83,25 @@ void MainWindow::set_rooms(gsl::span<matrix::Room *const> rooms_in) {
   ui->room_list->clear();
   for(auto room : rooms) {
     auto item = new QListWidgetItem;
-    item->setText(room->display_name());
+    item->setText(room->pretty_name());
     item->setData(Qt::UserRole, QVariant::fromValue(reinterpret_cast<void*>(room)));
     ui->room_list->addItem(item);
   }
 }
 
-void MainWindow::set_initial_sync(bool underway) {
-  if(underway) {
-    progress_->show();
-    progress_->set_text(tr("Downloading state..."));
-  } else {
+void MainWindow::sync_progress(qint64 received, qint64 total) {
+  if(received == total) {
     progress_->hide();
+    sync_label_->hide();
+    return;
+  }
+  sync_label_->setText(tr("Synchronizing..."));
+  sync_label_->show();
+  progress_->show();
+  if(total == -1) {
+    progress_->setMaximum(0);
+  } else {
+    progress_->setMaximum(1000);
+    progress_->setValue(1000 * static_cast<float>(received)/static_cast<float>(total));
   }
 }

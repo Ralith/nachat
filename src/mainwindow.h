@@ -2,10 +2,16 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <unordered_map>
+#include <memory>
 
-#include <span.h>
+#include "matrix/matrix.hpp"
 
-class LabeledProgressBar;
+#include "chatwindow.h"
+
+class QProgressBar;
+class QSettings;
+class QLabel;
 
 namespace Ui {
 class MainWindow;
@@ -19,20 +25,20 @@ class MainWindow : public QMainWindow {
   Q_OBJECT
 
 public:
-  explicit MainWindow(QWidget *parent = 0);
+  explicit MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> session);
   ~MainWindow();
-
-  void set_rooms(gsl::span<matrix::Room *const>);
-
-  void set_initial_sync(bool underway);
-
-signals:
-  void log_out();
-  void quit();
 
 private:
   Ui::MainWindow *ui;
-  LabeledProgressBar *progress_;
+  QSettings &settings_;
+  std::unique_ptr<matrix::Session> session_;
+  QProgressBar *progress_;
+  QLabel *sync_label_;
+
+  std::unordered_map<matrix::Room *, ChatWindow> chat_windows_;
+
+  void update_rooms();
+  void sync_progress(qint64 received, qint64 total);
 };
 
 #endif // MAINWINDOW_H

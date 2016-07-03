@@ -1,6 +1,7 @@
 add_library(matrix
   matrix.cpp
   Room.cpp
+  User.cpp
   proto.cpp
   parse.cpp)
 
