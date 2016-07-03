@@ -33,7 +33,7 @@
      <x>0</x>
      <y>0</y>
      <width>400</width>
-     <height>15</height>
+     <height>22</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuMatrix">
@@ -48,11 +48,17 @@
   </widget>
   <widget class="QStatusBar" name="status_bar"/>
   <action name="action_log_out">
+   <property name="icon">
+    <iconset theme="system-log-out"/>
+   </property>
    <property name="text">
     <string>Log Out</string>
    </property>
   </action>
   <action name="action_quit">
+   <property name="icon">
+    <iconset theme="application-exit"/>
+   </property>
    <property name="text">
     <string>Quit</string>
    </property>

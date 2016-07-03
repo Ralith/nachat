@@ -1,7 +1,6 @@
 #include "matrix.hpp"
 
 #include <experimental/optional>
-#include <unordered_set>
 
 #include <QJsonDocument>
 
@@ -62,7 +61,7 @@ Session::Session(QNetworkAccessManager& net, QUrl homeserver, QString access_tok
                 {"limit", 0}
               }},
             {"state", QJsonObject{
-                {"types", QJsonArray{"m.room.name", "m.room.aliases"}}}
+                {"types", QJsonArray{"m.room.name", "m.room.aliases", "m.room.member"}}}
             }
           }}
       }));
@@ -106,30 +105,7 @@ void Session::process_sync(proto::Sync sync) {
                           std::forward_as_tuple(joined.id)).first;
       joined_rooms = true;
     }
-    auto &room = it->second;
-    std::unordered_set<std::string> aliases;
-    for(auto &state : joined.state.events) {
-      if(state.type == "m.room.aliases") {
-        auto data = state.content["aliases"].toArray();
-        aliases.reserve(aliases.size() + data.size());
-        std::transform(data.begin(), data.end(), std::inserter(aliases, aliases.end()),
-                       [](const QJsonValue &v){ return v.toString().toStdString(); });
-      } else if(state.type == "m.room.name") {
-        room.name_ = state.content["name"].toString();
-        room.name_changed();
-      } else {
-        qDebug() << tr("Unrecognized message type: ") << state.type;
-      }
-    }
-    if(!aliases.empty()) {
-      std::transform(room.aliases_.begin(), room.aliases_.end(), std::inserter(aliases, aliases.end()),
-                     [](QString &s) { return std::move(s).toStdString(); });
-      room.aliases_.clear();
-      room.aliases_.reserve(aliases.size());
-      std::transform(aliases.begin(), aliases.end(), std::back_inserter(room.aliases_),
-                     [](const std::string &s) { return QString::fromStdString(s); });
-      room.aliases_changed();
-    }
+    it->second.dispatch(joined);
   }
   if(joined_rooms) rooms_changed();
 }

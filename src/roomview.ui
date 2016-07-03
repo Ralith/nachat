@@ -65,8 +65,11 @@ p, li { white-space: pre-wrap; }
      </item>
      <item>
       <widget class="QPushButton" name="upload_button">
-       <property name="text">
-        <string>Upload File</string>
+       <property name="toolTip">
+        <string>Send File</string>
+       </property>
+       <property name="icon">
+        <iconset theme="document-open"/>
        </property>
       </widget>
      </item>
