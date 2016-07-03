@@ -14,7 +14,7 @@ QString room_sort_key(const matrix::Room &r) {
   auto i = std::find_if(n.begin(), n.end(),
                         [](QChar c) { return c != '#'; });
   if(i != n.end()) return n;
-  return QString(n.data() + (i - n.begin()), n.end() - i);
+  return QString(n.data() + (i - n.begin()), n.end() - i).toLower();
 }
 
 }
