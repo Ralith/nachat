@@ -61,9 +61,6 @@ Session::Session(Matrix& universe, QUrl homeserver, QString user_id, QString acc
             {"timeline", QJsonObject{
                 {"limit", 0}
               }},
-            {"state", QJsonObject{
-                {"types", QJsonArray{"m.room.name", "m.room.canonical_alias", "m.room.aliases", "m.room.member"}}}
-            }
           }}
       }));
   query.addQueryItem("full_state", "true");

@@ -8,8 +8,6 @@
 
 #include <QtNetwork>
 
-#include "span.h"
-
 #include "Room.hpp"
 
 namespace matrix {
