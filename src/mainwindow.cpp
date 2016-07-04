@@ -6,6 +6,7 @@
 #include <QSettings>
 #include <QProgressBar>
 #include <QLabel>
+#include <QSystemTrayIcon>
 
 #include "matrix/Room.hpp"
 
@@ -31,6 +32,15 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
   ui->status_bar->addPermanentWidget(sync_label_);
   ui->status_bar->addPermanentWidget(progress_);
 
+  auto tray = new QSystemTrayIcon(QIcon::fromTheme("user-available"), this);
+  tray->setContextMenu(ui->menu_matrix);
+  connect(tray, &QSystemTrayIcon::activated, [this](QSystemTrayIcon::ActivationReason reason) {
+      if(reason == QSystemTrayIcon::Trigger) {
+        setVisible(!isVisible());
+      }
+    });
+  tray->show();
+
   connect(ui->action_log_out, &QAction::triggered, session_.get(), &matrix::Session::log_out);
   connect(session_.get(), &matrix::Session::logged_out, [this]() {
       settings_.remove("session/access_token");
@@ -55,7 +65,7 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
   connect(session_.get(), &matrix::Session::rooms_changed, this, &MainWindow::update_rooms);
 
   ui->action_quit->setShortcuts(QKeySequence::Quit);
-  connect(ui->action_quit, &QAction::triggered, this, &MainWindow::close);
+  connect(ui->action_quit, &QAction::triggered, this, &MainWindow::quit);
 
   connect(ui->room_list, &QListWidget::itemActivated, [this](QListWidgetItem *item){
       auto &room = *reinterpret_cast<matrix::Room *>(item->data(Qt::UserRole).value<void*>());
@@ -64,7 +74,7 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
         it = chat_windows_.emplace(
           std::piecewise_construct,
           std::forward_as_tuple(&room),
-          std::forward_as_tuple(this)).first;
+          std::forward_as_tuple()).first;
       }
       auto &window = it->second;
       window.add_or_focus_room(room);

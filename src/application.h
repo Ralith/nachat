@@ -28,6 +28,8 @@ private:
   // UI elements
   LoginDialog login_{m_};
   std::unique_ptr<MainWindow> main_window_;
+
+  void session_start();
 };
 
 #endif

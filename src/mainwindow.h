@@ -1,9 +1,10 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-#include <QMainWindow>
 #include <unordered_map>
 #include <memory>
+
+#include <QMainWindow>
 
 #include "matrix/matrix.hpp"
 
@@ -27,6 +28,9 @@ class MainWindow : public QMainWindow {
 public:
   explicit MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> session);
   ~MainWindow();
+
+signals:
+  void quit();
 
 private:
   Ui::MainWindow *ui;

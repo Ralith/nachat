@@ -1,5 +1,7 @@
 #include "application.h"
 
+#include <QMenu>
+
 #include "roomview.h"
 
 Application::Application(int argc, char **argv)
@@ -7,7 +9,7 @@ Application::Application(int argc, char **argv)
 {
   connect(&login_, &LoginDialog::accepted, [this](){
       main_window_ = std::make_unique<MainWindow>(settings_, login_.session());
-    main_window_->show();
+      session_start();
     });
 }
 
@@ -21,6 +23,12 @@ void Application::start() {
     main_window_ = std::make_unique<MainWindow>(
       settings_,
       std::make_unique<matrix::Session>(m_, homeserver.toString(), user_id.toString(), access_token.toString()));
-    main_window_->show();
+    session_start();
   }
+}
+
+void Application::session_start() {
+  setQuitOnLastWindowClosed(false);
+  connect(main_window_.get(), &MainWindow::quit, this, &QApplication::quit);
+  main_window_->show();
 }
