@@ -35,6 +35,7 @@ signals:
   void banned();
   void avatar_url_changed();
   void invite_pending_changed();
+  void member_name_changed();
 
 private:
   const QString id_;

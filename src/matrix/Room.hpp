@@ -68,7 +68,8 @@ signals:
   void aliases_changed();
   void highlight_count_changed();
   void notification_count_changed();
-  void member_name_changed(const Member &);
+  void pretty_name_changed();  // May be emitted spuriously
+  void member_names_changed();
 
 private:
   Matrix &universe_;
@@ -82,7 +83,7 @@ private:
   std::list<Message> messages_;
   uint64_t highlight_count_ = 0, notification_count_ = 0;
 
-  void forget_displayname(const Member &member);
+  bool forget_displayname(const Member &member);
 };
 
 }

@@ -14,7 +14,7 @@ namespace {
 QString room_sort_key(const matrix::Room &r) {
   const auto &n = r.pretty_name();
   int i = 0;
-  while((n[i] == '#' || n[i] == '@') && i < n.size()) {
+  while((n[i] == '#' || n[i] == '@') && (i < n.size())) {
     ++i;
   }
   if(i == n.size()) return n.toCaseFolded();
@@ -78,6 +78,12 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
 MainWindow::~MainWindow() { delete ui; }
 
 void MainWindow::update_rooms() {
+  // Disconnect signals
+  for(int i = 0; i < ui->room_list->count(); ++i) {
+    auto &room = *reinterpret_cast<matrix::Room *>(ui->room_list->item(i)->data(Qt::UserRole).value<void*>());
+    disconnect(&room, &matrix::Room::pretty_name_changed, this, &MainWindow::update_rooms);
+  }
+
   auto rooms = session_->rooms();
   std::sort(rooms.begin(), rooms.end(),
             [](const matrix::Room *a, const matrix::Room *b) {
@@ -85,6 +91,7 @@ void MainWindow::update_rooms() {
             });
   ui->room_list->clear();
   for(auto room : rooms) {
+    connect(room, &matrix::Room::pretty_name_changed, this, &MainWindow::update_rooms);
     auto item = new QListWidgetItem;
     item->setText(room->pretty_name());
     item->setData(Qt::UserRole, QVariant::fromValue(reinterpret_cast<void*>(room)));

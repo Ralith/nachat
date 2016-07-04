@@ -6,6 +6,20 @@
 #include "matrix/Room.hpp"
 #include "matrix/Member.hpp"
 
+namespace {
+
+QString member_sort_key(const matrix::Room &r, const matrix::Member &m) {
+  const auto &n = r.member_name(m);
+  int i = 0;
+  while((n[i] == '@') && (i < n.size())) {
+    ++i;
+  }
+  if(i == n.size()) return n.toCaseFolded();
+  return QString(n.data() + i, n.size() - i).toCaseFolded();
+}
+
+}
+
 RoomView::RoomView(matrix::Room &room, QWidget *parent)
     : QWidget(parent), ui(new Ui::RoomView), room_(room) {
   ui->setupUi(this);
@@ -21,6 +35,7 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
           });
 
   connect(&room, &matrix::Room::members_changed, this, &RoomView::update_members);
+  connect(&room, &matrix::Room::member_names_changed, this, &RoomView::update_members);
   update_members();
 }
 
@@ -30,8 +45,7 @@ void RoomView::update_members() {
   auto members = room_.members();
   std::sort(members.begin(), members.end(),
             [this](const matrix::Member *a, const matrix::Member *b) {
-              // TODO: Sort by power level first?
-              return room_.member_name(*a).toCaseFolded() < room_.member_name(*b).toCaseFolded();
+              return member_sort_key(room_, *a) < member_sort_key(room_, *b);
             });
   ui->memberlist->clear();
   for(auto member : members) {
