@@ -9,7 +9,10 @@ class RoomView;
 
 namespace matrix {
 class Room;
+class RoomState;
 class User;
+
+struct Message;
 }
 
 class RoomView : public QWidget
@@ -26,8 +29,8 @@ private:
   Ui::RoomView *ui;
   matrix::Room &room_;
 
-  void fit_text();
   void update_members();
+  void append_message(const matrix::RoomState &, const matrix::Message &);
 };
 
 #endif // ROOMVIEW_H

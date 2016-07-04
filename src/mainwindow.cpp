@@ -13,7 +13,7 @@
 namespace {
 
 QString room_sort_key(const matrix::Room &r) {
-  const auto &n = r.pretty_name();
+  const auto &n = r.current_state().pretty_name();
   int i = 0;
   while((n[i] == '#' || n[i] == '@') && (i < n.size())) {
     ++i;
@@ -91,7 +91,7 @@ void MainWindow::update_rooms() {
   // Disconnect signals
   for(int i = 0; i < ui->room_list->count(); ++i) {
     auto &room = *reinterpret_cast<matrix::Room *>(ui->room_list->item(i)->data(Qt::UserRole).value<void*>());
-    disconnect(&room, &matrix::Room::pretty_name_changed, this, &MainWindow::update_rooms);
+    disconnect(&room, &matrix::Room::state_changed, this, &MainWindow::update_rooms);
   }
 
   auto rooms = session_->rooms();
@@ -101,9 +101,9 @@ void MainWindow::update_rooms() {
             });
   ui->room_list->clear();
   for(auto room : rooms) {
-    connect(room, &matrix::Room::pretty_name_changed, this, &MainWindow::update_rooms);
+    connect(room, &matrix::Room::state_changed, this, &MainWindow::update_rooms);
     auto item = new QListWidgetItem;
-    item->setText(room->pretty_name());
+    item->setText(room->current_state().pretty_name());
     item->setData(Qt::UserRole, QVariant::fromValue(reinterpret_cast<void*>(room)));
     ui->room_list->addItem(item);
   }

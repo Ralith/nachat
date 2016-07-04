@@ -20,9 +20,9 @@ void ChatWindow::add_or_focus_room(matrix::Room &room) {
   if(it == tabs_.end()) {
     it = tabs_.insert(std::make_pair(&room, new RoomView(room, this))).first;
     auto &view = *it->second;
-    ui->tab_widget->addTab(&view, room.pretty_name());
+    ui->tab_widget->addTab(&view, room.current_state().pretty_name());
 
-    connect(&room, &matrix::Room::name_changed, [this, &view, &room]() {
+    connect(&room, &matrix::Room::state_changed, [this, &view, &room]() {
         update_label(room, view);
       });
     connect(&room, &matrix::Room::notification_count_changed, [this, &view, &room]() {
@@ -44,14 +44,14 @@ void ChatWindow::add_or_focus_room(matrix::Room &room) {
 void ChatWindow::update_label(matrix::Room &room, RoomView &view) {
   QString label;
   if(room.highlight_count() != 0) {
-    label = tr("%1 (%2)").arg(room.pretty_name()).arg(room.highlight_count());
+    label = tr("%1 (%2)").arg(room.current_state().pretty_name()).arg(room.highlight_count());
   } else {
-    label = room.pretty_name();
+    label = room.current_state().pretty_name();
   }
   ui->tab_widget->setTabText(ui->tab_widget->indexOf(&view), std::move(label));
 }
 
 void ChatWindow::tab_selected(int i) {
   auto &view = *static_cast<RoomView*>(ui->tab_widget->widget(i));
-  setWindowTitle(view.room().pretty_name());
+  setWindowTitle(view.room().current_state().pretty_name());
 }

@@ -9,7 +9,7 @@
 namespace {
 
 QString member_sort_key(const matrix::Room &r, const matrix::Member &m) {
-  const auto &n = r.member_name(m);
+  const auto &n = r.current_state().member_name(m);
   int i = 0;
   while((n[i] == '@') && (i < n.size())) {
     ++i;
@@ -34,15 +34,23 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
             ui->entry->setMaximumHeight(size.height() + margins.top() + margins.bottom());
           });
 
-  connect(&room, &matrix::Room::members_changed, this, &RoomView::update_members);
-  connect(&room, &matrix::Room::member_names_changed, this, &RoomView::update_members);
+  connect(&room, &matrix::Room::message, [this](const matrix::Message &msg){
+      append_message(room_.current_state(), msg);
+    });
+
+  // TODO: Account for state
+  for(auto &msg : room_.messages()) {
+    append_message(room_.current_state(), msg);
+  }
+
+  connect(&room, &matrix::Room::state_changed, this, &RoomView::update_members);
   update_members();
 }
 
 RoomView::~RoomView() { delete ui; }
 
 void RoomView::update_members() {
-  auto members = room_.members();
+  auto members = room_.current_state().members();
   std::sort(members.begin(), members.end(),
             [this](const matrix::Member *a, const matrix::Member *b) {
               return member_sort_key(room_, *a) < member_sort_key(room_, *b);
@@ -50,7 +58,7 @@ void RoomView::update_members() {
   ui->memberlist->clear();
   for(auto member : members) {
     auto item = new QListWidgetItem;
-    item->setText(room_.member_name(*member));
+    item->setText(room_.current_state().member_name(*member));
     item->setToolTip(member->id());
     item->setData(Qt::UserRole, QVariant::fromValue(const_cast<void*>(reinterpret_cast<const void*>(member))));
     ui->memberlist->addItem(item);
@@ -60,10 +68,6 @@ void RoomView::update_members() {
   ui->memberlist->setMaximumWidth(ui->memberlist->sizeHintForColumn(0) + scrollbar_width + margins.left() + margins.right());
 }
 
-void RoomView::fit_text() {
-  QFontMetrics metrics(ui->entry->font());
-  auto t = ui->entry->toPlainText();
-  int height = t.size() ? metrics.boundingRect(t).height() : metrics.height();
-  ui->entry->setMinimumHeight(height);
-  ui->entry->setMaximumHeight(height);
+void RoomView::append_message(const matrix::RoomState &state, const matrix::Message &msg) {
+  ui->message_view->append("<" + state.member_name(msg.sender) + "> " + msg.body + "\n");
 }

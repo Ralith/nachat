@@ -25,7 +25,7 @@
      <property name="orientation">
       <enum>Qt::Horizontal</enum>
      </property>
-     <widget class="QTextEdit" name="log_view">
+     <widget class="QTextEdit" name="message_view">
       <property name="focusPolicy">
        <enum>Qt::NoFocus</enum>
       </property>

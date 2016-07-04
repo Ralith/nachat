@@ -59,7 +59,7 @@ Session::Session(Matrix& universe, QUrl homeserver, QString user_id, QString acc
   query.addQueryItem("filter", encode({
         {"room", QJsonObject{
             {"timeline", QJsonObject{
-                {"limit", 0}
+                {"limit", 50}
               }},
           }}
       }));
