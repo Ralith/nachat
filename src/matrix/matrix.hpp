@@ -1,11 +1,12 @@
 #ifndef NATIVE_CHAT_MATRIX_MATRIX_H_
 #define NATIVE_CHAT_MATRIX_MATRIX_H_
 
-#include <QtNetwork>
-
 #include <memory>
 #include <experimental/optional>
 #include <unordered_map>
+#include <chrono>
+
+#include <QtNetwork>
 
 #include "span.h"
 
@@ -50,6 +51,9 @@ private:
   std::unordered_map<std::string, Room> rooms_;
   bool synced_;
   QString next_batch_;
+
+  std::chrono::steady_clock::time_point last_sync_error_;
+  // Last time a sync failed. Used to ensure we don't spin if errors happen quickly.
 
   QNetworkRequest request(QString path, QUrlQuery query = QUrlQuery());
 

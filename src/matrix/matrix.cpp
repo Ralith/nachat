@@ -3,6 +3,7 @@
 #include <experimental/optional>
 
 #include <QJsonDocument>
+#include <QTimer>
 
 #include "parse.hpp"
 
@@ -78,6 +79,8 @@ void Session::sync(QUrlQuery query) {
 }
 
 void Session::handle_sync_reply(QNetworkReply *reply) {
+  using namespace std::chrono_literals;
+
   auto r = decode(reply);
   bool was_synced = synced_;
   if(r.error) {
@@ -94,7 +97,22 @@ void Session::handle_sync_reply(QNetworkReply *reply) {
   QUrlQuery query;
   query.addQueryItem("since", next_batch_);
   query.addQueryItem("timeout", "50000");
-  sync(query);
+
+  auto now = std::chrono::steady_clock::now();
+  constexpr std::chrono::steady_clock::duration RETRY_INTERVAL = 10s;
+  auto since_last_error = now - last_sync_error_;
+  if(r.error && (since_last_error < RETRY_INTERVAL)) {
+    QTimer::singleShot(std::chrono::duration_cast<std::chrono::milliseconds>(RETRY_INTERVAL - since_last_error).count(),
+                       [this, query](){
+                         sync(query);
+                       });
+  } else {
+    sync(query);
+  }
+
+  if(r.error) {
+    last_sync_error_ = now;
+  }
 }
 
 void Session::dispatch(proto::Sync sync) {
