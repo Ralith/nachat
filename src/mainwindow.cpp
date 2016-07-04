@@ -13,10 +13,12 @@ namespace {
 
 QString room_sort_key(const matrix::Room &r) {
   const auto &n = r.pretty_name();
-  auto i = std::find_if(n.begin(), n.end(),
-                        [](QChar c) { return c != '#'; });
-  if(i != n.end()) return n;
-  return QString(n.data() + (i - n.begin()), n.end() - i).toCaseFolded();
+  int i = 0;
+  while(n[i] == '#' && i < n.size()) {
+    ++i;
+  }
+  if(i == n.size()) return n.toCaseFolded();
+  return QString(n.data() + i, n.size() - i).toCaseFolded();
 }
 
 }
