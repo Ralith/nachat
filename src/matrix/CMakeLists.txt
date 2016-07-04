@@ -1,7 +1,9 @@
+find_package(Qt5Network)
+
 add_library(matrix
   matrix.cpp
   Room.cpp
-  User.cpp
+  Member.cpp
   proto.cpp
   parse.cpp)
 

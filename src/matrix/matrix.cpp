@@ -53,8 +53,8 @@ static Response decode(QNetworkReply *reply) {
   return r;
 }
 
-Session::Session(Matrix& universe, QUrl homeserver, QString access_token)
-    : universe_(universe), homeserver_(homeserver), access_token_(access_token), synced_(false) {
+Session::Session(Matrix& universe, QUrl homeserver, QString user_id, QString access_token)
+    : universe_(universe), homeserver_(homeserver), user_id_(user_id), access_token_(access_token), synced_(false) {
   QUrlQuery query;
   query.addQueryItem("filter", encode({
         {"room", QJsonObject{
@@ -62,7 +62,7 @@ Session::Session(Matrix& universe, QUrl homeserver, QString access_token)
                 {"limit", 0}
               }},
             {"state", QJsonObject{
-                {"types", QJsonArray{"m.room.name", "m.room.aliases", "m.room.member"}}}
+                {"types", QJsonArray{"m.room.name", "m.room.canonical_alias", "m.room.aliases", "m.room.member"}}}
             }
           }}
       }));
@@ -123,7 +123,7 @@ void Session::dispatch(proto::Sync sync) {
     if(it == rooms_.end()) {
       it = rooms_.emplace(std::piecewise_construct,
                           std::forward_as_tuple(key),
-                          std::forward_as_tuple(universe_, joined.id)).first;
+                          std::forward_as_tuple(universe_, user_id_, joined.id)).first;
       joined_rooms = true;
     }
     it->second.dispatch(joined);
@@ -188,23 +188,13 @@ void Matrix::login(QUrl homeserver, QString username, QString password) {
         return;
       }
       auto token = r.object["access_token"];
-      if(!token.isString()) {
+      auto user_id = r.object["user_id"];
+      if(!token.isString() || !user_id.isString()) {
         login_error(tr("Malformed response from server"));
         return;
       }
-      logged_in(new Session(*this, homeserver, token.toString()));
+      logged_in(new Session(*this, homeserver, user_id.toString(), token.toString()));
     });
-}
-
-User &Matrix::get_user(const QString &id) {
-  auto key = id.toStdString();
-  auto it = users_.find(key);
-  if(it == users_.end()) {
-    it = users_.emplace(std::piecewise_construct,
-                        std::forward_as_tuple(key),
-                        std::forward_as_tuple(id)).first;
-  }
-  return it->second;
 }
 
 }

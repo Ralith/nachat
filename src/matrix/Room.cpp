@@ -14,41 +14,109 @@ namespace matrix {
 
 QString Room::pretty_name() const {
   if(!name_.isEmpty()) return name_;
-  if(!aliases_.empty()) return aliases_[0];
-  // TOOD: Fall back to membership list
-  return id_;
+  if(!canonical_alias_.isEmpty()) return canonical_alias_;
+  auto ms = members();
+  ms.erase(std::remove_if(ms.begin(), ms.end(), [this](const Member *m){ return m->id() == user_id_; }), ms.end());
+  if(ms.size() > 1) {
+    std::partial_sort(ms.begin(), ms.begin() + 2, ms.end(),
+                      [](const Member *a, const Member *b) {
+                        return a->id() < b->id();
+                      });
+  }
+  switch(ms.size()) {
+  case 0: return tr("Empty Room");
+  case 1: return member_name(*ms[0]);
+  case 2: return tr("%1 and %2").arg(member_name(*ms[0])).arg(member_name(*ms[1]));
+  default: return tr("%1 and %2 others").arg(member_name(*ms[0])).arg(ms.size() - 1);
+  }
 }
 
-std::vector<const User *> Room::users() const {
-  return std::vector<const User *>(users_.begin(), users_.end());
+QString Room::member_name(const Member &member) const {
+  if(member.display_name().isEmpty()) {
+    return member.id();
+  }
+  if(members_by_displayname_.at(member.display_name()).size() == 1) {
+    return member.display_name();
+  }
+  return tr("%1 (%2)").arg(member.display_name()).arg(member.id());
+}
+
+std::vector<const Member *> Room::members() const {
+  std::vector<const Member *> result;
+  result.reserve(members_by_id_.size());
+  std::transform(members_by_id_.begin(), members_by_id_.end(), std::back_inserter(result),
+                 [](auto &x) { return &x.second; });
+  return result;
+}
+
+void Room::forget_displayname(const Member &member) {
+  auto name = member.display_name();
+  if(!name.isEmpty()) {
+    auto &vec = members_by_displayname_.at(name);
+    vec.erase(std::remove(vec.begin(), vec.end(), &member), vec.end());
+    if(vec.empty()) {
+      members_by_displayname_.erase(name);
+    } else if(vec.size() == 1) {
+      member_name_changed(*vec[0]);
+    }
+  }
 }
 
 void Room::dispatch(const proto::JoinedRoom &joined) {
   std::unordered_set<std::string> aliases;
   bool users_left = false;
-  std::vector<const User *> new_users;
+  std::vector<const Member *> new_members;
   for(auto &state : joined.state.events) {
     if(state.type == "m.room.aliases") {
       auto data = state.content["aliases"].toArray();
       aliases.reserve(aliases.size() + data.size());
       std::transform(data.begin(), data.end(), std::inserter(aliases, aliases.end()),
                      [](const QJsonValue &v){ return v.toString().toStdString(); });
+    } else if(state.type == "m.room.canonical_alias") {
+      canonical_alias_ = state.content["alias"].toString();
     } else if(state.type == "m.room.name") {
       auto old_name = std::move(name_);
       name_ = state.content["name"].toString();
       if(name_ != old_name) name_changed();
     } else if(state.type == "m.room.member") {
-      User &user = universe_.get_user(state.state_key);
+      const auto &user_id = state.state_key;
       auto membership = state.content["membership"].toString();
-
-      user.dispatch(state);
-
       if(membership == "join" || membership == "invite") {
-        users_.insert(&user);
-        new_users.push_back(&user);
+        auto it = members_by_id_.find(user_id);
+        bool fresh_member = false;
+        if(it == members_by_id_.end()) {
+          it = members_by_id_.emplace(
+            std::piecewise_construct,
+            std::forward_as_tuple(user_id),
+            std::forward_as_tuple(user_id)).first;
+          new_members.push_back(&it->second);
+          fresh_member = true;
+        }
+        auto &member = it->second;
+        auto fresh_name = state.content["displayname"].toString();
+        bool name_changed = false;
+        if(!fresh_member && member.display_name() != fresh_name) {
+          forget_displayname(member);
+          name_changed = true;
+        }
+        member.dispatch(state);
+        if(!member.display_name().isEmpty()) {
+          auto &vec = members_by_displayname_[member.display_name()];
+          vec.push_back(&member);
+          if(vec.size() == 2) {
+            member_name_changed(*vec[0]);
+          }
+        }
+        if(name_changed) {
+          member_name_changed(member);
+        }
       } else if(membership == "leave" || membership == "ban") {
-        users_.erase(&user);
-        users_left = true;
+        auto it = members_by_id_.find(user_id);
+        if(it != members_by_id_.end()) {
+          forget_displayname(it->second);
+          members_by_id_.erase(user_id);
+          users_left = true;
+        }
       }
     } else {
       qDebug() << tr("Unrecognized message type: ") << state.type;
@@ -65,8 +133,8 @@ void Room::dispatch(const proto::JoinedRoom &joined) {
     aliases_changed();
   }
 
-  if(users_left || !new_users.empty()) {
-    users_changed(new_users);
+  if(users_left || !new_members.empty()) {
+    members_changed(new_members);
   }
 
   if(joined.unread_notifications.highlight_count != highlight_count_) {

@@ -14,7 +14,7 @@ namespace {
 QString room_sort_key(const matrix::Room &r) {
   const auto &n = r.pretty_name();
   int i = 0;
-  while(n[i] == '#' && i < n.size()) {
+  while((n[i] == '#' || n[i] == '@') && i < n.size()) {
     ++i;
   }
   if(i == n.size()) return n.toCaseFolded();
@@ -33,7 +33,8 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
 
   connect(ui->action_log_out, &QAction::triggered, session_.get(), &matrix::Session::log_out);
   connect(session_.get(), &matrix::Session::logged_out, [this]() {
-      settings_.remove("login/access_token");
+      settings_.remove("session/access_token");
+      settings_.remove("session/user_id");
       ui->action_quit->trigger();
     });
 

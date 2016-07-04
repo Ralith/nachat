@@ -4,7 +4,7 @@
 #include <QAbstractTextDocumentLayout>
 
 #include "matrix/Room.hpp"
-#include "matrix/User.hpp"
+#include "matrix/Member.hpp"
 
 RoomView::RoomView(matrix::Room &room, QWidget *parent)
     : QWidget(parent), ui(new Ui::RoomView), room_(room) {
@@ -20,32 +20,30 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
             ui->entry->setMaximumHeight(size.height() + margins.top() + margins.bottom());
           });
 
-  connect(&room, &matrix::Room::users_changed, [this]() {
-      update_users();
-    });
-  update_users();
+  connect(&room, &matrix::Room::members_changed, this, &RoomView::update_members);
+  update_members();
 }
 
 RoomView::~RoomView() { delete ui; }
 
-void RoomView::update_users() {
-  auto users = room_.users();
-  std::sort(users.begin(), users.end(),
-            [](const matrix::User *a, const matrix::User *b) {
+void RoomView::update_members() {
+  auto members = room_.members();
+  std::sort(members.begin(), members.end(),
+            [this](const matrix::Member *a, const matrix::Member *b) {
               // TODO: Sort by power level first?
-              return a->pretty_name() < b->pretty_name();
+              return room_.member_name(*a).toCaseFolded() < room_.member_name(*b).toCaseFolded();
             });
-  ui->userlist->clear();
-  for(auto user : users) {
+  ui->memberlist->clear();
+  for(auto member : members) {
     auto item = new QListWidgetItem;
-    item->setText(user->pretty_name());
-    item->setToolTip(user->id());
-    item->setData(Qt::UserRole, QVariant::fromValue(const_cast<void*>(reinterpret_cast<const void*>(user))));
-    ui->userlist->addItem(item);
+    item->setText(room_.member_name(*member));
+    item->setToolTip(member->id());
+    item->setData(Qt::UserRole, QVariant::fromValue(const_cast<void*>(reinterpret_cast<const void*>(member))));
+    ui->memberlist->addItem(item);
   }
-  auto scrollbar_width = ui->userlist->style()->pixelMetric(QStyle::PM_ScrollBarExtent, nullptr, ui->userlist);
-  auto margins = ui->userlist->contentsMargins();
-  ui->userlist->setMaximumWidth(ui->userlist->sizeHintForColumn(0) + scrollbar_width + margins.left() + margins.right());
+  auto scrollbar_width = ui->memberlist->style()->pixelMetric(QStyle::PM_ScrollBarExtent, nullptr, ui->memberlist);
+  auto margins = ui->memberlist->contentsMargins();
+  ui->memberlist->setMaximumWidth(ui->memberlist->sizeHintForColumn(0) + scrollbar_width + margins.left() + margins.right());
 }
 
 void RoomView::fit_text() {

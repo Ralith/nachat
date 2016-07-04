@@ -1,3 +1,5 @@
+find_package(Qt5Widgets)
+
 qt5_wrap_ui(UI_HEADERS
   logindialog.ui
   mainwindow.ui

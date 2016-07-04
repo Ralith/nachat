@@ -12,14 +12,15 @@ Application::Application(int argc, char **argv)
 }
 
 void Application::start() {
-  auto access_token = settings_.value("login/access_token");
   auto homeserver = settings_.value("login/homeserver");
-  if(access_token.isNull() || homeserver.isNull()) {
+  auto access_token = settings_.value("session/access_token");
+  auto user_id = settings_.value("session/user_id");
+  if(access_token.isNull() || homeserver.isNull() || user_id.isNull()) {
     login_.show();
   } else {
     main_window_ = std::make_unique<MainWindow>(
       settings_,
-      std::make_unique<matrix::Session>(m_, homeserver.toString(), access_token.toString()));
+      std::make_unique<matrix::Session>(m_, homeserver.toString(), user_id.toString(), access_token.toString()));
     main_window_->show();
   }
 }

@@ -31,6 +31,7 @@ private:
   std::unordered_map<matrix::Room *, RoomView *> tabs_;
 
   void update_label(matrix::Room &, RoomView &);
+  void tab_selected(int);
 };
 
 #endif // CHATWINDOW_H

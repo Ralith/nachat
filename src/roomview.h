@@ -20,12 +20,14 @@ public:
   explicit RoomView(matrix::Room &room, QWidget *parent = 0);
   ~RoomView();
 
+  const matrix::Room &room() { return room_; }
+
 private:
   Ui::RoomView *ui;
   matrix::Room &room_;
 
   void fit_text();
-  void update_users();
+  void update_members();
 };
 
 #endif // ROOMVIEW_H

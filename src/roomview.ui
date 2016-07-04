@@ -43,7 +43,7 @@ p, li { white-space: pre-wrap; }
        <set>Qt::TextBrowserInteraction</set>
       </property>
      </widget>
-     <widget class="QListWidget" name="userlist">
+     <widget class="QListWidget" name="memberlist">
       <property name="sizePolicy">
        <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
         <horstretch>0</horstretch>

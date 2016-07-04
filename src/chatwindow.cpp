@@ -10,7 +10,7 @@
 ChatWindow::ChatWindow(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::ChatWindow) {
   ui->setupUi(this);
-  ui->tab_widget->tabBar()->setExpanding(true);
+  connect(ui->tab_widget, &QTabWidget::currentChanged, this, &ChatWindow::tab_selected);
 }
 
 ChatWindow::~ChatWindow() { delete ui; }
@@ -49,4 +49,9 @@ void ChatWindow::update_label(matrix::Room &room, RoomView &view) {
     label = room.pretty_name();
   }
   ui->tab_widget->setTabText(ui->tab_widget->indexOf(&view), std::move(label));
+}
+
+void ChatWindow::tab_selected(int i) {
+  auto &view = *static_cast<RoomView*>(ui->tab_widget->widget(i));
+  setWindowTitle(view.room().pretty_name());
 }

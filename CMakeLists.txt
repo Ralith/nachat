@@ -12,9 +12,6 @@ set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -fsanitize=undefined")
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt5Widgets)
-find_package(Qt5Network)
-
 set(GSL_PATH "${PROJECT_SOURCE_DIR}/deps/GSL")
 
 include_directories("${GSL_PATH}/include")

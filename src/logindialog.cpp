@@ -30,7 +30,8 @@ LoginDialog::LoginDialog(matrix::Matrix &m, QWidget *parent)
       session_ = std::unique_ptr<matrix::Session>(session);
       settings_.setValue("login/username", ui->username->text());
       settings_.setValue("login/homeserver", ui->homeserver->text());
-      settings_.setValue("login/access_token", session->access_token());
+      settings_.setValue("session/access_token", session->access_token());
+      settings_.setValue("session/user_id", session->user_id());
       QDialog::accept();
     });
 }

@@ -10,7 +10,6 @@
 
 #include "span.h"
 
-#include "User.hpp"
 #include "Room.hpp"
 
 namespace matrix {
@@ -25,12 +24,13 @@ class Session : public QObject {
   Q_OBJECT
 
 public:
-  Session(Matrix& universe, QUrl homeserver, QString access_token);
+  Session(Matrix& universe, QUrl homeserver, QString user_id, QString access_token);
 
   Session(const Session &) = delete;
   Session &operator=(const Session &) = delete;
 
-  QString const& access_token() const { return access_token_; }
+  const QString &access_token() const { return access_token_; }
+  const QString &user_id() const { return user_id_; }
 
   void log_out();
 
@@ -47,6 +47,7 @@ signals:
 private:
   Matrix &universe_;
   const QUrl homeserver_;
+  const QString user_id_;
   QString access_token_;
   std::unordered_map<std::string, Room> rooms_;
   bool synced_;
@@ -75,14 +76,9 @@ public:
 
   void login(QUrl homeserver, QString username, QString password);
 
-  User &get_user(const QString &id);
-
 signals:
   void logged_in(Session* session);
   void login_error(QString message);
-
-private:
-  std::unordered_map<std::string, User> users_;
 };
 
 }
