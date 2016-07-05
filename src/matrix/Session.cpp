@@ -9,12 +9,13 @@
 namespace matrix {
 
 Session::Session(Matrix& universe, QUrl homeserver, QString user_id, QString access_token)
-    : universe_(universe), homeserver_(homeserver), user_id_(user_id), access_token_(access_token), synced_(false) {
+    : universe_(universe), homeserver_(homeserver), user_id_(user_id), buffer_size_(50),
+      access_token_(access_token), synced_(false) {
   QUrlQuery query;
   query.addQueryItem("filter", encode({
         {"room", QJsonObject{
             {"timeline", QJsonObject{
-                {"limit", 0}
+                {"limit", static_cast<int>(buffer_size_)}
               }},
           }}
       }));
@@ -81,7 +82,7 @@ void Session::dispatch(proto::Sync sync) {
     auto &room = it->second;
     qDebug() << "loading state...";
     room.load_state(joined_room.state.events);
-    qDebug() << room.state().pretty_name() << "loaded, dispatching events...";
+    qDebug() << room.state().pretty_name(user_id_) << "loaded, dispatching events...";
     if(new_room) joined(room);
     room.dispatch(joined_room);
     qDebug() << "done";

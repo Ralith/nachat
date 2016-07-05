@@ -17,7 +17,9 @@ class RoomState;
 class Member;
 enum class Membership;
 
-struct Message;
+namespace proto {
+struct Event;
+}
 }
 
 class RoomView : public QWidget
@@ -44,10 +46,11 @@ private:
 
   std::map<QString, const matrix::Member *, Compare> member_list_;
 
+  void message(const matrix::proto::Event &);
   void membership_changed(const matrix::Member &, matrix::Membership);
   void member_name_changed(const matrix::Member &, QString);
   void update_members();
-  void append_message(const matrix::RoomState &, const matrix::Message &);
+  void append_message(const matrix::RoomState &, const matrix::proto::Event &);
 };
 
 #endif // ROOMVIEW_H

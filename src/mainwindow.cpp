@@ -13,8 +13,7 @@
 
 namespace {
 
-QString room_sort_key(const matrix::Room &r) {
-  const auto &n = r.state().pretty_name();
+QString room_sort_key(const QString &n) {
   int i = 0;
   while((n[i] == '#' || n[i] == '@') && (i < n.size())) {
     ++i;
@@ -68,10 +67,6 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
       sync_label_->hide();
     });
   connect(session_.get(), &matrix::Session::joined, [this](matrix::Room &room) {
-      room_views_.emplace(
-        std::piecewise_construct,
-        std::forward_as_tuple(&room),
-        std::forward_as_tuple(room, this));
       update_rooms();
     });
 
@@ -88,7 +83,7 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
           std::forward_as_tuple()).first;
       }
       auto &window = it->second;
-      window.add_or_focus_view(room_views_.at(&room));
+      window.add_or_focus(room);
       window.show();
       window.activateWindow();
     });
@@ -107,14 +102,15 @@ void MainWindow::update_rooms() {
 
   auto rooms = session_->rooms();
   std::sort(rooms.begin(), rooms.end(),
-            [](const matrix::Room *a, const matrix::Room *b) {
-              return room_sort_key(*a) < room_sort_key(*b);
+            [&](const matrix::Room *a, const matrix::Room *b) {
+              return room_sort_key(a->state().pretty_name(session_->user_id()))
+                  < room_sort_key(b->state().pretty_name(session_->user_id()));
             });
   ui->room_list->clear();
   for(auto room : rooms) {
     connect(room, &matrix::Room::state_changed, this, &MainWindow::update_rooms);
     auto item = new QListWidgetItem;
-    item->setText(room->state().pretty_name());
+    item->setText(room->state().pretty_name(session_->user_id()));
     item->setData(Qt::UserRole, QVariant::fromValue(reinterpret_cast<void*>(room)));
     ui->room_list->addItem(item);
   }

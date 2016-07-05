@@ -38,6 +38,9 @@ public:
   bool synced() const { return synced_; }
   std::vector<Room *> rooms();
 
+  size_t buffer_size() const { return buffer_size_; }
+  void set_buffer_size(size_t size) { buffer_size_ = size; }
+
 signals:
   void logged_out();
   void error(QString message);
@@ -50,6 +53,7 @@ private:
   Matrix &universe_;
   const QUrl homeserver_;
   const QString user_id_;
+  size_t buffer_size_;
   QString access_token_;
   std::unordered_map<QString, Room, QStringHash> rooms_;
   bool synced_;

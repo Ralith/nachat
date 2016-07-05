@@ -3,7 +3,6 @@
 
 #include <experimental/optional>
 
-#include <QObject>
 #include <QString>
 #include <QUrl>
 
@@ -21,14 +20,9 @@ enum class Membership {
 
 std::experimental::optional<Membership> parse_membership(const QString &m);
 
-class Member : public QObject {
-  Q_OBJECT
-
+class Member {
 public:
   Member(QString id) : id_(id) {}
-
-  Member(const Member &) = delete;
-  Member &operator=(const Member &) = delete;
 
   const QString &id() const { return id_; }
   const QString &display_name() const { return display_name_; }

@@ -7,24 +7,11 @@
 #include <QString>
 #include <QJsonObject>
 
+#include "Event.hpp"
+
 namespace matrix {
 
 namespace proto {
-
-struct Unsigned {
-  std::experimental::optional<QJsonObject> prev_content;
-  uint64_t age;
-  std::experimental::optional<QString> transaction_id;
-};
-
-struct Event {
-  QJsonObject content;
-  uint64_t origin_server_ts;
-  QString sender;
-  QString type;
-  Unsigned unsigned_;
-  QString state_key;
-};
 
 struct Presence {
   std::vector<Event> events;

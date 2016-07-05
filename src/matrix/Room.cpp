@@ -11,13 +11,14 @@
 
 namespace matrix {
 
-QString RoomState::pretty_name() const {
+QString RoomState::pretty_name(const QString &own_id) const {
   // Must be kept in sync with pretty_name_changed!
   if(!name_.isEmpty()) return name_;
   if(!canonical_alias_.isEmpty()) return canonical_alias_;
   if(!aliases_.empty()) return aliases_[0];  // Non-standard, but matches vector-web
+  // FIXME: Maintain earliest two IDs as state!
   auto ms = members();
-  ms.erase(std::remove_if(ms.begin(), ms.end(), [this](const Member *m){ return m->id() == room_.session().user_id(); }), ms.end());
+  ms.erase(std::remove_if(ms.begin(), ms.end(), [&](const Member *m){ return m->id() == own_id; }), ms.end());
   if(ms.size() > 1) {
     std::partial_sort(ms.begin(), ms.begin() + 2, ms.end(),
                       [](const Member *a, const Member *b) {
@@ -50,12 +51,12 @@ std::vector<const Member *> RoomState::members() const {
   return result;
 }
 
-void RoomState::forget_displayname(const Member &member, QString old_name, bool timeline) {
+void RoomState::forget_displayname(const Member &member, QString old_name, Room *room) {
   if(!old_name.isEmpty()) {
     auto &vec = members_by_displayname_.at(old_name);
     QString other_name;
     const Member *other_member = nullptr;
-    if(timeline && vec.size() == 2) {
+    if(room && vec.size() == 2) {
       other_member = vec[0] == &member ? vec[1] : vec[0];
       other_name = member_name(*other_member);
     }
@@ -64,7 +65,7 @@ void RoomState::forget_displayname(const Member &member, QString old_name, bool 
       members_by_displayname_.erase(old_name);
     }
     if(other_member) {
-      room_.member_name_changed(*other_member, other_name);
+      room->member_name_changed(*other_member, other_name);
     }
   }
 }
@@ -76,12 +77,18 @@ const Member *RoomState::member(const QString &id) const {
 }
 
 Room::Room(Matrix &universe, Session &session, QString id)
-    : universe_(universe), session_(session), id_(id), state_(*this)
+    : universe_(universe), session_(session), id_(id)
 {}
+
+QString Room::pretty_name() const {
+  return state_.pretty_name(session_.user_id());
+}
 
 void Room::load_state(gsl::span<const proto::Event> events) {
   for(auto &state : events) {
-    state_.dispatch(state, false);
+    qDebug() << "processing event type:" << state.type;
+    initial_state_.apply(state);
+    state_.apply(state);
   }
 }
 
@@ -100,23 +107,19 @@ void Room::dispatch(const proto::JoinedRoom &joined) {
 
   for(auto &evt : joined.timeline.events) {
     qDebug() << "processing event type:" << evt.type;
-    // TODO: Multiple message types, state change messages
-    if(evt.type == "m.room.message") {
-      if(auto member = state_.member(evt.sender)) {
-        Message m{*member, evt.content["body"].toString()};
-        message(m);
-      } else {
-        qDebug() << "dropping message from non-member" << evt.sender;
-      }
-    } else {
-      state_touched |= state_.dispatch(evt, true);
+    state_touched |= state_.dispatch(evt, this);
+    message(evt);
+    if(buffer_.size() > session_.buffer_size() && session_.buffer_size() != 0) {
+      initial_state_.apply(buffer_.front());
+      buffer_.pop_front();
     }
+    buffer_.push_back(evt);
   }
 
   if(state_touched) state_changed();
 }
 
-bool RoomState::dispatch(const proto::Event &state, bool timeline) {
+bool RoomState::dispatch(const proto::Event &state, Room *room) {
   if(state.type == "m.room.aliases") {
     std::unordered_set<QString, QStringHash> all_aliases;
     auto data = state.content["aliases"].toArray();
@@ -173,7 +176,7 @@ bool RoomState::dispatch(const proto::Event &state, bool timeline) {
       auto old_member_name = member_name(member);
       member.dispatch(state);
       if(member.display_name() != old_displayname) {
-        forget_displayname(member, old_displayname, timeline);
+        forget_displayname(member, old_displayname, room);
         if(!member.display_name().isEmpty()) {
           auto &vec = members_by_displayname_[member.display_name()];
           Member *other_member = nullptr;
@@ -184,12 +187,12 @@ bool RoomState::dispatch(const proto::Event &state, bool timeline) {
             other_old_name = member_name(*vec[0]);
           }
           vec.push_back(&member);
-          if(other_member && timeline) room_.member_name_changed(*other_member, other_old_name);
+          if(other_member && room) room->member_name_changed(*other_member, other_old_name);
         }
-        if(timeline && !new_member) room_.member_name_changed(member, old_member_name);
+        if(room && !new_member) room->member_name_changed(member, old_member_name);
       }
-      if(timeline && member.membership() != old_membership) {
-        room_.membership_changed(it->second, *membership);
+      if(room && member.membership() != old_membership) {
+        room->membership_changed(it->second, *membership);
       }
       break;
     }
@@ -198,8 +201,8 @@ bool RoomState::dispatch(const proto::Event &state, bool timeline) {
       auto it = members_by_id_.find(user_id);
       if(it != members_by_id_.end()) {
         it->second.dispatch(state);
-        if(timeline) room_.membership_changed(it->second, *membership);
-        forget_displayname(it->second, it->second.display_name(), timeline);
+        if(room) room->membership_changed(it->second, *membership);
+        forget_displayname(it->second, it->second.display_name(), room);
         members_by_id_.erase(user_id);
       }
       break;
@@ -207,6 +210,7 @@ bool RoomState::dispatch(const proto::Event &state, bool timeline) {
     }
     return true;
   }
+  if(state.type == "m.room.message") return false;
 
   qDebug() << "Unrecognized message type:" << state.type;
   return false;

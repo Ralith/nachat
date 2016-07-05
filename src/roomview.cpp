@@ -32,9 +32,7 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
             ui->entry->setMaximumHeight(size.height() + margins.top() + margins.bottom());
           });
 
-  connect(&room_, &matrix::Room::message, [this](const matrix::Message &msg){
-      append_message(room_.state(), msg);
-    });
+  connect(&room_, &matrix::Room::message, this, &RoomView::message);
 
   connect(&room_, &matrix::Room::membership_changed, this, &RoomView::membership_changed);
   connect(&room_, &matrix::Room::member_name_changed, this, &RoomView::member_name_changed);
@@ -44,10 +42,22 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
     member_list_.insert(std::make_pair(room_.state().member_name(*member), member));
   }
 
+  auto replay_state = room_.initial_state();
+  for(const auto &event : room_.buffer()) {
+    replay_state.apply(event);
+    append_message(replay_state, event);
+  }
+
   update_members();
 }
 
 RoomView::~RoomView() { delete ui; }
+
+void RoomView::message(const matrix::proto::Event &evt) {
+  if(evt.type == "m.room.message") {
+    append_message(room_.state(), evt);
+  }
+}
 
 void RoomView::member_name_changed(const matrix::Member &member, QString old) {
   auto erased = member_list_.erase(old);
@@ -90,6 +100,10 @@ void RoomView::update_members() {
   ui->memberlist->setMaximumWidth(ui->memberlist->sizeHintForColumn(0) + scrollbar_width + margins.left() + margins.right());
 }
 
-void RoomView::append_message(const matrix::RoomState &state, const matrix::Message &msg) {
-  ui->message_view->append("<" + state.member_name(msg.sender) + "> " + msg.body + "\n");
+void RoomView::append_message(const matrix::RoomState &state, const matrix::proto::Event &msg) {
+  if(auto sender = state.member(msg.sender)) {
+    ui->message_view->append("<" + state.member_name(*sender) + "> " + msg.content["body"].toString() + "\n");
+  } else {
+    qDebug() << "Received event in " << room_.pretty_name() << " from non-member" << msg.sender;
+  }
 }
