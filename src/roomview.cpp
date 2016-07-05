@@ -102,8 +102,15 @@ void RoomView::update_members() {
 
 void RoomView::append_message(const matrix::RoomState &state, const matrix::proto::Event &msg) {
   if(auto sender = state.member(msg.sender)) {
-    ui->message_view->append("<" + state.member_name(*sender) + "> " + msg.content["body"].toString() + "\n");
+    if(msg.type == "m.room.message") {
+      auto mty = msg.content["msgtype"].toString();
+      if(mty == "m.emote") {
+        ui->message_view->append("* " + state.member_name(*sender) + " " + msg.content["body"].toString() + "\n");
+      } else {
+        ui->message_view->append("<" + state.member_name(*sender) + "> " + msg.content["body"].toString() + "\n");
+      }
+    }
   } else {
-    qDebug() << "Received event in " << room_.pretty_name() << " from non-member" << msg.sender;
+    qDebug() << "Received event in" << room_.pretty_name() << "from non-member" << msg.sender;
   }
 }
