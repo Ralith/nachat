@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <memory>
 
+#include <QtNetwork>
 #include <QApplication>
 
 #include "matrix/matrix.hpp"

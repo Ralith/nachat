@@ -1,19 +1,30 @@
 #include "Member.hpp"
 
+#include <QDebug>
+
 #include "proto.hpp"
 
 namespace matrix {
 
-void Member::dispatch(const proto::Event &state) {
-  auto membership = state.content["membership"].toString();
-  bool old_invite_pending = invite_pending_;
-  if(membership == "invite") {
-    invite_pending_ = true;
-  } else if(membership == "join") {
-    invite_pending_ = false;
+std::experimental::optional<Membership> parse_membership(const QString &m) {
+  std::pair<QString, Membership> table[] = {
+    {"invite", Membership::INVITE},
+    {"join", Membership::JOIN},
+    {"leave", Membership::LEAVE},
+    {"ban", Membership::BAN}
+  };
+  for(const auto &x : table) {
+    if(x.first == m) return x.second;
   }
-  if(invite_pending_ != old_invite_pending) {
-    invite_pending_changed();
+  return {};
+}
+
+void Member::dispatch(const proto::Event &state) {
+  auto membership = parse_membership(state.content["membership"].toString());
+  if(!membership) {
+    qDebug() << "Unrecognized membership type" << state.content["membership"].toString();
+  } else {
+    membership_ = *membership;
   }
 
   auto i = state.content.find("displayname");

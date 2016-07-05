@@ -3,6 +3,8 @@
 
 #include <QMessageBox>
 
+#include "matrix/Session.hpp"
+
 LoginDialog::LoginDialog(matrix::Matrix &m, QWidget *parent)
     : QDialog(parent), ui(new Ui::LoginDialog), m_(m) {
   ui->setupUi(this);

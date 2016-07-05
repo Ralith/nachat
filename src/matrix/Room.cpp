@@ -2,13 +2,12 @@
 
 #include <unordered_set>
 
-#include "proto.hpp"
-
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QDebug>
 
-#include "matrix.hpp"
+#include "proto.hpp"
+#include "Session.hpp"
 
 namespace matrix {
 
@@ -18,7 +17,7 @@ QString RoomState::pretty_name() const {
   if(!canonical_alias_.isEmpty()) return canonical_alias_;
   if(!aliases_.empty()) return aliases_[0];  // Non-standard, but matches vector-web
   auto ms = members();
-  ms.erase(std::remove_if(ms.begin(), ms.end(), [this](const Member *m){ return m->id() == user_id_; }), ms.end());
+  ms.erase(std::remove_if(ms.begin(), ms.end(), [this](const Member *m){ return m->id() == room_.session().user_id(); }), ms.end());
   if(ms.size() > 1) {
     std::partial_sort(ms.begin(), ms.begin() + 2, ms.end(),
                       [](const Member *a, const Member *b) {
@@ -68,19 +67,18 @@ const Member *RoomState::member(const QString &id) const {
   return &it->second;
 }
 
+Room::Room(Matrix &universe, Session &session, QString id)
+    : universe_(universe), session_(session), id_(id), state_(*this)
+{}
+
+void Room::load_state(gsl::span<const proto::Event> events) {
+  for(auto &state : events) {
+    state_.dispatch(state, false);
+  }
+}
+
 void Room::dispatch(const proto::JoinedRoom &joined) {
   bool state_touched = false;
-  if(uninitialized_) {
-    for(auto &state : joined.state.events) {
-      initial_state_.apply(state);
-      state_touched |= current_state_.apply(state);
-    }
-    uninitialized_ = false;
-  } else {
-    for(auto &state : joined.state.events) {
-      state_touched |= current_state_.apply(state);
-    }
-  }
 
   if(joined.unread_notifications.highlight_count != highlight_count_) {
     highlight_count_ = joined.unread_notifications.highlight_count;
@@ -93,23 +91,24 @@ void Room::dispatch(const proto::JoinedRoom &joined) {
   }
 
   for(auto &evt : joined.timeline.events) {
+    qDebug() << "processing event type:" << evt.type;
     // TODO: Multiple message types, state change messages
     if(evt.type == "m.room.message") {
-      if(auto member = current_state_.member(evt.sender)) {
-        messages_.push_back(Message{*member, evt.content["body"].toString()});
-        message(messages_.back());
+      if(auto member = state_.member(evt.sender)) {
+        Message m{*member, evt.content["body"].toString()};
+        message(m);
       } else {
         qDebug() << "dropping message from non-member" << evt.sender;
       }
     } else {
-      state_touched |= current_state_.apply(evt);
+      state_touched |= state_.dispatch(evt, true);
     }
   }
 
   if(state_touched) state_changed();
 }
 
-bool RoomState::apply(const proto::Event &state) {
+bool RoomState::dispatch(const proto::Event &state, bool timeline) {
   if(state.type == "m.room.aliases") {
     std::unordered_set<QString, QStringHash> all_aliases;
     auto data = state.content["aliases"].toArray();
@@ -143,8 +142,14 @@ bool RoomState::apply(const proto::Event &state) {
   }
   if(state.type == "m.room.member") {
     const auto &user_id = state.state_key;
-    auto membership = state.content["membership"].toString();
-    if(membership == "join" || membership == "invite") {
+    auto membership = parse_membership(state.content["membership"].toString());
+    if(!membership) {
+      qDebug() << "Unrecognized membership type" << state.content["membership"].toString();
+      return false;
+    }
+    switch(*membership) {
+    case Membership::INVITE:
+    case Membership::JOIN: {
       auto it = members_by_id_.find(user_id);
       if(it == members_by_id_.end()) {
         it = members_by_id_.emplace(
@@ -159,12 +164,19 @@ bool RoomState::apply(const proto::Event &state) {
         auto &vec = members_by_displayname_[member.display_name()];
         vec.push_back(&member);
       }
-    } else if(membership == "leave" || membership == "ban") {
+      if(timeline) room_.membership_changed(it->second, *membership);
+      break;
+    }
+    case Membership::LEAVE:
+    case Membership::BAN: {
       auto it = members_by_id_.find(user_id);
       if(it != members_by_id_.end()) {
+        if(timeline) room_.membership_changed(it->second, *membership);
         forget_displayname(it->second);
         members_by_id_.erase(user_id);
       }
+      break;
+    }
     }
     return true;
   }

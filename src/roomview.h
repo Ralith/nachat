@@ -10,7 +10,8 @@ class RoomView;
 namespace matrix {
 class Room;
 class RoomState;
-class User;
+class Member;
+enum class Membership;
 
 struct Message;
 }

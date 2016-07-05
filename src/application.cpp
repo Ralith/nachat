@@ -2,6 +2,8 @@
 
 #include <QMenu>
 
+#include "matrix/Session.hpp"
+
 #include "roomview.h"
 
 Application::Application(int argc, char **argv)

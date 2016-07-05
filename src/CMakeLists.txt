@@ -1,3 +1,4 @@
+find_package(Qt5Network)
 find_package(Qt5Widgets)
 
 qt5_wrap_ui(UI_HEADERS
@@ -20,4 +21,4 @@ add_executable(native-chat WIN32
   LabeledProgressBar.cpp
   ${UI_HEADERS})
 
-target_link_libraries(native-chat matrix Qt5::Widgets)
+target_link_libraries(native-chat matrix Qt5::Widgets Qt5::Network)

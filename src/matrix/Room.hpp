@@ -2,8 +2,6 @@
 #define NATIVE_CHAT_MATRIX_ROOM_H_
 
 #include <vector>
-#include <deque>
-#include <unordered_set>
 #include <unordered_map>
 
 #include <QString>
@@ -19,6 +17,7 @@
 namespace matrix {
 
 class Matrix;
+class Session;
 
 namespace proto {
 struct JoinedRoom;
@@ -37,15 +36,11 @@ struct SIDHash {
   size_t operator()(const StateID &sid) const { return qHash(sid.type) ^ qHash(sid.key); }
 };
 
-enum class Membership {
-  INVITE, JOIN, LEAVE, BAN
-};
-
 class RoomState {
 public:
-  RoomState(const QString &user_id) : user_id_(user_id) {}
+  RoomState(Room &room) : room_(room) {}
 
-  bool apply(const proto::Event &e);
+  bool dispatch(const proto::Event &e, bool timeline);
   // Returns true if changes were made
 
   const QString &name() const { return name_; }
@@ -64,7 +59,7 @@ public:
   // Matrix r0.1.0 11.2.2.3
 
 private:
-  const QString &user_id_;
+  Room &room_;
   QString name_;
   QString canonical_alias_;
   std::vector<QString> aliases_;
@@ -80,43 +75,35 @@ class Room : public QObject {
   Q_OBJECT
 
 public:
-  using MessageList = std::deque<Message>;
-
-  Room(Matrix &universe, QString user_id, QString id)
-      : universe_(universe), id_(id), initial_state_(user_id), current_state_(user_id)
-  {}
+  Room(Matrix &universe, Session &session, QString id);
 
   Room(const Room &) = delete;
   Room &operator=(const Room &) = delete;
 
+  const Session &session() const { return session_; }
   const QString &id() const { return id_; }
-  const MessageList &messages() const { return messages_; }
   uint64_t highlight_count() const { return highlight_count_; }
   uint64_t notification_count() const { return notification_count_; }
 
-  const RoomState &initial_state() const { return initial_state_; }
-  const RoomState &current_state() const { return current_state_; }
+  const RoomState &state() const { return state_; }
 
+  void load_state(gsl::span<const proto::Event>);
   void dispatch(const proto::JoinedRoom &);
 
 signals:
+  void membership_changed(const Member &, Membership);
   void state_changed();
   void message(const Message &);
-  void backlog_grew(MessageList::iterator end);
+  void backlog(const RoomState &, gsl::span<const Message>);
   void highlight_count_changed();
   void notification_count_changed();
 
 private:
   Matrix &universe_;
+  Session &session_;
   const QString id_;
 
-  bool uninitialized_ = true;
-
-  RoomState initial_state_;
-  MessageList messages_;
-  uint64_t message_count_;
-  RoomState current_state_;
-  // current_state_ = foldr apply initial_state_ messages_
+  RoomState state_;
 
   uint64_t highlight_count_ = 0, notification_count_ = 0;
 };

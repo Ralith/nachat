@@ -9,11 +9,12 @@
 #include <QSystemTrayIcon>
 
 #include "matrix/Room.hpp"
+#include "matrix/Session.hpp"
 
 namespace {
 
 QString room_sort_key(const matrix::Room &r) {
-  const auto &n = r.current_state().pretty_name();
+  const auto &n = r.state().pretty_name();
   int i = 0;
   while((n[i] == '#' || n[i] == '@') && (i < n.size())) {
     ++i;
@@ -62,7 +63,17 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
     });
 
   connect(session_.get(), &matrix::Session::sync_progress, this, &MainWindow::sync_progress);
-  connect(session_.get(), &matrix::Session::rooms_changed, this, &MainWindow::update_rooms);
+  connect(session_.get(), &matrix::Session::sync_complete, [this]() {
+      progress_->hide();
+      sync_label_->hide();
+    });
+  connect(session_.get(), &matrix::Session::joined, [this](matrix::Room &room) {
+      room_views_.emplace(
+        std::piecewise_construct,
+        std::forward_as_tuple(&room),
+        std::forward_as_tuple(room, this));
+      update_rooms();
+    });
 
   ui->action_quit->setShortcuts(QKeySequence::Quit);
   connect(ui->action_quit, &QAction::triggered, this, &MainWindow::quit);
@@ -77,7 +88,7 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
           std::forward_as_tuple()).first;
       }
       auto &window = it->second;
-      window.add_or_focus_room(room);
+      window.add_or_focus_view(room_views_.at(&room));
       window.show();
       window.activateWindow();
     });
@@ -103,22 +114,17 @@ void MainWindow::update_rooms() {
   for(auto room : rooms) {
     connect(room, &matrix::Room::state_changed, this, &MainWindow::update_rooms);
     auto item = new QListWidgetItem;
-    item->setText(room->current_state().pretty_name());
+    item->setText(room->state().pretty_name());
     item->setData(Qt::UserRole, QVariant::fromValue(reinterpret_cast<void*>(room)));
     ui->room_list->addItem(item);
   }
 }
 
 void MainWindow::sync_progress(qint64 received, qint64 total) {
-  if(received == total) {
-    progress_->hide();
-    sync_label_->hide();
-    return;
-  }
   sync_label_->setText(tr("Synchronizing..."));
   sync_label_->show();
   progress_->show();
-  if(total == -1) {
+  if(total == -1 || total == 0) {
     progress_->setMaximum(0);
   } else {
     progress_->setMaximum(1000);

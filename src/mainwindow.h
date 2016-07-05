@@ -9,6 +9,7 @@
 #include "matrix/matrix.hpp"
 
 #include "chatwindow.h"
+#include "roomview.h"
 
 class QProgressBar;
 class QSettings;
@@ -40,6 +41,7 @@ private:
   QLabel *sync_label_;
 
   std::unordered_map<matrix::Room *, ChatWindow> chat_windows_;
+  std::unordered_map<matrix::Room *, RoomView> room_views_;
 
   void update_rooms();
   void sync_progress(qint64 received, qint64 total);

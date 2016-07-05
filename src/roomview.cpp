@@ -2,6 +2,7 @@
 #include "ui_roomview.h"
 
 #include <QAbstractTextDocumentLayout>
+#include <QDebug>
 
 #include "matrix/Room.hpp"
 #include "matrix/Member.hpp"
@@ -9,7 +10,7 @@
 namespace {
 
 QString member_sort_key(const matrix::Room &r, const matrix::Member &m) {
-  const auto &n = r.current_state().member_name(m);
+  const auto &n = r.state().member_name(m);
   int i = 0;
   while((n[i] == '@') && (i < n.size())) {
     ++i;
@@ -35,22 +36,19 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
           });
 
   connect(&room, &matrix::Room::message, [this](const matrix::Message &msg){
-      append_message(room_.current_state(), msg);
+      append_message(room_.state(), msg);
     });
 
-  // TODO: Account for state
-  for(auto &msg : room_.messages()) {
-    append_message(room_.current_state(), msg);
-  }
+  connect(&room, &matrix::Room::membership_changed, this, &RoomView::update_members);
 
-  connect(&room, &matrix::Room::state_changed, this, &RoomView::update_members);
   update_members();
 }
 
 RoomView::~RoomView() { delete ui; }
 
 void RoomView::update_members() {
-  auto members = room_.current_state().members();
+  qDebug() << "beginning member update";
+  auto members = room_.state().members();
   std::sort(members.begin(), members.end(),
             [this](const matrix::Member *a, const matrix::Member *b) {
               return member_sort_key(room_, *a) < member_sort_key(room_, *b);
@@ -58,7 +56,7 @@ void RoomView::update_members() {
   ui->memberlist->clear();
   for(auto member : members) {
     auto item = new QListWidgetItem;
-    item->setText(room_.current_state().member_name(*member));
+    item->setText(room_.state().member_name(*member));
     item->setToolTip(member->id());
     item->setData(Qt::UserRole, QVariant::fromValue(const_cast<void*>(reinterpret_cast<const void*>(member))));
     ui->memberlist->addItem(item);
@@ -66,6 +64,7 @@ void RoomView::update_members() {
   auto scrollbar_width = ui->memberlist->style()->pixelMetric(QStyle::PM_ScrollBarExtent, nullptr, ui->memberlist);
   auto margins = ui->memberlist->contentsMargins();
   ui->memberlist->setMaximumWidth(ui->memberlist->sizeHintForColumn(0) + scrollbar_width + margins.left() + margins.right());
+  qDebug() << members.size() << " members in " << room_.state().pretty_name();
 }
 
 void RoomView::append_message(const matrix::RoomState &state, const matrix::Message &msg) {

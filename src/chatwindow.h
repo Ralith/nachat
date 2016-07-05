@@ -1,7 +1,7 @@
 #ifndef CHATWINDOW_H
 #define CHATWINDOW_H
 
-#include <unordered_map>
+#include <unordered_set>
 
 #include <QMainWindow>
 
@@ -23,14 +23,14 @@ public:
   explicit ChatWindow(QWidget *parent = 0);
   ~ChatWindow();
 
-  void add_or_focus_room(matrix::Room &room);
+  void add_or_focus_view(RoomView &view);
 
 private:
   Ui::ChatWindow *ui;
 
-  std::unordered_map<matrix::Room *, RoomView *> tabs_;
+  std::unordered_set<RoomView *> tabs_;
 
-  void update_label(matrix::Room &, RoomView &);
+  void update_labels();
   void tab_selected(int);
 };
 
