@@ -33,14 +33,12 @@ void Member::dispatch(const proto::Event &state) {
   }
   i = state.content.find("avatar_url");
   if(i != state.content.end()) {
-    auto old_avatar = avatar_url_;
     auto str = i->toString();
     if(str == "") {
       avatar_url_ = QUrl();
     } else {
       avatar_url_ = QUrl(str);
     }
-    avatar_url_changed();
   }
 }
 

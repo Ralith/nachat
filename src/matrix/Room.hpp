@@ -68,7 +68,7 @@ private:
   std::unordered_map<QString, Member, QStringHash> members_by_id_;
   std::unordered_map<QString, std::vector<Member *>, QStringHash> members_by_displayname_;
 
-  void forget_displayname(const Member &member);
+  void forget_displayname(const Member &member, QString old_name, bool timeline);
 };
 
 class Room : public QObject {
@@ -91,7 +91,8 @@ public:
   void dispatch(const proto::JoinedRoom &);
 
 signals:
-  void membership_changed(const Member &, Membership);
+  void membership_changed(const Member &, Membership old);
+  void member_name_changed(const Member &, const QString &old);
   void state_changed();
   void message(const Message &);
   void backlog(const RoomState &, gsl::span<const Message>);

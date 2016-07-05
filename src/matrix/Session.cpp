@@ -43,9 +43,7 @@ void Session::handle_sync_reply(QNetworkReply *reply) {
     synced_ = true;
     auto s = parse_sync(r.object);
     next_batch_ = s.next_batch;
-    qDebug() << "Beginning sync dispatch";
     dispatch(std::move(s));
-    qDebug() << "Sync dispatch complete!";
   }
   if(was_synced != synced_) synced_changed();
 

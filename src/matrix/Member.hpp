@@ -37,15 +37,11 @@ public:
 
   void dispatch(const proto::Event &);
 
-signals:
-  void avatar_url_changed();
-  void member_name_changed();
-
 private:
   const QString id_;
   QString display_name_;  // Optional
   QUrl avatar_url_;       // Optional
-  Membership membership_;
+  Membership membership_ = Membership::LEAVE;
 };
 
 }

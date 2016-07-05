@@ -50,13 +50,21 @@ std::vector<const Member *> RoomState::members() const {
   return result;
 }
 
-void RoomState::forget_displayname(const Member &member) {
-  auto name = member.display_name();
-  if(!name.isEmpty()) {
-    auto &vec = members_by_displayname_.at(name);
+void RoomState::forget_displayname(const Member &member, QString old_name, bool timeline) {
+  if(!old_name.isEmpty()) {
+    auto &vec = members_by_displayname_.at(old_name);
+    QString other_name;
+    const Member *other_member = nullptr;
+    if(timeline && vec.size() == 2) {
+      other_member = vec[0] == &member ? vec[1] : vec[0];
+      other_name = member_name(*other_member);
+    }
     vec.erase(std::remove(vec.begin(), vec.end(), &member), vec.end());
     if(vec.empty()) {
-      members_by_displayname_.erase(name);
+      members_by_displayname_.erase(old_name);
+    }
+    if(other_member) {
+      room_.member_name_changed(*other_member, other_name);
     }
   }
 }
@@ -151,28 +159,47 @@ bool RoomState::dispatch(const proto::Event &state, bool timeline) {
     case Membership::INVITE:
     case Membership::JOIN: {
       auto it = members_by_id_.find(user_id);
+      bool new_member = false;
       if(it == members_by_id_.end()) {
         it = members_by_id_.emplace(
           std::piecewise_construct,
           std::forward_as_tuple(user_id),
           std::forward_as_tuple(user_id)).first;
+        new_member = true;
       }
       auto &member = it->second;
-      forget_displayname(member);
+      auto old_membership = member.membership();
+      auto old_displayname = member.display_name();
+      auto old_member_name = member_name(member);
       member.dispatch(state);
-      if(!member.display_name().isEmpty()) {
-        auto &vec = members_by_displayname_[member.display_name()];
-        vec.push_back(&member);
+      if(member.display_name() != old_displayname) {
+        forget_displayname(member, old_displayname, timeline);
+        if(!member.display_name().isEmpty()) {
+          auto &vec = members_by_displayname_[member.display_name()];
+          Member *other_member = nullptr;
+          QString other_old_name;
+          if(vec.size() == 1) {
+            // Third party existing name will become disambiguated
+            other_member = vec[0];
+            other_old_name = member_name(*vec[0]);
+          }
+          vec.push_back(&member);
+          if(other_member && timeline) room_.member_name_changed(*other_member, other_old_name);
+        }
+        if(timeline && !new_member) room_.member_name_changed(member, old_member_name);
       }
-      if(timeline) room_.membership_changed(it->second, *membership);
+      if(timeline && member.membership() != old_membership) {
+        room_.membership_changed(it->second, *membership);
+      }
       break;
     }
     case Membership::LEAVE:
     case Membership::BAN: {
       auto it = members_by_id_.find(user_id);
       if(it != members_by_id_.end()) {
+        it->second.dispatch(state);
         if(timeline) room_.membership_changed(it->second, *membership);
-        forget_displayname(it->second);
+        forget_displayname(it->second, it->second.display_name(), timeline);
         members_by_id_.erase(user_id);
       }
       break;
