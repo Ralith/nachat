@@ -80,12 +80,9 @@ void Session::dispatch(proto::Sync sync) {
       new_room = true;
     }
     auto &room = it->second;
-    qDebug() << "loading state...";
     room.load_state(joined_room.state.events);
-    qDebug() << room.state().pretty_name(user_id_) << "loaded, dispatching events...";
     if(new_room) joined(room);
     room.dispatch(joined_room);
-    qDebug() << "done";
   }
   sync_complete();
 }

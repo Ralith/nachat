@@ -49,7 +49,7 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
     });
 
   connect(session_.get(), &matrix::Session::error, [this](QString msg) {
-      qDebug() << msg;
+      qDebug() << "Session error: " << msg;
     });
 
   connect(session_.get(), &matrix::Session::synced_changed, [this]() {

@@ -26,7 +26,7 @@ QString RoomState::pretty_name(const QString &own_id) const {
                       });
   }
   switch(ms.size()) {
-  case 0: return QObject::tr("Empty Room");
+  case 0: return QObject::tr("Empty room");
   case 1: return member_name(*ms[0]);
   case 2: return QObject::tr("%1 and %2").arg(member_name(*ms[0])).arg(member_name(*ms[1]));
   default: return QObject::tr("%1 and %2 others").arg(member_name(*ms[0])).arg(ms.size() - 1);
@@ -37,10 +37,17 @@ QString RoomState::member_name(const Member &member) const {
   if(member.display_name().isEmpty()) {
     return member.id();
   }
-  if(members_by_displayname_.at(member.display_name()).size() == 1) {
+  if(members_named(member.display_name()).size() == 1) {
     return member.display_name();
   }
   return QObject::tr("%1 (%2)").arg(member.display_name()).arg(member.id());
+}
+
+std::vector<Member *> &RoomState::members_named(QString displayname) {
+  return members_by_displayname_.at(displayname.normalized(QString::NormalizationForm_C));
+}
+const std::vector<Member *> &RoomState::members_named(QString displayname) const {
+  return members_by_displayname_.at(displayname.normalized(QString::NormalizationForm_C));
 }
 
 std::vector<const Member *> RoomState::members() const {
@@ -51,9 +58,10 @@ std::vector<const Member *> RoomState::members() const {
   return result;
 }
 
-void RoomState::forget_displayname(const Member &member, QString old_name, Room *room) {
-  if(!old_name.isEmpty()) {
-    auto &vec = members_by_displayname_.at(old_name);
+void RoomState::forget_displayname(const Member &member, QString old_name_in, Room *room) {
+  if(!old_name_in.isEmpty()) {
+    QString old_name = old_name_in.normalized(QString::NormalizationForm_C);
+    auto &vec = members_named(old_name);
     QString other_name;
     const Member *other_member = nullptr;
     if(room && vec.size() == 2) {
@@ -68,6 +76,20 @@ void RoomState::forget_displayname(const Member &member, QString old_name, Room 
       room->member_name_changed(*other_member, other_name);
     }
   }
+}
+
+void RoomState::record_displayname(Member &member, Room *room) {
+  if(member.display_name().isEmpty()) return;
+  auto &vec = members_by_displayname_[member.display_name().normalized(QString::NormalizationForm_C)];
+  Member *other_member = nullptr;
+  QString other_old_name;
+  if(vec.size() == 1) {
+    // Third party existing name will become disambiguated
+    other_member = vec[0];
+    other_old_name = member_name(*vec[0]);
+  }
+  vec.push_back(&member);
+  if(other_member && room) room->member_name_changed(*other_member, other_old_name);
 }
 
 const Member *RoomState::member(const QString &id) const {
@@ -86,7 +108,6 @@ QString Room::pretty_name() const {
 
 void Room::load_state(gsl::span<const proto::Event> events) {
   for(auto &state : events) {
-    qDebug() << "processing event type:" << state.type;
     initial_state_.apply(state);
     state_.apply(state);
   }
@@ -106,7 +127,6 @@ void Room::dispatch(const proto::JoinedRoom &joined) {
   }
 
   for(auto &evt : joined.timeline.events) {
-    qDebug() << "processing event type:" << evt.type;
     state_touched |= state_.dispatch(evt, this);
     message(evt);
     if(buffer_.size() > session_.buffer_size() && session_.buffer_size() != 0) {
@@ -115,6 +135,8 @@ void Room::dispatch(const proto::JoinedRoom &joined) {
     }
     buffer_.push_back(evt);
   }
+
+  state_.prune_departed_members(this);
 
   if(state_touched) state_changed();
 }
@@ -151,6 +173,10 @@ bool RoomState::dispatch(const proto::Event &state, Room *room) {
     avatar_ = QUrl(state.content["url"].toString());
     return true;
   }
+  if(state.type == "m.room.create") {
+    // Nothing to do here, because our rooms data structures are created implicitly
+    return false;
+  }
   if(state.type == "m.room.member") {
     const auto &user_id = state.state_key;
     auto membership = parse_membership(state.content["membership"].toString());
@@ -177,18 +203,7 @@ bool RoomState::dispatch(const proto::Event &state, Room *room) {
       member.dispatch(state);
       if(member.display_name() != old_displayname) {
         forget_displayname(member, old_displayname, room);
-        if(!member.display_name().isEmpty()) {
-          auto &vec = members_by_displayname_[member.display_name()];
-          Member *other_member = nullptr;
-          QString other_old_name;
-          if(vec.size() == 1) {
-            // Third party existing name will become disambiguated
-            other_member = vec[0];
-            other_old_name = member_name(*vec[0]);
-          }
-          vec.push_back(&member);
-          if(other_member && room) room->member_name_changed(*other_member, other_old_name);
-        }
+        record_displayname(member, room);
         if(room && !new_member) room->member_name_changed(member, old_member_name);
       }
       if(room && member.membership() != old_membership) {
@@ -202,8 +217,6 @@ bool RoomState::dispatch(const proto::Event &state, Room *room) {
       if(it != members_by_id_.end()) {
         it->second.dispatch(state);
         if(room) room->membership_changed(it->second, *membership);
-        forget_displayname(it->second, it->second.display_name(), room);
-        members_by_id_.erase(user_id);
       }
       break;
     }
@@ -214,6 +227,19 @@ bool RoomState::dispatch(const proto::Event &state, Room *room) {
 
   qDebug() << "Unrecognized message type:" << state.type;
   return false;
+}
+
+void RoomState::prune_departed_members(Room *room) {
+  std::vector<std::pair<QString, const Member *>> departed_;
+  for(const auto &member : members_by_id_) {
+    if(member.second.membership() == Membership::LEAVE || member.second.membership() == Membership::BAN) {
+      departed_.push_back(std::make_pair(member.first, &member.second));
+    }
+  }
+  for(const auto &user : departed_) {
+    forget_displayname(*user.second, user.second->display_name(), room);
+    members_by_id_.erase(user.first);
+  }
 }
 
 }

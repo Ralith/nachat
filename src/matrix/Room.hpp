@@ -54,6 +54,8 @@ public:
   QString member_name(const Member &member) const;
   // Matrix r0.1.0 11.2.2.3
 
+  void prune_departed_members(Room *room);
+
 private:
   QString name_;
   QString canonical_alias_;
@@ -64,6 +66,9 @@ private:
   std::unordered_map<QString, std::vector<Member *>, QStringHash> members_by_displayname_;
 
   void forget_displayname(const Member &member, QString old_name, Room *room);
+  void record_displayname(Member &member, Room *room);
+  std::vector<Member *> &members_named(QString displayname);
+  const std::vector<Member *> &members_named(QString displayname) const;
 };
 
 class Room : public QObject {

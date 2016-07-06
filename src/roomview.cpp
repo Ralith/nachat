@@ -110,7 +110,7 @@ void RoomView::append_message(const matrix::RoomState &state, const matrix::prot
         ui->message_view->append("<" + state.member_name(*sender) + "> " + msg.content["body"].toString() + "\n");
       }
     }
-  } else {
+  } else if(msg.type != "m.room.create"){
     qDebug() << "Received event in" << room_.pretty_name() << "from non-member" << msg.sender;
   }
 }
