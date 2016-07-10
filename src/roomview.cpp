@@ -8,6 +8,7 @@
 
 #include "matrix/Room.hpp"
 #include "matrix/Member.hpp"
+#include "TimelineView.hpp"
 
 QString RoomView::Compare::key(const QString &n) {
   int i = 0;
@@ -19,8 +20,11 @@ QString RoomView::Compare::key(const QString &n) {
 }
 
 RoomView::RoomView(matrix::Room &room, QWidget *parent)
-    : QWidget(parent), ui(new Ui::RoomView), room_(room) {
+    : QWidget(parent), ui(new Ui::RoomView), timeline_view_(new TimelineView(this)), room_(room) {
   ui->setupUi(this);
+
+  ui->central_splitter->insertWidget(0, timeline_view_);
+
   setFocusProxy(ui->entry);
 
   // Fit to text. Note that QPlainTextEdit returns line count instead of pixel height here for some reason, so we use
@@ -47,6 +51,9 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
     replay_state.apply(event);
     append_message(replay_state, event);
   }
+
+  connect(&room_, &matrix::Room::topic_changed, this, &RoomView::topic_changed);
+  topic_changed("");
 
   update_members();
 }
@@ -101,16 +108,15 @@ void RoomView::update_members() {
 }
 
 void RoomView::append_message(const matrix::RoomState &state, const matrix::proto::Event &msg) {
-  if(auto sender = state.member(msg.sender)) {
-    if(msg.type == "m.room.message") {
-      auto mty = msg.content["msgtype"].toString();
-      if(mty == "m.emote") {
-        ui->message_view->append("* " + state.member_name(*sender) + " " + msg.content["body"].toString() + "\n");
-      } else {
-        ui->message_view->append("<" + state.member_name(*sender) + "> " + msg.content["body"].toString() + "\n");
-      }
-    }
-  } else if(msg.type != "m.room.create"){
-    qDebug() << "Received event in" << room_.pretty_name() << "from non-member" << msg.sender;
+  timeline_view_->push_back(state, msg);
+}
+
+void RoomView::topic_changed(const QString &old) {
+  (void)old;
+  if(room_.state().topic().isEmpty()) {
+    ui->topic->hide();
+  } else {
+    ui->topic->setText(room_.state().topic());
+    ui->topic->show();
   }
 }

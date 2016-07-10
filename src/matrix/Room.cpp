@@ -114,6 +114,8 @@ void Room::load_state(gsl::span<const proto::Event> events) {
 }
 
 void Room::dispatch(const proto::JoinedRoom &joined) {
+  prev_batch(joined.timeline.prev_batch);
+
   bool state_touched = false;
 
   if(joined.unread_notifications.highlight_count != highlight_count_) {
@@ -166,7 +168,11 @@ bool RoomState::dispatch(const proto::Event &state, Room *room) {
     return true;
   }
   if(state.type == "m.room.topic") {
+    auto old = std::move(topic_);
     topic_ = state.content["topic"].toString();
+    if(room && topic_ != old) {
+      room->topic_changed(old);
+    }
     return true;
   }
   if(state.type == "m.room.avatar") {

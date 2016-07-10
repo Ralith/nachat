@@ -25,14 +25,6 @@ namespace proto {
 struct JoinedRoom;
 }
 
-struct StateID {
-  QString type, key;
-};
-
-struct SIDHash {
-  size_t operator()(const StateID &sid) const { return qHash(sid.type) ^ qHash(sid.key); }
-};
-
 class RoomState {
 public:
   void apply(const proto::Event &e) { dispatch(e, nullptr); }
@@ -71,6 +63,11 @@ private:
   const std::vector<Member *> &members_named(QString displayname) const;
 };
 
+struct Batch {
+  std::vector<matrix::proto::Event> events;
+  QString next, prev;
+};
+
 class Room : public QObject {
   Q_OBJECT
 
@@ -99,10 +96,12 @@ signals:
   void membership_changed(const Member &, Membership old);
   void member_name_changed(const Member &, const QString &old);
   void state_changed();
-  void message(const proto::Event &);
-  void backlog(const RoomState &, gsl::span<const proto::Event>);
   void highlight_count_changed();
   void notification_count_changed();
+  void topic_changed(const QString &old);
+
+  void prev_batch(const QString &);
+  void message(const proto::Event &);
 
 private:
   Matrix &universe_;

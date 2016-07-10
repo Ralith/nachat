@@ -22,6 +22,8 @@ struct Event;
 }
 }
 
+class TimelineView;
+
 class RoomView : public QWidget
 {
   Q_OBJECT
@@ -34,6 +36,7 @@ public:
 
 private:
   Ui::RoomView *ui;
+  TimelineView *timeline_view_;
   matrix::Room &room_;
 
   class Compare {
@@ -49,6 +52,7 @@ private:
   void message(const matrix::proto::Event &);
   void membership_changed(const matrix::Member &, matrix::Membership);
   void member_name_changed(const matrix::Member &, QString);
+  void topic_changed(const QString &);
   void update_members();
   void append_message(const matrix::RoomState &, const matrix::proto::Event &);
 };
