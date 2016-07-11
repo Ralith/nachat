@@ -28,6 +28,7 @@ struct JoinedRoom;
 class RoomState {
 public:
   void apply(const proto::Event &e) { dispatch(e, nullptr); }
+  void revert(const proto::Event &e);  // Reverts an event that, if a state event, has prev_content
   bool dispatch(const proto::Event &e, Room *room);
   // Returns true if changes were made. Emits state change events on room if supplied.
 
@@ -61,6 +62,8 @@ private:
   void record_displayname(Member &member, Room *room);
   std::vector<Member *> &members_named(QString displayname);
   const std::vector<Member *> &members_named(QString displayname) const;
+
+  bool update_membership(const QString &user_id, const QJsonObject &content, Room *room);
 };
 
 struct Batch {
@@ -68,10 +71,26 @@ struct Batch {
   QString next, prev;
 };
 
+class MessageFetch : public QObject {
+  Q_OBJECT
+
+public:
+  MessageFetch(QObject *parent = nullptr) : QObject(parent) {}
+
+signals:
+  void finished(QString start, QString end, gsl::span<const proto::Event> events);
+  void error(QString message);
+};
+
 class Room : public QObject {
   Q_OBJECT
 
 public:
+  struct Batch {
+    std::vector<proto::Event> events;
+    QString prev_batch;
+  };
+
   Room(Matrix &universe, Session &session, QString id);
 
   Room(const Room &) = delete;
@@ -90,7 +109,11 @@ public:
   void load_state(gsl::span<const proto::Event>);
   void dispatch(const proto::JoinedRoom &);
 
-  const std::deque<proto::Event> &buffer() { return buffer_; }
+  const std::deque<Batch> &buffer() { return buffer_; }
+
+  enum class Direction { FORWARD, BACKWARD };
+
+  MessageFetch *get_messages(Direction dir, QString from, uint64_t limit = 0, QString to = "");
 
 signals:
   void membership_changed(const Member &, Membership old);
@@ -109,7 +132,7 @@ private:
   const QString id_;
 
   RoomState initial_state_;
-  std::deque<proto::Event> buffer_;
+  std::deque<Batch> buffer_;
   RoomState state_;
 
   uint64_t highlight_count_ = 0, notification_count_ = 0;

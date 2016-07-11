@@ -5,6 +5,7 @@
 
 #include <QString>
 #include <QUrl>
+#include <QJsonObject>
 
 namespace matrix {
 
@@ -29,7 +30,7 @@ public:
   const QUrl &avatar_url() const { return avatar_url_; }
   Membership membership() const { return membership_; }
 
-  void dispatch(const proto::Event &);
+  void update_membership(const QJsonObject &content);
 
 private:
   const QString id_;

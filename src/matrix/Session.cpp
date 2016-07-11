@@ -24,10 +24,11 @@ Session::Session(Matrix& universe, QUrl homeserver, QString user_id, QString acc
 }
 
 void Session::sync(QUrlQuery query) {
-  auto reply = universe_.net.get(request("client/r0/sync", query));
+  auto reply = get("client/r0/sync", query);
   connect(reply, &QNetworkReply::finished, [this, reply](){
       sync_progress(0, 0);
       handle_sync_reply(reply);
+      reply->deleteLater();
     });
   connect(reply, &QNetworkReply::downloadProgress, this, &Session::sync_progress);
 }
@@ -88,7 +89,7 @@ void Session::dispatch(proto::Sync sync) {
 }
 
 void Session::log_out() {
-  auto reply = universe_.net.post(request("client/r0/logout"), encode({}));
+  auto reply = post("client/r0/logout", {});
   connect(reply, &QNetworkReply::finished, [this, reply](){
       auto r = decode(reply);
       if(!r.error || r.code == 404) {  // 404 = already logged out
@@ -96,6 +97,7 @@ void Session::log_out() {
       } else {
         error(*r.error);
       }
+      reply->deleteLater();
     });
 }
 
@@ -107,7 +109,7 @@ std::vector<Room *> Session::rooms() {
   return result;
 }
 
-QNetworkRequest Session::request(QString path, QUrlQuery query) {
+QNetworkRequest Session::request(const QString &path, QUrlQuery query) {
   QUrl url(homeserver_);
   url.setPath("/_matrix/" % path);
   query.addQueryItem("access_token", access_token_);
@@ -116,6 +118,14 @@ QNetworkRequest Session::request(QString path, QUrlQuery query) {
   req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
   req.setRawHeader("Accept", "application/json");
   return req;
+}
+
+QNetworkReply *Session::get(const QString &path, QUrlQuery query) {
+  return universe_.net.get(request(path, query));
+}
+
+QNetworkReply *Session::post(const QString &path, QJsonObject body, QUrlQuery query) {
+  return universe_.net.post(request(path, query), encode(body));
 }
 
 }

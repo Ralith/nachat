@@ -19,20 +19,20 @@ std::experimental::optional<Membership> parse_membership(const QString &m) {
   return {};
 }
 
-void Member::dispatch(const proto::Event &state) {
-  auto membership = parse_membership(state.content["membership"].toString());
+void Member::update_membership(const QJsonObject &content) {
+  auto membership = parse_membership(content["membership"].toString());
   if(!membership) {
-    qDebug() << "Unrecognized membership type" << state.content["membership"].toString();
+    qDebug() << "Unrecognized membership type" << content["membership"].toString();
   } else {
     membership_ = *membership;
   }
 
-  auto i = state.content.find("displayname");
-  if(i != state.content.end()) {
+  auto i = content.find("displayname");
+  if(i != content.end()) {
     display_name_ = i->toString();
   }
-  i = state.content.find("avatar_url");
-  if(i != state.content.end()) {
+  i = content.find("avatar_url");
+  if(i != content.end()) {
     auto str = i->toString();
     if(str == "") {
       avatar_url_ = QUrl();

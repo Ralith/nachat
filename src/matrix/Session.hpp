@@ -41,6 +41,10 @@ public:
   size_t buffer_size() const { return buffer_size_; }
   void set_buffer_size(size_t size) { buffer_size_ = size; }
 
+  QNetworkReply *get(const QString &path, QUrlQuery query = QUrlQuery());
+
+  QNetworkReply *post(const QString &path, QJsonObject body, QUrlQuery query = QUrlQuery());
+
 signals:
   void logged_out();
   void error(QString message);
@@ -62,7 +66,7 @@ private:
   std::chrono::steady_clock::time_point last_sync_error_;
   // Last time a sync failed. Used to ensure we don't spin if errors happen quickly.
 
-  QNetworkRequest request(QString path, QUrlQuery query = QUrlQuery());
+  QNetworkRequest request(const QString &path, QUrlQuery query = QUrlQuery());
 
   void sync(QUrlQuery query);
   void handle_sync_reply(QNetworkReply *);

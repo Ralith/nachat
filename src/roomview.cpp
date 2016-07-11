@@ -20,7 +20,7 @@ QString RoomView::Compare::key(const QString &n) {
 }
 
 RoomView::RoomView(matrix::Room &room, QWidget *parent)
-    : QWidget(parent), ui(new Ui::RoomView), timeline_view_(new TimelineView(this)), room_(room) {
+    : QWidget(parent), ui(new Ui::RoomView), timeline_view_(new TimelineView(room, this)), room_(room) {
   ui->setupUi(this);
 
   ui->central_splitter->insertWidget(0, timeline_view_);
@@ -46,10 +46,15 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
     member_list_.insert(std::make_pair(room_.state().member_name(*member), member));
   }
 
+  connect(&room_, &matrix::Room::prev_batch, timeline_view_, &TimelineView::end_batch);
+
   auto replay_state = room_.initial_state();
-  for(const auto &event : room_.buffer()) {
-    replay_state.apply(event);
-    append_message(replay_state, event);
+  for(const auto &batch : room_.buffer()) {
+    timeline_view_->end_batch(batch.prev_batch);
+    for(const auto &event : batch.events) {
+      replay_state.apply(event);
+      append_message(replay_state, event);
+    }
   }
 
   connect(&room_, &matrix::Room::topic_changed, this, &RoomView::topic_changed);

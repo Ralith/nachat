@@ -8,6 +8,8 @@
 
 #include "proto.hpp"
 #include "Session.hpp"
+#include "utils.hpp"
+#include "parse.hpp"
 
 namespace matrix {
 
@@ -128,22 +130,76 @@ void Room::dispatch(const proto::JoinedRoom &joined) {
     notification_count_changed();
   }
 
+  Batch batch;
+  batch.prev_batch = joined.timeline.prev_batch;
+  batch.events.reserve(joined.timeline.events.size());
   for(auto &evt : joined.timeline.events) {
     state_touched |= state_.dispatch(evt, this);
     message(evt);
-    if(buffer_.size() > session_.buffer_size() && session_.buffer_size() != 0) {
-      initial_state_.apply(buffer_.front());
-      buffer_.pop_front();
-    }
-    buffer_.push_back(evt);
+    batch.events.emplace_back(evt);
   }
+
+  if(buffer_.size() >= session_.buffer_size() && session_.buffer_size() != 0) {
+    for(auto &evt : buffer_.front().events) {
+      initial_state_.apply(evt);
+    }
+    buffer_.pop_front();
+  }
+  buffer_.emplace_back(std::move(batch));
 
   state_.prune_departed_members(this);
 
   if(state_touched) state_changed();
 }
 
+bool RoomState::update_membership(const QString &user_id, const QJsonObject &content, Room *room) {
+  auto membership = parse_membership(content["membership"].toString());
+  if(!membership) {
+    qDebug() << "Unrecognized membership type" << content["membership"].toString();
+    return false;
+  }
+  switch(*membership) {
+  case Membership::INVITE:
+  case Membership::JOIN: {
+    auto it = members_by_id_.find(user_id);
+    bool new_member = false;
+    if(it == members_by_id_.end()) {
+      it = members_by_id_.emplace(
+        std::piecewise_construct,
+        std::forward_as_tuple(user_id),
+        std::forward_as_tuple(user_id)).first;
+      new_member = true;
+    }
+    auto &member = it->second;
+    auto old_membership = member.membership();
+    auto old_displayname = member.display_name();
+    auto old_member_name = member_name(member);
+    member.update_membership(content);
+    if(member.display_name() != old_displayname) {
+      forget_displayname(member, old_displayname, room);
+      record_displayname(member, room);
+      if(room && !new_member) room->member_name_changed(member, old_member_name);
+    }
+    if(room && member.membership() != old_membership) {
+      room->membership_changed(it->second, *membership);
+    }
+    break;
+  }
+  case Membership::LEAVE:
+  case Membership::BAN: {
+    auto it = members_by_id_.find(user_id);
+    if(it != members_by_id_.end()) {
+      it->second.update_membership(content);
+      if(room) room->membership_changed(it->second, *membership);
+    }
+    break;
+  }
+  }
+  return true;
+}
+
 bool RoomState::dispatch(const proto::Event &state, Room *room) {
+  if(state.type == "m.room.message") return false;
   if(state.type == "m.room.aliases") {
     std::unordered_set<QString, QStringHash> all_aliases;
     auto data = state.content["aliases"].toArray();
@@ -184,55 +240,36 @@ bool RoomState::dispatch(const proto::Event &state, Room *room) {
     return false;
   }
   if(state.type == "m.room.member") {
-    const auto &user_id = state.state_key;
-    auto membership = parse_membership(state.content["membership"].toString());
-    if(!membership) {
-      qDebug() << "Unrecognized membership type" << state.content["membership"].toString();
-      return false;
-    }
-    switch(*membership) {
-    case Membership::INVITE:
-    case Membership::JOIN: {
-      auto it = members_by_id_.find(user_id);
-      bool new_member = false;
-      if(it == members_by_id_.end()) {
-        it = members_by_id_.emplace(
-          std::piecewise_construct,
-          std::forward_as_tuple(user_id),
-          std::forward_as_tuple(user_id)).first;
-        new_member = true;
-      }
-      auto &member = it->second;
-      auto old_membership = member.membership();
-      auto old_displayname = member.display_name();
-      auto old_member_name = member_name(member);
-      member.dispatch(state);
-      if(member.display_name() != old_displayname) {
-        forget_displayname(member, old_displayname, room);
-        record_displayname(member, room);
-        if(room && !new_member) room->member_name_changed(member, old_member_name);
-      }
-      if(room && member.membership() != old_membership) {
-        room->membership_changed(it->second, *membership);
-      }
-      break;
-    }
-    case Membership::LEAVE:
-    case Membership::BAN: {
-      auto it = members_by_id_.find(user_id);
-      if(it != members_by_id_.end()) {
-        it->second.dispatch(state);
-        if(room) room->membership_changed(it->second, *membership);
-      }
-      break;
-    }
-    }
-    return true;
+    return update_membership(state.state_key, state.content, room);
   }
-  if(state.type == "m.room.message") return false;
 
   qDebug() << "Unrecognized message type:" << state.type;
   return false;
+}
+
+void RoomState::revert(const proto::Event &state) {
+  if(state.type == "m.room.message") return;
+  if(state.type == "m.room.canonical_alias") {
+    canonical_alias_ = state.prev_content["alias"].toString();
+    return;
+  }
+  if(state.type == "m.room.name") {
+    name_ = state.prev_content["name"].toString();
+    return;
+  }
+  if(state.type == "m.room.topic") {
+    auto old = std::move(topic_);
+    topic_ = state.prev_content["topic"].toString();
+    return;
+  }
+  if(state.type == "m.room.avatar") {
+    avatar_ = QUrl(state.prev_content["url"].toString());
+    return;
+  }
+  if(state.type == "m.room.member") {
+    update_membership(state.state_key, state.prev_content, nullptr);
+    return;
+  }
 }
 
 void RoomState::prune_departed_members(Room *room) {
@@ -246,6 +283,47 @@ void RoomState::prune_departed_members(Room *room) {
     forget_displayname(*user.second, user.second->display_name(), room);
     members_by_id_.erase(user.first);
   }
+}
+
+MessageFetch *Room::get_messages(Direction dir, QString from, uint64_t limit, QString to) {
+  QUrlQuery query;
+  query.addQueryItem("from", from);
+  query.addQueryItem("dir", dir == Direction::FORWARD ? "f" : "b");
+  if(limit != 0) query.addQueryItem("limit", QString::number(limit));
+  if(!to.isEmpty()) query.addQueryItem("to", to);
+  auto reply = session_.get("client/r0/rooms/" % id_ % "/messages", query);
+  auto result = new MessageFetch(reply);
+  connect(reply, &QNetworkReply::finished, [this, reply, result]() {
+      auto r = decode(reply);
+      reply->deleteLater();
+      if(r.error) {
+        result->error(*r.error);
+        return;
+      }
+      auto start_val = r.object["start"];
+      if(!start_val.isString()) {
+        result->error("invalid or missing \"start\" attribute in server's response");
+        return;
+      }
+      auto start = start_val.toString();
+      auto end_val = r.object["end"];
+      if(!end_val.isString()) {
+        result->error("invalid or missing \"end\" attribute in server's response");
+        return;
+      }
+      auto end = end_val.toString();
+      auto chunk_val = r.object["chunk"];
+      if(!chunk_val.isArray()) {
+        result->error("invalid or missing \"chunk\" attribute in server's response");
+        return;
+      }
+      auto chunk = chunk_val.toArray();
+      std::vector<proto::Event> events;
+      events.reserve(chunk.size());
+      std::transform(chunk.begin(), chunk.end(), std::back_inserter(events), parse_event);
+      result->finished(start, end, events);
+    });
+  return result;
 }
 
 }

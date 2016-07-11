@@ -28,6 +28,7 @@ Event parse_event(QJsonValue v) {
   Event e;
 
   e.content = o["content"].toObject();
+  e.prev_content = o["prev_content"].toObject();
   e.origin_server_ts = o["origin_server_ts"].toDouble();
   e.sender = o["sender"].toString();
   e.type = o["type"].toString();

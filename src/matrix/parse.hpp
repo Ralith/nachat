@@ -6,6 +6,7 @@
 namespace matrix {
 
 proto::Sync parse_sync(QJsonValue v);
+proto::Event parse_event(QJsonValue v);
 
 }
 
