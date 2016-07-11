@@ -10,6 +10,7 @@ WrappingTextEdit::WrappingTextEdit(QWidget *parent) : QTextEdit(parent) {
   policy.setHorizontalStretch(1);
   policy.setVerticalStretch(1);
   setSizePolicy(policy);
+  setAcceptRichText(false);
 }
 
 QSize WrappingTextEdit::sizeHint() const {
