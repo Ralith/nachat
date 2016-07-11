@@ -43,7 +43,10 @@ public:
 
   QNetworkReply *get(const QString &path, QUrlQuery query = QUrlQuery());
 
-  QNetworkReply *post(const QString &path, QJsonObject body, QUrlQuery query = QUrlQuery());
+  QNetworkReply *post(const QString &path, QJsonObject body = QJsonObject(), QUrlQuery query = QUrlQuery());
+  QNetworkReply *post(const QString &path, QIODevice *data, QUrlQuery query = QUrlQuery());
+
+  QNetworkReply *put(const QString &path, QJsonObject body);
 
 signals:
   void logged_out();

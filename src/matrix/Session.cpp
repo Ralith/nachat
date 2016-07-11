@@ -128,4 +128,12 @@ QNetworkReply *Session::post(const QString &path, QJsonObject body, QUrlQuery qu
   return universe_.net.post(request(path, query), encode(body));
 }
 
+QNetworkReply *Session::post(const QString &path, QIODevice *data, QUrlQuery query) {
+  return universe_.net.post(request(path, query), data);
+}
+
+QNetworkReply *Session::put(const QString &path, QJsonObject body) {
+  return universe_.net.put(request(path), encode(body));
+}
+
 }

@@ -97,6 +97,7 @@ public:
   Room &operator=(const Room &) = delete;
 
   const Session &session() const { return session_; }
+  Session &session() { return session_; }
   const QString &id() const { return id_; }
   uint64_t highlight_count() const { return highlight_count_; }
   uint64_t notification_count() const { return notification_count_; }
@@ -115,6 +116,14 @@ public:
 
   MessageFetch *get_messages(Direction dir, QString from, uint64_t limit = 0, QString to = "");
 
+  void leave();
+
+  void send(const QString &type, QJsonObject content);
+
+  void send_file(const QString &path);
+  void send_message(const QString &body);
+  void send_emote(const QString &body);
+
 signals:
   void membership_changed(const Member &, Membership old);
   void member_name_changed(const Member &, const QString &old);
@@ -126,6 +135,9 @@ signals:
   void prev_batch(const QString &);
   void message(const proto::Event &);
 
+  void error(const QString &msg);
+  void left(Membership reason);
+
 private:
   Matrix &universe_;
   Session &session_;
@@ -136,6 +148,7 @@ private:
   RoomState state_;
 
   uint64_t highlight_count_ = 0, notification_count_ = 0;
+  uint64_t transaction_id_ = 0;
 };
 
 }

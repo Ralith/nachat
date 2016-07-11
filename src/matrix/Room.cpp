@@ -4,6 +4,7 @@
 
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QFile>
 #include <QDebug>
 
 #include "proto.hpp"
@@ -188,6 +189,9 @@ bool RoomState::update_membership(const QString &user_id, const QJsonObject &con
   }
   case Membership::LEAVE:
   case Membership::BAN: {
+    if(room && user_id == room->id()) {
+      room->left(*membership);
+    }
     auto it = members_by_id_.find(user_id);
     if(it != members_by_id_.end()) {
       it->second.update_membership(content);
@@ -299,6 +303,7 @@ MessageFetch *Room::get_messages(Direction dir, QString from, uint64_t limit, QS
       reply->deleteLater();
       if(r.error) {
         result->error(*r.error);
+        error(*r.error);
         return;
       }
       auto start_val = r.object["start"];
@@ -325,6 +330,62 @@ MessageFetch *Room::get_messages(Direction dir, QString from, uint64_t limit, QS
       result->finished(start, end, events);
     });
   return result;
+}
+
+void Room::leave() {
+  auto reply = session_.post("client/r0/rooms/" % id_ % "/leave");
+  connect(reply, &QNetworkReply::finished, [this, reply]() {
+      reply->deleteLater();
+      auto r = decode(reply);
+      if(r.error) {
+        error(*r.error);
+      }
+    });
+}
+
+void Room::send(const QString &type, QJsonObject content) {
+  auto id = transaction_id_;
+  transaction_id_ += 1;
+  session_.put("client/r0/rooms/" % id_ % "/send/" % type % "/" % QString::number(id),
+               content);
+}
+
+void Room::send_file(const QString &path) {
+  auto f = new QFile(path, this);
+  if(!f->open(QIODevice::ReadOnly)) {
+    error(f->errorString());
+    delete f;
+    return;
+  }
+  auto reply = session_.post("media/r0/upload", f);
+  connect(reply, &QNetworkReply::finished, [this, reply, f]() {
+      QFileInfo info(*f);
+      delete f;
+      reply->deleteLater();
+      auto r = decode(reply);
+      if(r.error) {
+        error(*r.error);
+        return;
+      }
+      const QString uri = r.object["content_uri"].toString();
+      send("m.room.message",
+           {{"msgtype", "m.file"},  // Autodetect image/audio/video?
+             {"url", uri},
+             {"filename", info.fileName()},
+             {"body", info.fileName()}});
+    });
+}
+
+void Room::send_message(const QString &body) {
+  send("m.room.message",
+       {{"msgtype", "m.text"},
+         {"body", body}});
+}
+
+void Room::send_emote(const QString &body) {
+  send("m.room.message",
+       {{"msgtype", "m.emote"},
+         {"body", body}});
 }
 
 }

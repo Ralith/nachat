@@ -4,11 +4,13 @@
 #include <stdexcept>
 
 #include <QGuiApplication>
+#include <QCursor>
 
 #include "matrix/Room.hpp"
 #include "matrix/Member.hpp"
 #include "TimelineView.hpp"
 #include "WrappingTextEdit.hpp"
+#include "RoomMenu.hpp"
 
 QString RoomView::Compare::key(const QString &n) {
   int i = 0;
@@ -23,6 +25,11 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
     : QWidget(parent), ui(new Ui::RoomView), timeline_view_(new TimelineView(room, this)), entry_(new WrappingTextEdit(this)),
       room_(room) {
   ui->setupUi(this);
+
+  auto menu = new RoomMenu(room, this);
+  connect(ui->menu_button, &QAbstractButton::clicked, [this, menu](bool) {
+      menu->popup(QCursor::pos());
+    });
 
   ui->central_splitter->insertWidget(0, timeline_view_);
 
@@ -127,7 +134,8 @@ bool RoomView::eventFilter(QObject *object, QEvent *event) {
     if(!(modifiers & Qt::ShiftModifier) &&
        (keyEvent->key() == Qt::Key_Return
         || keyEvent->key() == Qt::Key_Enter)) {
-      entry_->clear();  // TODO: Send
+      room_.send_message(entry_->toPlainText());
+      entry_->clear();
       return true;
     }
 

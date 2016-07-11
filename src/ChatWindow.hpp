@@ -1,5 +1,5 @@
-#ifndef CHATWINDOW_H
-#define CHATWINDOW_H
+#ifndef NATIVE_CHAT_CHAT_WINDOW_HPP_
+#define NATIVE_CHAT_CHAT_WINDOW_HPP_
 
 #include <unordered_map>
 #include <memory>
@@ -35,4 +35,4 @@ private:
   void tab_selected(int);
 };
 
-#endif // CHATWINDOW_H
+#endif
