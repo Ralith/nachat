@@ -20,6 +20,7 @@ add_executable(native-chat WIN32
   roomview.cpp
   LabeledProgressBar.cpp
   TimelineView.cpp
+  WrappingTextEdit.cpp
   ${UI_HEADERS})
 
 target_link_libraries(native-chat matrix Qt5::Widgets Qt5::Network)

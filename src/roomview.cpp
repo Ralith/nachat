@@ -3,12 +3,10 @@
 
 #include <stdexcept>
 
-#include <QAbstractTextDocumentLayout>
-#include <QDebug>
-
 #include "matrix/Room.hpp"
 #include "matrix/Member.hpp"
 #include "TimelineView.hpp"
+#include "WrappingTextEdit.hpp"
 
 QString RoomView::Compare::key(const QString &n) {
   int i = 0;
@@ -25,16 +23,9 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
 
   ui->central_splitter->insertWidget(0, timeline_view_);
 
-  setFocusProxy(ui->entry);
-
-  // Fit to text. Note that QPlainTextEdit returns line count instead of pixel height here for some reason, so we use
-  // QTextEdit instead.
-  connect(ui->entry->document()->documentLayout(), &QAbstractTextDocumentLayout::documentSizeChanged,
-          [this](const QSizeF &size) {
-            auto margins = ui->entry->contentsMargins();
-            // TODO: Set hint instead of maximum height and replace vertical view layout with splitter
-            ui->entry->setMaximumHeight(size.height() + margins.top() + margins.bottom());
-          });
+  auto entry_box = new WrappingTextEdit(this);
+  ui->entry_pane->insertWidget(0, entry_box);
+  setFocusProxy(entry_box);
 
   connect(&room_, &matrix::Room::message, this, &RoomView::message);
 
