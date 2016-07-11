@@ -149,9 +149,22 @@ void TimelineView::Block::draw(const TimelineView &view, QPainter &p, QPointF of
   }
 }
 
+size_t TimelineView::Block::size() const {
+  return events_.size();
+}
+
+size_t TimelineView::Batch::size() const {
+  size_t result = 0;
+  for(const auto &block : blocks) {
+    result += block.size();
+  }
+  return result;
+}
+
 TimelineView::TimelineView(matrix::Room &room, QWidget *parent)
-    : QAbstractScrollArea(parent), room_(room), initial_state_(room.initial_state()),
-      head_color_alternate_(true), backlog_growing_(false), backlog_growable_(true), content_height_(0) {
+    : QAbstractScrollArea(parent), room_(room), initial_state_(room.initial_state()), total_events_(0),
+      head_color_alternate_(true), backlog_growing_(false), backlog_growable_(true), min_backlog_size_(256),
+      content_height_(0) {
   setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
   verticalScrollBar()->setSingleStep(20);  // Taken from QScrollArea
@@ -174,6 +187,9 @@ void TimelineView::push_back(const matrix::RoomState &state, const matrix::proto
 
   content_height_ += block_spacing();
   content_height_ += batches_.back().blocks.back().bounding_rect(*this).height();
+  total_events_ += 1;
+
+  prune_backlog();
 
   update_scrollbar();
 
@@ -281,18 +297,16 @@ void TimelineView::resizeEvent(QResizeEvent *e) {
 void TimelineView::grow_backlog() {
   if(verticalScrollBar()->value() >= scrollback_trigger_size() || backlog_growing_ || !backlog_growable_) return;
   backlog_growing_ = true;
-  qDebug() << "growing backlog...";
   auto reply = room_.get_messages(matrix::Room::Direction::BACKWARD, prev_batch_, 100);
   connect(reply, &matrix::MessageFetch::finished, this, &TimelineView::prepend_batch);
   connect(reply, &matrix::MessageFetch::error, [this](QString msg){
       backlog_growing_ = false;
+      // TODO: User feedback
       qDebug() << "error growing backlog:" << msg;
     });
 }
 
 void TimelineView::prepend_batch(QString start, QString end, gsl::span<const matrix::proto::Event> events) {
-  qDebug() << "got more backlog, loading...";
-
   backlog_growing_ = false;
   prev_batch_ = end;
   batches_.emplace_front();
@@ -305,8 +319,35 @@ void TimelineView::prepend_batch(QString start, QString end, gsl::span<const mat
     backlog_growable_ &= e.type != "m.room.create";
   }
 
+  total_events_ += events.size();
+
   update_scrollbar(true);
 
-  qDebug() << "backlog grew by" << events.size() << "messages";
   grow_backlog();  // Check if the user is still seeing blank space.
+}
+
+void TimelineView::prune_backlog() {
+  // Only prune if the user's looking the bottom.
+  const int scroll_pos = verticalScrollBar()->value();
+  if(scroll_pos != verticalScrollBar()->maximum()) return;
+
+  // We prune at least 2 events to ensure we don't hit a steady-state above the target
+  size_t events_removed = 0;
+  while(events_removed < 2) {
+    const size_t front_size = batches_.front().size();
+    int batch_height = 0;
+    for(const auto &block : batches_.front().blocks) {
+      batch_height += block.bounding_rect(*this).height() + block_spacing();
+    }
+    if((total_events_ - front_size < min_backlog_size_)
+       || (batch_height + scrollback_trigger_size() > scroll_pos)) {
+      // If removing the earliest batch would cause us to fall under the minimum, or the user could see the removed
+      // batch, bail out.
+      return;
+    }
+    total_events_ -= front_size;
+    content_height_ -= batch_height;
+    events_removed += front_size;
+    batches_.pop_front();
+  }
 }

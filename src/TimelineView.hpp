@@ -46,6 +46,7 @@ private:
     QRectF bounding_rect(const TimelineView &view) const;
 
     const QString &sender_id() const { return sender_id_; }
+    size_t size() const;
 
   private:
     const QString event_id_;
@@ -60,14 +61,18 @@ private:
   struct Batch {
     std::deque<Block> blocks;  // deque so we don't try to copy/move QTextLayout
     QString token;
+
+    size_t size() const;
   };
 
   matrix::Room &room_;
   matrix::RoomState initial_state_;
   std::deque<Batch> batches_;  // deque so we can add/remote batches from either end
+  size_t total_events_;
   bool head_color_alternate_;
   bool backlog_growing_;
   bool backlog_growable_;  // false if we've found the room create message
+  size_t min_backlog_size_;
   qreal content_height_;
   QString prev_batch_;  // Token for the batch immediately prior to the first message
   std::unordered_map<QString, std::shared_ptr<QPixmap>, QStringHash> avatars_;
@@ -80,6 +85,10 @@ private:
   void grow_backlog();
   void prepend_batch(QString start, QString end, gsl::span<const matrix::proto::Event> events);
   int scrollback_trigger_size() const;
+
+  void prune_backlog();
+  // Removes enough blocks from the backlog that calling for each new event will cause backlog size to approach one
+  // batch size greater than min_backlog_size_. Requires but does not perform scrollbar update!
 };
 
 #endif
