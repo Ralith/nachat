@@ -155,7 +155,8 @@ void Room::dispatch(const proto::JoinedRoom &joined) {
 bool RoomState::update_membership(const QString &user_id, const QJsonObject &content, Room *room) {
   auto membership = parse_membership(content["membership"].toString());
   if(!membership) {
-    qDebug() << "Unrecognized membership type" << content["membership"].toString();
+    qDebug() << "Unrecognized membership type" << content["membership"].toString()
+             << "in content" << content;
     return false;
   }
   switch(*membership) {

@@ -23,6 +23,7 @@ struct Event;
 }
 
 class TimelineView;
+class WrappingTextEdit;
 
 class RoomView : public QWidget
 {
@@ -37,6 +38,7 @@ public:
 private:
   Ui::RoomView *ui;
   TimelineView *timeline_view_;
+  WrappingTextEdit *entry_;
   matrix::Room &room_;
 
   class Compare {
@@ -55,6 +57,8 @@ private:
   void topic_changed(const QString &);
   void update_members();
   void append_message(const matrix::RoomState &, const matrix::proto::Event &);
+
+  bool eventFilter(QObject *object, QEvent *event) override;
 };
 
 #endif // ROOMVIEW_H

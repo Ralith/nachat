@@ -168,6 +168,7 @@ TimelineView::TimelineView(matrix::Room &room, QWidget *parent)
   setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
   verticalScrollBar()->setSingleStep(20);  // Taken from QScrollArea
+  setFocusPolicy(Qt::NoFocus);
 
   connect(verticalScrollBar(), &QAbstractSlider::valueChanged, [this](int value) {
       (void)value;

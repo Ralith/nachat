@@ -3,6 +3,8 @@
 
 #include <stdexcept>
 
+#include <QGuiApplication>
+
 #include "matrix/Room.hpp"
 #include "matrix/Member.hpp"
 #include "TimelineView.hpp"
@@ -18,14 +20,15 @@ QString RoomView::Compare::key(const QString &n) {
 }
 
 RoomView::RoomView(matrix::Room &room, QWidget *parent)
-    : QWidget(parent), ui(new Ui::RoomView), timeline_view_(new TimelineView(room, this)), room_(room) {
+    : QWidget(parent), ui(new Ui::RoomView), timeline_view_(new TimelineView(room, this)), entry_(new WrappingTextEdit(this)),
+      room_(room) {
   ui->setupUi(this);
 
   ui->central_splitter->insertWidget(0, timeline_view_);
 
-  auto entry_box = new WrappingTextEdit(this);
-  ui->entry_pane->insertWidget(0, entry_box);
-  setFocusProxy(entry_box);
+  ui->layout->insertWidget(2, entry_);
+  setFocusProxy(entry_);
+  entry_->installEventFilter(this);
 
   connect(&room_, &matrix::Room::message, this, &RoomView::message);
 
@@ -98,9 +101,13 @@ void RoomView::update_members() {
     item->setData(Qt::UserRole, QVariant::fromValue(const_cast<void*>(reinterpret_cast<const void*>(member.second))));
     ui->memberlist->addItem(item);
   }
-  auto scrollbar_width = ui->memberlist->style()->pixelMetric(QStyle::PM_ScrollBarExtent, nullptr, ui->memberlist);
-  auto margins = ui->memberlist->contentsMargins();
-  ui->memberlist->setMaximumWidth(ui->memberlist->sizeHintForColumn(0) + scrollbar_width + margins.left() + margins.right());
+  if(ui->memberlist->count() == 2) {
+    ui->memberlist->hide();
+  } else {
+    auto scrollbar_width = ui->memberlist->style()->pixelMetric(QStyle::PM_ScrollBarExtent, nullptr, ui->memberlist);
+    auto margins = ui->memberlist->contentsMargins();
+    ui->memberlist->setMaximumWidth(ui->memberlist->sizeHintForColumn(0) + scrollbar_width + margins.left() + margins.right());
+  }
 }
 
 void RoomView::append_message(const matrix::RoomState &state, const matrix::proto::Event &msg) {
@@ -109,10 +116,21 @@ void RoomView::append_message(const matrix::RoomState &state, const matrix::prot
 
 void RoomView::topic_changed(const QString &old) {
   (void)old;
-  if(room_.state().topic().isEmpty()) {
-    ui->topic->hide();
-  } else {
-    ui->topic->setText(room_.state().topic());
-    ui->topic->show();
+  ui->topic->setText(room_.state().topic());
+}
+
+bool RoomView::eventFilter(QObject *object, QEvent *event) {
+  if(event->type() == QEvent::KeyPress) {
+    auto modifiers = QGuiApplication::keyboardModifiers();
+    QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+    // TODO: Autocomplete
+    if(!(modifiers & Qt::ShiftModifier) &&
+       (keyEvent->key() == Qt::Key_Return
+        || keyEvent->key() == Qt::Key_Enter)) {
+      entry_->clear();  // TODO: Send
+      return true;
+    }
+
   }
+  return false;
 }
