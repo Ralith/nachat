@@ -1,5 +1,5 @@
-#include "chatwindow.h"
-#include "ui_chatwindow.h"
+#include "ChatWindow.hpp"
+#include "ui_ChatWindow.h"
 
 #include <QIcon>
 
@@ -8,7 +8,7 @@
 #include "roomview.h"
 
 ChatWindow::ChatWindow(QWidget *parent)
-    : QMainWindow(parent), ui(new Ui::ChatWindow) {
+    : QWidget(parent), ui(new Ui::ChatWindow) {
   ui->setupUi(this);
   connect(ui->tab_widget, &QTabWidget::currentChanged, this, &ChatWindow::tab_selected);
 }

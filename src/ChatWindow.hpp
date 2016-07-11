@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <memory>
 
-#include <QMainWindow>
+#include <QWidget>
 
 class RoomView;
 
@@ -16,7 +16,7 @@ namespace Ui {
 class ChatWindow;
 }
 
-class ChatWindow : public QMainWindow
+class ChatWindow : public QWidget
 {
   Q_OBJECT
 

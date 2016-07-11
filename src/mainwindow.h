@@ -8,7 +8,7 @@
 
 #include "matrix/matrix.hpp"
 
-#include "chatwindow.h"
+#include "ChatWindow.hpp"
 #include "roomview.h"
 
 class QProgressBar;

@@ -4,9 +4,9 @@ find_package(Qt5Widgets)
 qt5_wrap_ui(UI_HEADERS
   logindialog.ui
   mainwindow.ui
-  chatwindow.ui
   roomview.ui
   LabeledProgressBar.ui
+  ChatWindow.ui
   )
 
 add_subdirectory(matrix)
@@ -16,7 +16,7 @@ add_executable(native-chat WIN32
   application.cpp
   logindialog.cpp
   mainwindow.cpp
-  chatwindow.cpp
+  ChatWindow.cpp
   roomview.cpp
   LabeledProgressBar.cpp
   TimelineView.cpp
