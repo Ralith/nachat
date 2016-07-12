@@ -28,9 +28,9 @@ Session::Session(Matrix& universe, QUrl homeserver, QString user_id, QString acc
 void Session::sync(QUrlQuery query) {
   auto reply = get("client/r0/sync", query);
   connect(reply, &QNetworkReply::finished, [this, reply](){
+      reply->deleteLater();
       sync_progress(0, 0);
       handle_sync_reply(reply);
-      reply->deleteLater();
     });
   connect(reply, &QNetworkReply::downloadProgress, this, &Session::sync_progress);
 }
@@ -93,13 +93,13 @@ void Session::dispatch(proto::Sync sync) {
 void Session::log_out() {
   auto reply = post("client/r0/logout", {});
   connect(reply, &QNetworkReply::finished, [this, reply](){
+      reply->deleteLater();
       auto r = decode(reply);
       if(!r.error || r.code == 404) {  // 404 = already logged out
         logged_out();
       } else {
         error(*r.error);
       }
-      reply->deleteLater();
     });
 }
 
