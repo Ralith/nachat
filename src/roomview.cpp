@@ -5,6 +5,7 @@
 
 #include <QGuiApplication>
 #include <QCursor>
+#include <QScrollBar>
 
 #include "matrix/Room.hpp"
 #include "matrix/Member.hpp"
@@ -138,7 +139,12 @@ bool RoomView::eventFilter(QObject *object, QEvent *event) {
       entry_->clear();
       return true;
     }
-
+    if(keyEvent->key() == Qt::Key_PageUp) {
+      timeline_view_->verticalScrollBar()->triggerAction(QAbstractSlider::SliderPageStepSub);
+    }
+    if(keyEvent->key() == Qt::Key_PageDown) {
+      timeline_view_->verticalScrollBar()->triggerAction(QAbstractSlider::SliderPageStepAdd);
+    }
   }
   return false;
 }
