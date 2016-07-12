@@ -307,18 +307,15 @@ int TimelineView::block_body_width() const {
   return visible_width() - (block_body_start() + block_margin());
 }
 
-void TimelineView::update_scrollbar(bool for_prepend) {
+void TimelineView::update_scrollbar() {
+  const auto view_height = viewport()->contentsRect().height();
   auto &scroll = *verticalScrollBar();
-  const bool initially_at_bottom = scroll.value() == scroll.maximum();
-  auto view_height = viewport()->contentsRect().height();
   const int old_maximum = scroll.maximum();
   const int fake_height = content_height_ + scrollback_trigger_size();
+  const int old_value = scroll.value();
   scroll.setMaximum(view_height > fake_height ? 0 : fake_height - view_height);
-  if(initially_at_bottom) {
-    scroll.setValue(scroll.maximum());
-  } else if(for_prepend) {
-    scroll.setValue(scroll.value() + (scroll.maximum() - old_maximum));
-  }
+  const int old_delta = (old_maximum - old_value);
+  scroll.setValue(old_delta > scroll.maximum() ? 0 : scroll.maximum() - old_delta);
 }
 
 void TimelineView::paintEvent(QPaintEvent *) {
@@ -420,7 +417,7 @@ void TimelineView::prepend_batch(QString start, QString end, gsl::span<const mat
 
   total_events_ += events.size();
 
-  update_scrollbar(true);
+  update_scrollbar();
 
   grow_backlog();  // Check if the user is still seeing blank space.
 }

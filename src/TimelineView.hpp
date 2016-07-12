@@ -93,7 +93,7 @@ private:
   std::unordered_map<matrix::Content, Avatar> avatars_;
   QIcon avatar_missing_, avatar_loading_;
 
-  void update_scrollbar(bool for_prepend = false);
+  void update_scrollbar();
   int visible_width() const;
   int block_spacing() const;
   int block_margin() const;
