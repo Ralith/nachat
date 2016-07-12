@@ -341,7 +341,6 @@ void TimelineView::grow_backlog() {
   backlog_growing_ = true;
   auto reply = room_.get_messages(matrix::Room::Direction::BACKWARD, prev_batch_, BACKLOG_BATCH_SIZE);
   connect(reply, &matrix::MessageFetch::finished, this, &TimelineView::prepend_batch);
-  connect(reply, &matrix::MessageFetch::finished, this, &TimelineView::prepend_batch);
   connect(reply, &matrix::MessageFetch::error, &room_, &matrix::Room::error);
 }
 
