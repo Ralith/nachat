@@ -354,8 +354,14 @@ void Room::leave() {
 void Room::send(const QString &type, QJsonObject content) {
   auto id = transaction_id_;
   transaction_id_ += 1;
-  session_.put("client/r0/rooms/" % id_ % "/send/" % type % "/" % QString::number(id),
-               content);
+  auto reply = session_.put("client/r0/rooms/" % id_ % "/send/" % type % "/" % QString::number(id),
+                            content);
+  auto es = new EventSend(reply);
+  connect(reply, &QNetworkReply::finished, [reply, es]() {
+      if(reply->error()) es->error(reply->errorString());
+      else es->finished();
+    });
+  connect(es, &EventSend::error, this, &Room::error);
 }
 
 void Room::send_file(const QString &path) {

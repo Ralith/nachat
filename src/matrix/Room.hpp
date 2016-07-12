@@ -79,7 +79,18 @@ public:
 
 signals:
   void finished(QString start, QString end, gsl::span<const proto::Event> events);
-  void error(QString message);
+  void error(const QString &message);
+};
+
+class EventSend : public QObject {
+  Q_OBJECT
+
+public:
+  EventSend(QObject *parent = nullptr) : QObject(parent) {}
+
+signals:
+  void finished();
+  void error(const QString &message);
 };
 
 class Room : public QObject {

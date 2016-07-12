@@ -6,6 +6,7 @@
 #include <QGuiApplication>
 #include <QCursor>
 #include <QScrollBar>
+#include <QDebug>
 
 #include "matrix/Room.hpp"
 #include "matrix/Member.hpp"
@@ -39,6 +40,10 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
   entry_->installEventFilter(this);
 
   connect(&room_, &matrix::Room::message, this, &RoomView::message);
+  connect(&room_, &matrix::Room::error, [this](const QString &message) {
+      // TODO: UI feedback
+      qDebug() << "ERROR:" << room_.pretty_name() << message;
+    });
 
   connect(&room_, &matrix::Room::membership_changed, this, &RoomView::membership_changed);
   connect(&room_, &matrix::Room::member_name_changed, this, &RoomView::member_name_changed);
