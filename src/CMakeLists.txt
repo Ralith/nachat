@@ -22,6 +22,11 @@ add_executable(native-chat WIN32
   TimelineView.cpp
   WrappingTextEdit.cpp
   RoomMenu.cpp
-  ${UI_HEADERS})
+  ${UI_HEADERS}
+  )
 
-target_link_libraries(native-chat matrix Qt5::Widgets Qt5::Network)
+target_link_libraries(native-chat
+  matrix
+  Qt5::Widgets
+  Qt5::Network
+  )

@@ -12,6 +12,7 @@
 #include "../QStringHash.hpp"
 
 #include "Room.hpp"
+#include "Content.hpp"
 
 namespace matrix {
 
@@ -20,6 +21,19 @@ struct Sync;
 }
 
 class Matrix;
+
+class ContentFetch : public QObject {
+  Q_OBJECT
+
+public:
+  ContentFetch(QObject *parent = nullptr) : QObject(parent) {}
+
+signals:
+  void finished(const Content &content, const QString &type, const QString &disposition, const QByteArray &data);
+  void error(const QString &msg);
+};
+
+enum class ThumbnailMethod { CROP, SCALE };
 
 class Session : public QObject {
   Q_OBJECT
@@ -47,6 +61,10 @@ public:
   QNetworkReply *post(const QString &path, QIODevice *data, QUrlQuery query = QUrlQuery());
 
   QNetworkReply *put(const QString &path, QJsonObject body);
+
+  ContentFetch *get(const Content &);
+
+  ContentFetch *get_thumbnail(const Content &, const QSize &size, ThumbnailMethod method = ThumbnailMethod::SCALE);
 
 signals:
   void logged_out();

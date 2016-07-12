@@ -5,7 +5,10 @@ add_library(matrix
   Room.cpp
   Member.cpp
   proto.cpp
-  parse.cpp)
+  parse.cpp
+  Content.cpp
+  )
 
 target_link_libraries(matrix
-  Qt5::Network)
+  Qt5::Network
+  )

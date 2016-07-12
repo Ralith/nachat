@@ -8,10 +8,13 @@
 #include <QScrollBar>
 #include <QPainter>
 
+#include "matrix/Session.hpp"
+
 const static QColor text_color = Qt::black;
 const static QColor primary_bg(245, 245, 245);
 const static QColor secondary_bg = Qt::white;
 const static QColor header_color(96, 96, 96);
+constexpr static int BACKLOG_BATCH_SIZE = 50;
 
 static auto to_time_point(uint64_t ts) {
   return std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::from_time_t(0))
@@ -33,10 +36,31 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::proto::Event 
   }
 }
 
-TimelineView::Block::Block(const TimelineView &view, const matrix::RoomState &state, const matrix::proto::Event &e,
-                           std::shared_ptr<QPixmap> avatar)
-    : sender_id_(e.sender), avatar_(std::move(avatar)) {
+TimelineView::Block::Block(TimelineView &view, const matrix::RoomState &state, const matrix::proto::Event &e)
+    : sender_id_(e.sender) {
   events_.emplace_back(view, e);
+
+  auto sender = state.member(e.sender);
+
+  if(sender && !sender->avatar_url().isEmpty()) {
+    try {
+      avatar_ = matrix::Content(sender->avatar_url());
+    } catch(const std::invalid_argument &e) {
+      qDebug() << "invalid avatar URL:" << e.what() << ":" << sender->avatar_url();
+    }
+
+    if(avatar_) {
+      auto result = view.avatars_.emplace(std::piecewise_construct,
+                                          std::forward_as_tuple(*avatar_),
+                                          std::forward_as_tuple());
+      if(result.second) {
+        auto reply = view.room_.session().get_thumbnail(result.first->first, QSize(view.avatar_size(), view.avatar_size()));
+        connect(reply, &matrix::ContentFetch::finished, &view, &TimelineView::set_avatar);
+        connect(reply, &matrix::ContentFetch::error, &view.room_, &matrix::Room::error);
+      }
+      ++result.first->second.references;
+    }
+  }
 
   {
     QTextOption options;
@@ -45,8 +69,10 @@ TimelineView::Block::Block(const TimelineView &view, const matrix::RoomState &st
     name_layout_.setFont(view.font());
     name_layout_.setTextOption(options);
     name_layout_.setCacheEnabled(true);
-    if(auto sender = state.member(e.sender)) {
+    if(sender) {
       name_layout_.setText(state.member_name(*sender));
+    } else {
+      name_layout_.setText(sender_id_);
     }
   }
 
@@ -133,8 +159,21 @@ void TimelineView::Block::draw(const TimelineView &view, QPainter &p, QPointF of
   auto metrics = view.fontMetrics();
   auto margin = view.block_margin();
 
-  if(avatar_)
-    p.drawPixmap(QPoint(offset.x() + margin, offset.y()), *avatar_);
+  QPixmap avatar_pixmap;
+  const auto size = view.avatar_size();
+  if(avatar_) {
+    auto a = view.avatars_.at(*avatar_);
+    if(a.pixmap.isNull()) {
+      avatar_pixmap = view.avatar_loading_.pixmap(size, size);
+    } else {
+      avatar_pixmap = a.pixmap;
+    }
+  } else {
+    avatar_pixmap = view.avatar_missing_.pixmap(size, size);
+  }
+  p.drawPixmap(QPoint(offset.x() + margin + (size - avatar_pixmap.width()) / 2,
+                      offset.y() + (size - avatar_pixmap.height()) / 2),
+               avatar_pixmap);
 
   p.save();
   p.setPen(header_color);
@@ -164,7 +203,9 @@ size_t TimelineView::Batch::size() const {
 TimelineView::TimelineView(matrix::Room &room, QWidget *parent)
     : QAbstractScrollArea(parent), room_(room), initial_state_(room.initial_state()), total_events_(0),
       head_color_alternate_(true), backlog_growing_(false), backlog_growable_(true), min_backlog_size_(256),
-      content_height_(0) {
+      content_height_(0),
+      avatar_missing_(QIcon::fromTheme("unknown")),
+      avatar_loading_(QIcon::fromTheme("image-loading")) {
   setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
   verticalScrollBar()->setSingleStep(20);  // Taken from QScrollArea
@@ -183,7 +224,7 @@ int TimelineView::visible_width() const {
 void TimelineView::push_back(const matrix::RoomState &state, const matrix::proto::Event &in) {
   backlog_growable_ &= in.type != "m.room.create";
 
-  batches_.back().blocks.emplace_back(*this, state, in, nullptr);
+  batches_.back().blocks.emplace_back(*this, state, in);
   head_color_alternate_ = !head_color_alternate_;
 
   content_height_ += block_spacing();
@@ -298,13 +339,10 @@ void TimelineView::resizeEvent(QResizeEvent *e) {
 void TimelineView::grow_backlog() {
   if(verticalScrollBar()->value() >= scrollback_trigger_size() || backlog_growing_ || !backlog_growable_) return;
   backlog_growing_ = true;
-  auto reply = room_.get_messages(matrix::Room::Direction::BACKWARD, prev_batch_, 100);
+  auto reply = room_.get_messages(matrix::Room::Direction::BACKWARD, prev_batch_, BACKLOG_BATCH_SIZE);
   connect(reply, &matrix::MessageFetch::finished, this, &TimelineView::prepend_batch);
-  connect(reply, &matrix::MessageFetch::error, [this](QString msg){
-      backlog_growing_ = false;
-      // TODO: User feedback
-      qDebug() << "error growing backlog:" << msg;
-    });
+  connect(reply, &matrix::MessageFetch::finished, this, &TimelineView::prepend_batch);
+  connect(reply, &matrix::MessageFetch::error, &room_, &matrix::Room::error);
 }
 
 void TimelineView::prepend_batch(QString start, QString end, gsl::span<const matrix::proto::Event> events) {
@@ -314,7 +352,7 @@ void TimelineView::prepend_batch(QString start, QString end, gsl::span<const mat
   auto &batch = batches_.front();
   batch.token = start;  // FIXME: Verify that this is correct
   for(const auto &e : events) {  // Events is in reverse order
-    batch.blocks.emplace_front(*this, initial_state_, e, nullptr);
+    batch.blocks.emplace_front(*this, initial_state_, e);
     content_height_ += batch.blocks.front().bounding_rect(*this).height() + block_spacing();
     initial_state_.revert(e);
     backlog_growable_ &= e.type != "m.room.create";
@@ -346,9 +384,33 @@ void TimelineView::prune_backlog() {
       // batch, bail out.
       return;
     }
+
+    // GC avatars
+    for(auto &block : batches_.front().blocks) {
+      if(!block.avatar()) continue;
+      auto it = avatars_.find(*block.avatar());
+      --it->second.references;
+      if(it->second.references == 0) {
+        avatars_.erase(it);
+      }
+    }
+
     total_events_ -= front_size;
     content_height_ -= batch_height;
     events_removed += front_size;
     batches_.pop_front();
+    backlog_growable_ = true;
   }
+}
+
+void TimelineView::set_avatar(const matrix::Content &content, const QString &type, const QString &disposition,
+                              const QByteArray &data) {
+  (void)disposition;
+  QPixmap pixmap;
+  pixmap.loadFromData(data);
+  const auto size = avatar_size();
+  if(pixmap.width() > size || pixmap.height() > size)
+    pixmap = pixmap.scaled(avatar_size(), avatar_size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+  avatars_.at(content).pixmap = pixmap;
+  viewport()->update();
 }

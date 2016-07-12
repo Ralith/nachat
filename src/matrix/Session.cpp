@@ -1,5 +1,7 @@
 #include "Session.hpp"
 
+#include <stdexcept>
+
 #include <QTimer>
 
 #include "utils.hpp"
@@ -134,6 +136,54 @@ QNetworkReply *Session::post(const QString &path, QIODevice *data, QUrlQuery que
 
 QNetworkReply *Session::put(const QString &path, QJsonObject body) {
   return universe_.net.put(request(path), encode(body));
+}
+
+ContentFetch *Session::get(const Content &content) {
+  auto url = content.url_on(homeserver_);
+  QUrlQuery query;
+  query.addQueryItem("access_token", access_token_);
+  url.setQuery(query);
+  QNetworkRequest req(url);
+  auto reply = universe_.net.get(req);
+  auto result = new ContentFetch(reply);
+  connect(reply, &QNetworkReply::finished, [content, reply, result]() {
+      reply->deleteLater();
+      if(reply->error()) {
+        result->error(reply->errorString());
+      } else {
+        result->finished(content,
+                         reply->header(QNetworkRequest::ContentTypeHeader).toString(),
+                         reply->header(QNetworkRequest::ContentDispositionHeader).toString(),
+                         reply->readAll());
+      }
+    });
+  return result;
+}
+
+ContentFetch *Session::get_thumbnail(const Content &content, const QSize &size, ThumbnailMethod method) {
+  QUrl url(homeserver_);
+  url.setPath("/_matrix/media/r0/thumbnail/" % content.host() % "/" % content.id());
+  QUrlQuery query;
+  query.addQueryItem("access_token", access_token_);
+  query.addQueryItem("width", QString::number(size.width()));
+  query.addQueryItem("height", QString::number(size.height()));
+  query.addQueryItem("method", method == ThumbnailMethod::SCALE ? "scale" : "crop");
+  url.setQuery(query);
+  QNetworkRequest req(url);
+  auto reply = universe_.net.get(req);
+  auto result = new ContentFetch(reply);
+  connect(reply, &QNetworkReply::finished, [content, reply, result]() {
+      reply->deleteLater();
+      if(reply->error()) {
+        result->error(reply->errorString());
+      } else {
+        result->finished(content,
+                         reply->header(QNetworkRequest::ContentTypeHeader).toString(),
+                         reply->header(QNetworkRequest::ContentDispositionHeader).toString(),
+                         reply->readAll());
+      }
+    });
+  return result;
 }
 
 }

@@ -4,14 +4,17 @@
 #include <deque>
 #include <chrono>
 #include <vector>
-#include <memory>
 #include <unordered_map>
+#include <unordered_set>
+#include <experimental/optional>
 
 #include <QAbstractScrollArea>
 #include <QTextLayout>
+#include <QIcon>
 
 #include "matrix/Event.hpp"
 #include "matrix/Room.hpp"
+#include "matrix/Content.hpp"
 
 #include "QStringHash.hpp"
 
@@ -40,18 +43,19 @@ private:
 
   class Block {
   public:
-    Block(const TimelineView &, const matrix::RoomState &, const matrix::proto::Event &, std::shared_ptr<QPixmap>);
+    Block(TimelineView &, const matrix::RoomState &, const matrix::proto::Event &);
     void update_layout(const TimelineView &);
     void draw(const TimelineView &view, QPainter &p, QPointF offset) const;
     QRectF bounding_rect(const TimelineView &view) const;
 
     const QString &sender_id() const { return sender_id_; }
     size_t size() const;
+    const std::experimental::optional<matrix::Content> &avatar() const { return avatar_; }
 
   private:
     const QString event_id_;
     const QString sender_id_;
-    const std::shared_ptr<QPixmap> avatar_;
+    std::experimental::optional<matrix::Content> avatar_;
 
     QTextLayout name_layout_, timestamp_layout_;
 
@@ -65,6 +69,11 @@ private:
     size_t size() const;
   };
 
+  struct Avatar {
+    size_t references = 0;
+    QPixmap pixmap;
+  };
+
   matrix::Room &room_;
   matrix::RoomState initial_state_;
   std::deque<Batch> batches_;  // deque so we can add/remote batches from either end
@@ -75,7 +84,8 @@ private:
   size_t min_backlog_size_;
   qreal content_height_;
   QString prev_batch_;  // Token for the batch immediately prior to the first message
-  std::unordered_map<QString, std::shared_ptr<QPixmap>, QStringHash> avatars_;
+  std::unordered_map<matrix::Content, Avatar> avatars_;
+  QIcon avatar_missing_, avatar_loading_;
 
   void update_scrollbar(bool for_prepend = false);
   int visible_width() const;
@@ -85,6 +95,7 @@ private:
   void grow_backlog();
   void prepend_batch(QString start, QString end, gsl::span<const matrix::proto::Event> events);
   int scrollback_trigger_size() const;
+  void set_avatar(const matrix::Content &content, const QString &type, const QString &disposition, const QByteArray &data);
 
   void prune_backlog();
   // Removes enough blocks from the backlog that calling for each new event will cause backlog size to approach one
