@@ -154,13 +154,21 @@ void Room::dispatch(const proto::JoinedRoom &joined) {
 }
 
 bool RoomState::update_membership(const QString &user_id, const QJsonObject &content, Room *room) {
-  auto membership = parse_membership(content["membership"].toString());
-  if(!membership) {
-    qDebug() << "Unrecognized membership type" << content["membership"].toString()
-             << "in content" << content;
-    return false;
+  Membership membership;
+  if(content.empty()) {
+    // Empty content arises when moving backwards from an initial event
+    membership = Membership::LEAVE;
+  } else {
+    auto r = parse_membership(content["membership"].toString());
+    if(!r) {
+      qDebug() << "Unrecognized membership type" << content["membership"].toString()
+               << "in content" << content;
+      return false;
+    }
+    membership = *r;
   }
-  switch(*membership) {
+
+  switch(membership) {
   case Membership::INVITE:
   case Membership::JOIN: {
     auto it = members_by_id_.find(user_id);
@@ -183,19 +191,19 @@ bool RoomState::update_membership(const QString &user_id, const QJsonObject &con
       if(room && !new_member) room->member_name_changed(member, old_member_name);
     }
     if(room && member.membership() != old_membership) {
-      room->membership_changed(it->second, *membership);
+      room->membership_changed(it->second, membership);
     }
     break;
   }
   case Membership::LEAVE:
   case Membership::BAN: {
     if(room && user_id == room->id()) {
-      room->left(*membership);
+      room->left(membership);
     }
     auto it = members_by_id_.find(user_id);
     if(it != members_by_id_.end()) {
       it->second.update_membership(content);
-      if(room) room->membership_changed(it->second, *membership);
+      if(room) room->membership_changed(it->second, membership);
     }
     break;
   }

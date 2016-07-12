@@ -20,6 +20,12 @@ std::experimental::optional<Membership> parse_membership(const QString &m) {
 }
 
 void Member::update_membership(const QJsonObject &content) {
+  if(content.empty()) {
+    // Empty content arises when moving backwards from an initial event
+    membership_ = Membership::LEAVE;
+    return;
+  }
+
   auto membership = parse_membership(content["membership"].toString());
   if(!membership) {
     qDebug() << "Unrecognized membership type" << content["membership"].toString();
