@@ -15,6 +15,8 @@ const static QColor primary_bg(245, 245, 245);
 const static QColor secondary_bg = Qt::white;
 const static QColor header_color(96, 96, 96);
 constexpr static int BACKLOG_BATCH_SIZE = 50;
+constexpr static std::chrono::minutes BLOCK_MERGE_INTERVAL(2);
+constexpr static std::chrono::minutes TIMESTAMP_RANGE_THRESHOLD(2);
 
 static auto to_time_point(uint64_t ts) {
   return std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::from_time_t(0))
@@ -34,11 +36,22 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::proto::Event 
     layouts[i].setCacheEnabled(true);
     layouts[i].setText(lines[i]);
   }
+
+  update_layout(view);
 }
 
-TimelineView::Block::Block(TimelineView &view, const matrix::RoomState &state, const matrix::proto::Event &e)
+static QString to_timestamp(std::chrono::system_clock::time_point p) {
+  auto time = std::chrono::system_clock::to_time_t(p);
+  auto tm = std::localtime(&time);
+  std::ostringstream s;
+  s << std::put_time(tm, "%H:%M");
+  return QString::fromStdString(s.str());
+}
+
+TimelineView::Block::Block(TimelineView &view, const matrix::RoomState &state, const matrix::proto::Event &e,
+                           Event &e_internal)
     : sender_id_(e.sender) {
-  events_.emplace_back(view, e);
+  events_.emplace_back(&e_internal);
 
   auto sender = state.member(e.sender);
 
@@ -83,13 +96,6 @@ TimelineView::Block::Block(TimelineView &view, const matrix::RoomState &state, c
     timestamp_layout_.setFont(view.font());
     timestamp_layout_.setTextOption(options);
     timestamp_layout_.setCacheEnabled(true);
-
-    auto time = std::chrono::system_clock::to_time_t(events_.front().time);
-    auto tm = std::localtime(&time);
-    std::ostringstream s;
-    s << std::put_time(tm, "%H:%M");
-
-    timestamp_layout_.setText(QString::fromStdString(s.str()));
   }
 
   update_layout(view);
@@ -97,60 +103,82 @@ TimelineView::Block::Block(TimelineView &view, const matrix::RoomState &state, c
 
 void TimelineView::Block::update_layout(const TimelineView &view) {
   auto metrics = view.fontMetrics();
-  const int margin = view.block_margin();
-  const int avatar_size = view.avatar_size();
-  qreal height = 0;
-
-  const int line_start = avatar_size + 2*margin;
-  const int line_width = view.visible_width() - (line_start + margin);
 
   {
+    qreal height = 0;
     name_layout_.beginLayout();
     while(true) {
       auto line = name_layout_.createLine();
       if(!line.isValid()) break;
-      line.setLineWidth(line_width);
-      line.setPosition(QPointF(line_start, height));
+      line.setLineWidth(view.block_body_width());
+      line.setPosition(QPointF(view.block_body_start(), height));
       height += metrics.lineSpacing();
     }
     name_layout_.endLayout();
   }
 
-  {
-    timestamp_layout_.beginLayout();
-    auto line = timestamp_layout_.createLine();
-    line.setLineWidth(line_width);
-    line.setPosition(QPointF(line_start, 0));
-    timestamp_layout_.endLayout();
-    if(metrics.boundingRect(name_layout_.text()).width() > line_width - metrics.boundingRect(timestamp_layout_.text()).width()) {
-      timestamp_layout_.clearLayout();
-    }
-  }
-
-  for(auto &event : events_) {
-    for(auto &layout : event.layouts) {
-      layout.beginLayout();
-      while(true) {
-        auto line = layout.createLine();
-        if(!line.isValid()) break;
-        line.setLineWidth(line_width);
-        line.setPosition(QPointF(line_start, height));
-        height += metrics.lineSpacing();
+  {  // Lay out as a single or range timestamp as appropriate, degrading to single or nothing of space is unavailable
+    auto layout_ts = [&](){
+      timestamp_layout_.beginLayout();
+      auto line = timestamp_layout_.createLine();
+      line.setLineWidth(view.block_body_width());
+      line.setPosition(QPointF(view.block_body_start(), 0));
+      timestamp_layout_.endLayout();
+      if(name_layout_.lineAt(0).naturalTextWidth() > view.block_body_width() - line.naturalTextWidth()) {
+        timestamp_layout_.clearLayout();
+        return false;
       }
-      layout.endLayout();
+      return true;
+    };
+    auto start_ts = to_timestamp(events_.front()->time);
+    bool done = false;
+    if(events_.size() > 1 && events_.back()->time - events_.front()->time > TIMESTAMP_RANGE_THRESHOLD) {
+      auto end_ts = to_timestamp(events_.back()->time);
+      timestamp_layout_.setText(start_ts % "–" % end_ts);
+      done = layout_ts();
+    }
+    if(!done) {
+      timestamp_layout_.setText(start_ts);
+      layout_ts();
     }
   }
 }
 
+void TimelineView::Event::update_layout(const TimelineView &view) {
+  auto metrics = view.fontMetrics();
+  qreal height = 0;
+  for(auto &layout : layouts) {
+    layout.beginLayout();
+    while(true) {
+      auto line = layout.createLine();
+      if(!line.isValid()) break;
+      line.setLineWidth(view.block_body_width());
+      line.setPosition(QPointF(view.block_body_start(), height));
+      height += metrics.lineSpacing();
+    }
+    layout.endLayout();
+  }
+}
+
+QRectF TimelineView::Event::bounding_rect() const {
+  QRectF rect;
+  for(const auto &layout : layouts) {
+    rect |= layout.boundingRect();
+  }
+  return rect;
+}
+
 QRectF TimelineView::Block::bounding_rect(const TimelineView &view) const {
+  auto metrics = view.fontMetrics();
   auto margin = view.block_margin();
   auto av_size = view.avatar_size();
   QRectF rect(margin, margin, view.visible_width() - margin, av_size);
   rect |= name_layout_.boundingRect();
-  for(const auto &event : events_) {
-    for(const auto &layout : event.layouts) {
-      rect |= layout.boundingRect();
-    }
+  QPointF offset(0, name_layout_.boundingRect().height() + metrics.leading());
+  for(const auto event : events_) {
+    auto event_bounds = event->bounding_rect();
+    rect |= event_bounds.translated(offset);
+    offset.ry() += event_bounds.height() + metrics.leading();
   }
   return rect;
 }
@@ -181,10 +209,15 @@ void TimelineView::Block::draw(const TimelineView &view, QPainter &p, QPointF of
   timestamp_layout_.draw(&p, offset);
   p.restore();
 
-  for(const auto &event : events_) {
-    for(const auto &layout : event.layouts) {
+  offset.ry() += name_layout_.boundingRect().height();
+
+  for(const auto event : events_) {
+    QRectF event_bounds;
+    for(const auto &layout : event->layouts) {
       layout.draw(&p, offset);
+      event_bounds |= layout.boundingRect();
     }
+    offset.ry() += event_bounds.height() + metrics.leading();
   }
 }
 
@@ -193,16 +226,12 @@ size_t TimelineView::Block::size() const {
 }
 
 size_t TimelineView::Batch::size() const {
-  size_t result = 0;
-  for(const auto &block : blocks) {
-    result += block.size();
-  }
-  return result;
+  return events.size();
 }
 
 TimelineView::TimelineView(matrix::Room &room, QWidget *parent)
     : QAbstractScrollArea(parent), room_(room), initial_state_(room.initial_state()), total_events_(0),
-      head_color_alternate_(true), backlog_growing_(false), backlog_growable_(true), min_backlog_size_(256),
+      head_color_alternate_(true), backlog_growing_(false), backlog_growable_(true), min_backlog_size_(50),
       content_height_(0),
       avatar_missing_(QIcon::fromTheme("unknown")),
       avatar_loading_(QIcon::fromTheme("image-loading")) {
@@ -224,11 +253,24 @@ int TimelineView::visible_width() const {
 void TimelineView::push_back(const matrix::RoomState &state, const matrix::proto::Event &in) {
   backlog_growable_ &= in.type != "m.room.create";
 
-  batches_.back().blocks.emplace_back(*this, state, in);
-  head_color_alternate_ = !head_color_alternate_;
+  batches_.back().events.emplace_back(*this, in);
+  auto &event = batches_.back().events.back();
 
-  content_height_ += block_spacing();
-  content_height_ += batches_.back().blocks.back().bounding_rect(*this).height();
+  if(!blocks_.empty()
+     && blocks_.back().sender_id() == in.sender
+     && event.time - blocks_.back().events().back()->time <= BLOCK_MERGE_INTERVAL) {
+    // Add to existing block
+    blocks_.back().events().emplace_back(&event);
+    blocks_.back().update_layout(*this);  // Updates timestamp if necessary
+    content_height_ += blocks_.back().events().back()->bounding_rect().height() + fontMetrics().leading();
+  } else {
+    blocks_.emplace_back(*this, state, in, event);
+    head_color_alternate_ = !head_color_alternate_;
+
+    content_height_ += block_spacing();
+    content_height_ += blocks_.back().bounding_rect(*this).height();
+  }
+
   total_events_ += 1;
 
   prune_backlog();
@@ -243,6 +285,8 @@ void TimelineView::end_batch(const QString &token) {
     prev_batch_ = token;
   } else {
     batches_.back().token = token;
+    // Clobber empty batches
+    if(batches_.back().events.empty()) return;
   }
   batches_.emplace_back();  // Next batch
 }
@@ -255,6 +299,12 @@ int TimelineView::avatar_size() const {
 }
 int TimelineView::scrollback_trigger_size() const {
   return viewport()->contentsRect().height()/2;
+}
+int TimelineView::block_body_start() const {
+  return avatar_size() + 2*block_margin();
+}
+int TimelineView::block_body_width() const {
+  return visible_width() - (block_body_start() + block_margin());
 }
 
 void TimelineView::update_scrollbar(bool for_prepend) {
@@ -282,31 +332,29 @@ void TimelineView::paintEvent(QPaintEvent *) {
   auto s = block_spacing();
   bool alternate = head_color_alternate_;
   const int margin = block_margin();
-  for(auto batch_it = batches_.crbegin(); batch_it != batches_.crend(); ++batch_it) {
-    for(auto it = batch_it->blocks.crbegin(); it != batch_it->blocks.crend(); ++it) {
-      const auto bounds = it->bounding_rect(*this);
-      offset.ry() -= bounds.height();
-      if((offset.y() + bounds.height()) < view_rect.top()) {
-        // No further drawing possible
-        break;
-      }
-      if(offset.y() < view_rect.bottom()) {
-        {
-          QRectF outline(offset.x() + 0.5, offset.y() - (0.5 + s/2.0),
-                         view_rect.width() - 1,
-                         bounds.translated(offset).height() + (1 + s/2.0));
-          painter.save();
-          painter.setRenderHint(QPainter::Antialiasing);
-          QPainterPath path;
-          path.addRoundedRect(outline, margin*2, margin*2);
-          painter.fillPath(path, alternate ? secondary_bg : primary_bg);
-          painter.restore();
-        }
-        it->draw(*this, painter, offset);
-      }
-      offset.ry() -= s;
-      alternate = !alternate;
+  for(auto it = blocks_.crbegin(); it != blocks_.crend(); ++it) {
+    const auto bounds = it->bounding_rect(*this);
+    offset.ry() -= bounds.height();
+    if((offset.y() + bounds.height()) < view_rect.top()) {
+      // No further drawing possible
+      break;
     }
+    if(offset.y() < view_rect.bottom()) {
+      {
+        QRectF outline(offset.x() + 0.5, offset.y() - (0.5 + s/2.0),
+                       view_rect.width() - 1,
+                       bounds.translated(offset).height() + (1 + s/2.0));
+        painter.save();
+        painter.setRenderHint(QPainter::Antialiasing);
+        QPainterPath path;
+        path.addRoundedRect(outline, margin*2, margin*2);
+        painter.fillPath(path, alternate ? secondary_bg : primary_bg);
+        painter.restore();
+      }
+      it->draw(*this, painter, offset);
+    }
+    offset.ry() -= s;
+    alternate = !alternate;
   }
 }
 
@@ -324,10 +372,13 @@ void TimelineView::resizeEvent(QResizeEvent *e) {
     content_height_ = 0;
     const auto s = block_spacing();
     for(auto &batch : batches_) {
-      for(auto &block : batch.blocks) {
-        block.update_layout(*this);
-        content_height_ += block.bounding_rect(*this).height() + s;
+      for(auto &event : batch.events) {
+        event.update_layout(*this);
       }
+    }
+    for(auto &block : blocks_) {
+      block.update_layout(*this);
+      content_height_ += block.bounding_rect(*this).height() + s;
     }
   }
 
@@ -351,8 +402,18 @@ void TimelineView::prepend_batch(QString start, QString end, gsl::span<const mat
   auto &batch = batches_.front();
   batch.token = start;  // FIXME: Verify that this is correct
   for(const auto &e : events) {  // Events is in reverse order
-    batch.blocks.emplace_front(*this, initial_state_, e);
-    content_height_ += batch.blocks.front().bounding_rect(*this).height() + block_spacing();
+    batch.events.emplace_front(*this, e);
+    auto &internal = batch.events.front();
+    if(!blocks_.empty()
+       && blocks_.front().sender_id() == e.sender
+       && internal.time - blocks_.front().events().front()->time <= BLOCK_MERGE_INTERVAL) {
+      blocks_.front().events().emplace_front(&internal);
+      blocks_.front().update_layout(*this);  // Updates timestamp if necessary
+      content_height_ += blocks_.front().events().front()->bounding_rect().height() + fontMetrics().leading();
+    } else {
+      blocks_.emplace_front(*this, initial_state_, e, internal);
+      content_height_ += blocks_.front().bounding_rect(*this).height() + block_spacing();
+    }
     initial_state_.revert(e);
     backlog_growable_ &= e.type != "m.room.create";
   }
@@ -366,37 +427,75 @@ void TimelineView::prepend_batch(QString start, QString end, gsl::span<const mat
 
 void TimelineView::prune_backlog() {
   // Only prune if the user's looking the bottom.
-  const int scroll_pos = verticalScrollBar()->value();
+  const auto &scroll = *verticalScrollBar();
+  const int scroll_pos = scroll.value();
   if(scroll_pos != verticalScrollBar()->maximum()) return;
+  const auto view_rect = viewport()->contentsRect();
 
   // We prune at least 2 events to ensure we don't hit a steady-state above the target
   size_t events_removed = 0;
   while(events_removed < 2) {
-    const size_t front_size = batches_.front().size();
-    int batch_height = 0;
-    for(const auto &block : batches_.front().blocks) {
-      batch_height += block.bounding_rect(*this).height() + block_spacing();
-    }
-    if((total_events_ - front_size < min_backlog_size_)
-       || (batch_height + scrollback_trigger_size() > scroll_pos)) {
-      // If removing the earliest batch would cause us to fall under the minimum, or the user could see the removed
-      // batch, bail out.
-      return;
-    }
+    auto &batch = batches_.front();  // Candidate for removal
+    if(total_events_ - batch.size() < min_backlog_size_) return;
 
-    // GC avatars
-    for(auto &block : batches_.front().blocks) {
-      if(!block.avatar()) continue;
-      auto it = avatars_.find(*block.avatar());
-      --it->second.references;
-      if(it->second.references == 0) {
-        avatars_.erase(it);
+    // Determine the first batch that cannot be removed, i.e. the first to overlap the viewport
+    // This is structurally very similar to the drawing loop.
+    QPointF offset(0, view_rect.height() - (scroll_pos - scroll.maximum()));
+    const Block *limit_block;
+    for(auto it = blocks_.rbegin(); it != blocks_.rend(); ++it) {
+      limit_block = &*it;
+      const auto bounds = it->bounding_rect(*this);
+      offset.ry() -= bounds.height();
+      if((offset.y() + bounds.height()) < view_rect.top()) {
+        // No further drawing possible
+        break;
       }
+      offset.ry() -= block_spacing();
     }
 
-    total_events_ -= front_size;
-    content_height_ -= batch_height;
-    events_removed += front_size;
+    // Find the block containing the last event to be removed
+    Block *end_block = nullptr;
+    for(auto it = blocks_.begin(); &*it != limit_block; ++it) {
+      for(const auto event : it->events()) {
+        if(event == &batch.events.back()) goto done;
+      }
+      continue;
+      done:
+      end_block = &*it;
+      break;
+    }
+    if(!end_block) return;  // Batch overlaps with viewport, bail out
+
+    int height_lost = 0;
+    // Free blocks
+    while(&blocks_.front() != end_block) {
+      auto &block = blocks_.front();
+      height_lost += block.bounding_rect(*this).height() + block_spacing();
+      if(block.avatar()) unref_avatar(*block.avatar());
+      blocks_.pop_front();
+    }
+
+    // Excise to-be-removed events from end_block, now the first block
+    int original_first_block_height = blocks_.front().bounding_rect(*this).height() + block_spacing();
+    while(blocks_.front().events().front() != &batch.events.back()) {
+      blocks_.front().events().pop_front();
+    }
+    blocks_.front().events().pop_front();  // Remove final event
+
+    // Free end_block if necessary, and compute final height change
+    int final_first_block_height;
+    if(blocks_.front().events().empty()) {
+      if(blocks_.front().avatar()) unref_avatar(*blocks_.front().avatar());
+      blocks_.pop_front();
+      final_first_block_height = 0;
+    } else {
+      final_first_block_height = blocks_.front().bounding_rect(*this).height() + block_spacing();
+    }
+    height_lost += original_first_block_height - final_first_block_height;
+
+    events_removed += batch.size();
+    total_events_ -= batch.size();
+    content_height_ -= height_lost;
     batches_.pop_front();
     backlog_growable_ = true;
   }
@@ -412,4 +511,12 @@ void TimelineView::set_avatar(const matrix::Content &content, const QString &typ
     pixmap = pixmap.scaled(avatar_size(), avatar_size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
   avatars_.at(content).pixmap = pixmap;
   viewport()->update();
+}
+
+void TimelineView::unref_avatar(const matrix::Content &content) {
+  auto it = avatars_.find(content);
+  --it->second.references;
+  if(it->second.references == 0) {
+    avatars_.erase(it);
+  }
 }
