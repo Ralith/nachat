@@ -24,8 +24,47 @@ static auto to_time_point(uint64_t ts) {
 }
 
 TimelineView::Event::Event(const TimelineView &view, const matrix::proto::Event &e)
-    : time(to_time_point(e.origin_server_ts)) {
-  auto lines = e.content["body"].toString().split('\n');
+    : system(e.type != "m.room.message"), time(to_time_point(e.origin_server_ts)) {
+  QStringList lines;
+  if(e.type == "m.room.message") {
+    lines = e.content["body"].toString().split('\n');
+  } else if(e.type == "m.room.member") {
+    switch(matrix::parse_membership(e.content["membership"].toString()).value()) {
+    case matrix::Membership::INVITE: {
+      auto &invitee = *view.room_.state().member(e.state_key);
+      lines = QStringList(tr("invited %1").arg(view.room_.state().member_name(invitee)));
+      break;
+    }
+    case matrix::Membership::JOIN: {
+      if(!e.unsigned_.prev_content) {
+        lines = QStringList(tr("joined"));
+        break;
+      }
+      const auto &prev = *e.unsigned_.prev_content;
+      const bool avatar_changed = QUrl(prev["avatar_url"].toString()) != QUrl(e.content["avatar_url"].toString());
+      const bool dn_changed = prev["displayname"].toString() != e.content["displayname"].toString();
+      if(avatar_changed && dn_changed) {
+        lines = QStringList(tr("changed avatar and display name"));
+      } else if(avatar_changed) {
+        lines = QStringList(tr("changed avatar"));
+      } else {
+        lines = QStringList(tr("changed display name"));
+      }
+      break;
+    }
+    case matrix::Membership::LEAVE: {
+      lines = QStringList(tr("left"));
+      break;
+    }
+    case matrix::Membership::BAN: {
+      auto &banned = *view.room_.state().member(e.state_key);
+      lines = QStringList(tr("banned %1").arg(view.room_.state().member_name(banned)));
+      break;
+    }
+    }
+  } else {
+    lines = QStringList(tr("unrecognized event type %1").arg(e.type));
+  }
   layouts = std::vector<QTextLayout>(lines.size());
   QTextOption body_options;
   body_options.setAlignment(Qt::AlignLeft | Qt::AlignTop);
@@ -212,12 +251,17 @@ void TimelineView::Block::draw(const TimelineView &view, QPainter &p, QPointF of
   offset.ry() += name_layout_.boundingRect().height();
 
   for(const auto event : events_) {
+    p.save();
+    if(event->system) {
+      p.setPen(header_color);
+    }
     QRectF event_bounds;
     for(const auto &layout : event->layouts) {
       layout.draw(&p, offset);
       event_bounds |= layout.boundingRect();
     }
     offset.ry() += event_bounds.height() + metrics.leading();
+    p.restore();
   }
 }
 
