@@ -169,13 +169,10 @@ QString Room::pretty_name() const {
 }
 
 void Room::load_state(lmdb::txn &txn, gsl::span<const proto::Event> events) {
-  if(events.empty()) return;
-  buffer_.clear();
   for(auto &state : events) {
     initial_state_.apply(state);
     state_.dispatch(state, this, &member_db_, &txn);
   }
-  discontinuity();
 }
 
 size_t Room::buffer_size() const {
@@ -211,6 +208,11 @@ bool Room::dispatch(lmdb::txn &txn, const proto::JoinedRoom &joined) {
   if(joined.unread_notifications.notification_count != notification_count_) {
     notification_count_ = joined.unread_notifications.notification_count;
     notification_count_changed();
+  }
+
+  if(joined.timeline.limited) {
+    buffer_.clear();
+    discontinuity();
   }
 
   Batch batch;
