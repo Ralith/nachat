@@ -231,8 +231,8 @@ size_t TimelineView::Batch::size() const {
 
 TimelineView::TimelineView(matrix::Room &room, QWidget *parent)
     : QAbstractScrollArea(parent), room_(room), initial_state_(room.initial_state()), total_events_(0),
-      head_color_alternate_(true), backlog_growing_(false), backlog_growable_(true), min_backlog_size_(50),
-      content_height_(0),
+      head_color_alternate_(true), backlog_growing_(false), backlog_growable_(true), backlog_grow_cancelled_(false),
+      min_backlog_size_(50), content_height_(0),
       avatar_missing_(QIcon::fromTheme("unknown")),
       avatar_loading_(QIcon::fromTheme("image-loading")) {
   setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -382,6 +382,13 @@ void TimelineView::resizeEvent(QResizeEvent *e) {
   update_scrollbar();
   // Required uncondtionally since height *and* width matter due to text wrapping. Placed after content_height_ changes
   // to ensure they're accounted for.
+
+  grow_backlog();  // In case we can newly see the end
+}
+
+void TimelineView::showEvent(QShowEvent *e) {
+  (void)e;
+  grow_backlog();  // Make sure we have something to display ASAP
 }
 
 void TimelineView::grow_backlog() {
@@ -394,6 +401,11 @@ void TimelineView::grow_backlog() {
 
 void TimelineView::prepend_batch(QString start, QString end, gsl::span<const matrix::proto::Event> events) {
   backlog_growing_ = false;
+  if(backlog_grow_cancelled_) {
+    backlog_grow_cancelled_ = false;
+    grow_backlog();
+    return;
+  }
   prev_batch_ = end;
   batches_.emplace_front();
   auto &batch = batches_.front();
@@ -516,4 +528,16 @@ void TimelineView::unref_avatar(const matrix::Content &content) {
   if(it->second.references == 0) {
     avatars_.erase(it);
   }
+}
+
+void TimelineView::reset() {
+  batches_.clear();
+  blocks_.clear();
+  avatars_.clear();
+  initial_state_ = room_.initial_state();
+  total_events_ = 0;
+  backlog_growable_ = true;
+  content_height_ = 0;
+  prev_batch_ = QString();  // Should be filled in again before control returns to Qt
+  if(backlog_growing_) backlog_grow_cancelled_ = true;
 }

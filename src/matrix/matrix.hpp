@@ -18,8 +18,6 @@ class Matrix : public QObject {
   Q_OBJECT
 
 public:
-  QNetworkAccessManager &net;
-
   explicit Matrix(QNetworkAccessManager &net, QObject *parent = 0);
 
   Matrix(const Matrix &) = delete;
@@ -30,6 +28,10 @@ public:
 signals:
   void logged_in(Session* session);
   void login_error(QString message);
+
+private:
+  friend class Session;
+  QNetworkAccessManager &net;
 };
 
 }

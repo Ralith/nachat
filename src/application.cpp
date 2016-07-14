@@ -24,7 +24,7 @@ void Application::start() {
   } else {
     main_window_ = std::make_unique<MainWindow>(
       settings_,
-      std::make_unique<matrix::Session>(m_, homeserver.toString(), user_id.toString(), access_token.toString()));
+      std::unique_ptr<matrix::Session>(matrix::Session::create(m_, homeserver.toString(), user_id.toString(), access_token.toString())));
     session_start();
   }
 }

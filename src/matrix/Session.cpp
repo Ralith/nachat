@@ -3,6 +3,7 @@
 #include <stdexcept>
 
 #include <QTimer>
+#include <QUrl>
 
 #include "utils.hpp"
 #include "matrix.hpp"
@@ -10,9 +11,61 @@
 
 namespace matrix {
 
-Session::Session(Matrix& universe, QUrl homeserver, QString user_id, QString access_token)
-    : universe_(universe), homeserver_(homeserver), user_id_(user_id), buffer_size_(50),
-      access_token_(access_token), synced_(false) {
+Session *Session::create(Matrix& universe, QUrl homeserver, QString user_id, QString access_token) {
+  auto env = lmdb::env::create();
+  env.set_mapsize(128UL * 1024UL * 1024UL);  // 128MB should be enough for anyone!
+  env.set_max_dbs(1024UL);                   // maximum rooms plus two
+
+  QString state_path = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) % "/" % QString::fromUtf8(user_id.toUtf8().toHex() % "/state");
+  if(!QDir().mkpath(state_path)) {
+    throw std::runtime_error(("unable to create state directory at " + state_path).toStdString().c_str());
+  }
+
+  env.open(state_path.toStdString().c_str());
+
+  auto txn = lmdb::txn::begin(env);
+  auto state_db = lmdb::dbi::open(txn, "state", MDB_CREATE);
+  auto room_db = lmdb::dbi::open(txn, "rooms", MDB_CREATE);
+  txn.commit();
+
+  return new Session(universe, std::move(homeserver), std::move(user_id), std::move(access_token),
+                     std::move(env), std::move(state_db), std::move(room_db));
+}
+
+static constexpr char POLL_TIMEOUT_MS[] = "50000";
+static const lmdb::val next_batch_key("next_batch");
+
+static std::string room_dbname(const QString &room_id) { return ("r." + room_id).toStdString(); }
+
+Session::Session(Matrix& universe, QUrl homeserver, QString user_id, QString access_token,
+                 lmdb::env &&env, lmdb::dbi &&state_db, lmdb::dbi &&room_db)
+    : universe_(universe), homeserver_(homeserver), user_id_(user_id), access_token_(access_token),
+      env_(std::move(env)), state_db_(std::move(state_db)), room_db_(std::move(room_db)),
+      buffer_size_(50), synced_(false) {
+  {
+    auto txn = lmdb::txn::begin(env_, nullptr, MDB_RDONLY);
+    lmdb::val stored_batch;
+    if(lmdb::dbi_get(txn, state_db_, next_batch_key, stored_batch)) {
+      next_batch_ = QString::fromUtf8(stored_batch.data(), stored_batch.size());
+      qDebug() << "resuming from" << next_batch_;
+
+      lmdb::val room;
+      lmdb::val state;
+      auto cursor = lmdb::cursor::open(txn, room_db_);
+      while(cursor.get(room, state, MDB_NEXT)) {
+        auto id = QString::fromUtf8(room.data(), room.size());
+        rooms_.emplace(std::piecewise_construct,
+                       std::forward_as_tuple(id),
+                       std::forward_as_tuple(universe_, *this, id,
+                                             QJsonDocument::fromBinaryData(QByteArray(state.data(), state.size())).object(),
+                                             env_, txn, lmdb::dbi::open(txn, room_dbname(id).c_str())));
+      }
+    } else {
+      qDebug() << "starting from scratch";
+    }
+    txn.commit();
+  }
+
   QUrlQuery query;
   query.addQueryItem("filter", encode({
         {"room", QJsonObject{
@@ -21,11 +74,16 @@ Session::Session(Matrix& universe, QUrl homeserver, QString user_id, QString acc
               }},
           }}
       }));
-  query.addQueryItem("full_state", "true");
   sync(query);
 }
 
 void Session::sync(QUrlQuery query) {
+  if(next_batch_.isNull()) {
+    query.addQueryItem("full_state", "true");
+  } else {
+    query.addQueryItem("since", next_batch_);
+    query.addQueryItem("timeout", POLL_TIMEOUT_MS);
+  }
   auto reply = get("client/r0/sync", query);
   connect(reply, &QNetworkReply::finished, [this, reply](){
       reply->deleteLater();
@@ -44,48 +102,64 @@ void Session::handle_sync_reply(QNetworkReply *reply) {
     synced_ = false;
     error(*r.error);
   } else {
-    synced_ = true;
-    auto s = parse_sync(r.object);
-    next_batch_ = s.next_batch;
-    dispatch(std::move(s));
+    QString current_batch = next_batch_;
+    try {
+      auto s = parse_sync(r.object);
+      auto txn = lmdb::txn::begin(env_);
+      auto batch_utf8 = s.next_batch.toUtf8();
+      lmdb::dbi_put(txn, state_db_, next_batch_key, lmdb::val(batch_utf8.data(), batch_utf8.size()));
+      next_batch_ = s.next_batch;
+      dispatch(txn, std::move(s));
+      txn.commit();
+      synced_ = true;
+    } catch(lmdb::runtime_error &e) {
+      synced_ = false;
+      next_batch_ = current_batch;
+      error(e.what());
+    }
   }
   if(was_synced != synced_) synced_changed();
-
-  QUrlQuery query;
-  query.addQueryItem("since", next_batch_);
-  query.addQueryItem("timeout", "50000");
 
   auto now = std::chrono::steady_clock::now();
   constexpr std::chrono::steady_clock::duration RETRY_INTERVAL = 10s;
   auto since_last_error = now - last_sync_error_;
-  if(r.error && (since_last_error < RETRY_INTERVAL)) {
+  if(!synced_ && (since_last_error < RETRY_INTERVAL)) {
     QTimer::singleShot(std::chrono::duration_cast<std::chrono::milliseconds>(RETRY_INTERVAL - since_last_error).count(),
-                       [this, query](){
-                         sync(query);
+                       [this](){
+                         sync();
                        });
   } else {
-    sync(query);
+    sync();
   }
 
-  if(r.error) {
+  if(!synced_) {
     last_sync_error_ = now;
   }
 }
 
-void Session::dispatch(proto::Sync sync) {
+void Session::dispatch(lmdb::txn &txn, proto::Sync sync) {
+  // TODO: Exception-safety: copy all room states, update and them and db, commit, swap copy/orig, emit signals
   for(auto &joined_room : sync.rooms.join) {
     auto it = rooms_.find(joined_room.id);
     bool new_room = false;
     if(it == rooms_.end()) {
+      auto db = lmdb::dbi::open(txn, room_dbname(joined_room.id).c_str(), MDB_CREATE);
+
       it = rooms_.emplace(std::piecewise_construct,
                           std::forward_as_tuple(joined_room.id),
-                          std::forward_as_tuple(universe_, *this, joined_room.id)).first;
+                          std::forward_as_tuple(universe_, *this, joined_room.id, QJsonObject(),
+                                                env_, txn, std::move(db))).first;
       new_room = true;
     }
     auto &room = it->second;
-    room.load_state(joined_room.state.events);
+    room.load_state(txn, joined_room.state.events);
+    room.dispatch(txn, joined_room);
+    {  // Mandatory write, since either the buffer or state has almost certainly changed
+      auto data = QJsonDocument(room.to_json()).toBinaryData();
+      auto utf8 = room.id().toUtf8();
+      lmdb::dbi_put(txn, room_db_, lmdb::val(utf8.data(), utf8.size()), lmdb::val(data.data(), data.size()));
+    }
     if(new_room) joined(room);
-    room.dispatch(joined_room);
   }
   sync_complete();
 }

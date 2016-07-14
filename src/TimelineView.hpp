@@ -29,9 +29,13 @@ public:
 
   void push_back(const matrix::RoomState &state, const matrix::proto::Event &e);
 
+  void reset();
+  // Call if a gap arises in events
+
 protected:
   void paintEvent(QPaintEvent *event) override;
   void resizeEvent(QResizeEvent *event) override;
+  void showEvent(QShowEvent *event) override;
 
 private:
   struct Event {
@@ -86,7 +90,8 @@ private:
   size_t total_events_;
   bool head_color_alternate_;
   bool backlog_growing_;
-  bool backlog_growable_;  // false if we've found the room create message
+  bool backlog_growable_;  // false iff we've found the room create message
+  bool backlog_grow_cancelled_;  // true iff we reset since backlog started growing
   size_t min_backlog_size_;
   qreal content_height_;
   QString prev_batch_;  // Token for the batch immediately prior to the first message

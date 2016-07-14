@@ -5,7 +5,8 @@
 
 #include <QString>
 #include <QUrl>
-#include <QJsonObject>
+
+class QJsonObject;
 
 namespace matrix {
 
@@ -23,7 +24,11 @@ std::experimental::optional<Membership> parse_membership(const QString &m);
 
 class Member {
 public:
-  Member(QString id) : id_(id) {}
+  Member(QString id) : id_(std::move(id)) {}
+
+  Member(QString id, const QJsonObject &);
+
+  QJsonObject to_json() const;
 
   const QString &id() const { return id_; }
   const QString &display_name() const { return display_name_; }

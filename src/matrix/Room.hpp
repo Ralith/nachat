@@ -5,6 +5,8 @@
 #include <unordered_map>
 #include <deque>
 
+#include <lmdb++.h>
+
 #include <QString>
 #include <QObject>
 #include <QUrl>
@@ -27,9 +29,12 @@ struct JoinedRoom;
 
 class RoomState {
 public:
-  void apply(const proto::Event &e) { dispatch(e, nullptr); }
+  RoomState() = default;  // New, empty room
+  RoomState(const QJsonObject &state, lmdb::txn &txn, lmdb::dbi &members);  // Load from db
+
+  void apply(const proto::Event &e) { dispatch(e, nullptr, nullptr, nullptr); }
   void revert(const proto::Event &e);  // Reverts an event that, if a state event, has prev_content
-  bool dispatch(const proto::Event &e, Room *room);
+  bool dispatch(const proto::Event &e, Room *room, lmdb::dbi *member_db, lmdb::txn *txn);
   // Returns true if changes were made. Emits state change events on room if supplied.
 
   const QString &name() const { return name_; }
@@ -49,6 +54,9 @@ public:
 
   void prune_departed_members(Room *room);
 
+  QJsonObject to_json() const;
+  // For serialization
+
 private:
   QString name_;
   QString canonical_alias_;
@@ -63,7 +71,7 @@ private:
   std::vector<Member *> &members_named(QString displayname);
   const std::vector<Member *> &members_named(QString displayname) const;
 
-  bool update_membership(const QString &user_id, const QJsonObject &content, Room *room);
+  bool update_membership(const QString &user_id, const QJsonObject &content, Room *room, lmdb::dbi *member_db, lmdb::txn *txn);
 };
 
 struct Batch {
@@ -102,7 +110,8 @@ public:
     QString prev_batch;
   };
 
-  Room(Matrix &universe, Session &session, QString id);
+  Room(Matrix &universe, Session &session, QString id, const QJsonObject &initial,
+       lmdb::env &env, lmdb::txn &init_txn, lmdb::dbi &&member_db);
 
   Room(const Room &) = delete;
   Room &operator=(const Room &) = delete;
@@ -118,10 +127,13 @@ public:
 
   QString pretty_name() const;
 
-  void load_state(gsl::span<const proto::Event>);
-  void dispatch(const proto::JoinedRoom &);
+  void load_state(lmdb::txn &txn, gsl::span<const proto::Event>);
+  bool dispatch(lmdb::txn &txn, const proto::JoinedRoom &);
 
   const std::deque<Batch> &buffer() { return buffer_; }
+  size_t buffer_size() const;
+
+  QJsonObject to_json() const;
 
   enum class Direction { FORWARD, BACKWARD };
 
@@ -141,7 +153,12 @@ signals:
   void state_changed();
   void highlight_count_changed();
   void notification_count_changed();
+  void name_changed();
+  void canonical_alias_changed();
+  void aliases_changed();
   void topic_changed(const QString &old);
+  void avatar_changed();
+  void discontinuity();
 
   void prev_batch(const QString &);
   void message(const proto::Event &);
@@ -153,6 +170,8 @@ private:
   Matrix &universe_;
   Session &session_;
   const QString id_;
+  lmdb::env &db_env_;
+  lmdb::dbi member_db_;
 
   RoomState initial_state_;
   std::deque<Batch> buffer_;

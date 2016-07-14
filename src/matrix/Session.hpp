@@ -9,6 +9,8 @@
 #include <QString>
 #include <QUrlQuery>
 
+#include <lmdb++.h>
+
 #include "../QStringHash.hpp"
 
 #include "Room.hpp"
@@ -39,7 +41,11 @@ class Session : public QObject {
   Q_OBJECT
 
 public:
-  Session(Matrix& universe, QUrl homeserver, QString user_id, QString access_token);
+  Session(Matrix& universe, QUrl homeserver, QString user_id, QString access_token,
+          lmdb::env &&env, lmdb::dbi &&state_db, lmdb::dbi &&room_db);
+
+  // Returns ownership
+  static Session *create(Matrix& universe, QUrl homeserver, QString user_id, QString access_token);
 
   Session(const Session &) = delete;
   Session &operator=(const Session &) = delete;
@@ -78,8 +84,10 @@ private:
   Matrix &universe_;
   const QUrl homeserver_;
   const QString user_id_;
-  size_t buffer_size_;
   QString access_token_;
+  lmdb::env env_;
+  lmdb::dbi state_db_, room_db_;
+  size_t buffer_size_;
   std::unordered_map<QString, Room, QStringHash> rooms_;
   bool synced_;
   QString next_batch_;
@@ -89,9 +97,9 @@ private:
 
   QNetworkRequest request(const QString &path, QUrlQuery query = QUrlQuery());
 
-  void sync(QUrlQuery query);
+  void sync(QUrlQuery query = QUrlQuery());
   void handle_sync_reply(QNetworkReply *);
-  void dispatch(proto::Sync sync);
+  void dispatch(lmdb::txn &txn, proto::Sync sync);
 };
 
 }

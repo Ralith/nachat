@@ -1,6 +1,7 @@
 #include "Member.hpp"
 
 #include <QDebug>
+#include <QJsonObject>
 
 #include "proto.hpp"
 
@@ -17,6 +18,30 @@ std::experimental::optional<Membership> parse_membership(const QString &m) {
     if(x.first == m) return x.second;
   }
   return {};
+}
+
+QString to_qstring(Membership m) {
+  switch(m) {
+  case Membership::INVITE: return "invite";
+  case Membership::JOIN: return "join";
+  case Membership::LEAVE: return "leave";
+  case Membership::BAN: return "ban";
+  }
+}
+
+Member::Member(QString id, const QJsonObject &o)
+    : id_(std::move(id)), display_name_(o["display_name"].toString()), avatar_url_(QUrl(o["avatar_url"].toString())),
+      membership_(parse_membership(o["membership"].toString()).value())
+{}
+
+QJsonObject Member::to_json() const {
+  QJsonObject o;
+
+  if(!display_name_.isNull()) o["display_name"] = display_name_;
+  if(!avatar_url_.isEmpty()) o["avatar_url"] = avatar_url_.toString(QUrl::FullyEncoded);
+  o["membership"] = to_qstring(membership_);
+
+  return o;
 }
 
 void Member::update_membership(const QJsonObject &content) {

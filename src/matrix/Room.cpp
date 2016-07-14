@@ -4,6 +4,7 @@
 
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QFile>
 #include <QDebug>
 
@@ -14,8 +15,48 @@
 
 namespace matrix {
 
+RoomState::RoomState(const QJsonObject &info, lmdb::txn &txn, lmdb::dbi &member_db)
+    : name_(info["name"].toString()),
+      canonical_alias_(info["canonical_alias"].toString()),
+      topic_(info["topic"].toString()),
+      avatar_(info["avatar"].toString()) {
+  const auto &as = info["aliases"].toArray();
+  aliases_.reserve(as.size());
+  std::transform(as.begin(), as.end(), std::back_inserter(aliases_),
+                 [](const QJsonValue &v) {
+                   return v.toString();
+                 });
+
+  lmdb::val id_val;
+  lmdb::val state;
+  auto cursor = lmdb::cursor::open(txn, member_db);
+  while(cursor.get(id_val, state, MDB_NEXT)) {
+    const auto id_str = QString::fromUtf8(id_val.data(), id_val.size());
+    auto member = members_by_id_.emplace(
+      std::piecewise_construct,
+      std::forward_as_tuple(id_str),
+      std::forward_as_tuple(id_str, QJsonDocument::fromBinaryData(QByteArray(state.data(), state.size())).object())).first->second;
+    record_displayname(member, nullptr);
+  }
+}
+
+QJsonObject RoomState::to_json() const {
+  QJsonObject o;
+  if(!name_.isNull()) o["name"] = name_;
+  if(!canonical_alias_.isNull()) o["canonical_alias"] = canonical_alias_;
+  if(!topic_.isNull()) o["topic"] = topic_;
+  if(!avatar_.isEmpty()) o["avatar"] = avatar_.toString(QUrl::FullyEncoded);
+
+  QJsonArray aa;
+  for(const auto &x : aliases_) {
+    aa.push_back(x);
+  }
+  o["aliases"] = std::move(aa);
+
+  return o;
+}
+
 QString RoomState::pretty_name(const QString &own_id) const {
-  // Must be kept in sync with pretty_name_changed!
   if(!name_.isEmpty()) return name_;
   if(!canonical_alias_.isEmpty()) return canonical_alias_;
   if(!aliases_.empty()) return aliases_[0];  // Non-standard, but matches vector-web
@@ -101,22 +142,63 @@ const Member *RoomState::member(const QString &id) const {
   return &it->second;
 }
 
-Room::Room(Matrix &universe, Session &session, QString id)
-    : universe_(universe), session_(session), id_(id)
-{}
+Room::Room(Matrix &universe, Session &session, QString id, const QJsonObject &initial,
+           lmdb::env &env, lmdb::txn &txn, lmdb::dbi &&member_db)
+    : universe_(universe), session_(session), id_(std::move(id)),
+      db_env_(env), member_db_(std::move(member_db))
+{
+  if(!initial.isEmpty()) {
+    initial_state_ = RoomState(initial["state"].toObject(), txn, member_db_);
+    state_ = initial_state_;
+
+    QJsonObject b = initial["buffer"].toObject();
+    if(!b.isEmpty()) {
+      buffer_.emplace_back();
+      buffer_.back().prev_batch = b["prev_batch"].toString();
+      buffer_.back().events.reserve(b.size());
+      auto es = b["events"].toArray();
+      for(const auto &e : es) {
+        buffer_.back().events.emplace_back(parse_event(e));
+      }
+    }
+  }
+}
 
 QString Room::pretty_name() const {
   return state_.pretty_name(session_.user_id());
 }
 
-void Room::load_state(gsl::span<const proto::Event> events) {
+void Room::load_state(lmdb::txn &txn, gsl::span<const proto::Event> events) {
+  if(events.empty()) return;
+  buffer_.clear();
   for(auto &state : events) {
     initial_state_.apply(state);
-    state_.apply(state);
+    state_.dispatch(state, this, &member_db_, &txn);
   }
+  discontinuity();
 }
 
-void Room::dispatch(const proto::JoinedRoom &joined) {
+size_t Room::buffer_size() const {
+  size_t r = 0;
+  for(auto &x : buffer_) { r += x.events.size(); }
+  return r;
+}
+
+QJsonObject Room::to_json() const {
+  QJsonObject o;
+  if(!buffer_.empty()) {
+    o["prev_batch"] = buffer_.back().prev_batch;
+    QJsonArray es;
+    for(const auto &x : buffer_.back().events) {
+      auto json = proto::to_json(x);
+      es.push_back(std::move(json));
+    }
+    o["events"] = std::move(es);
+  }
+  return QJsonObject{{"state", state_.to_json()}, {"buffer", std::move(o)}};
+}
+
+bool Room::dispatch(lmdb::txn &txn, const proto::JoinedRoom &joined) {
   prev_batch(joined.timeline.prev_batch);
 
   bool state_touched = false;
@@ -135,12 +217,12 @@ void Room::dispatch(const proto::JoinedRoom &joined) {
   batch.prev_batch = joined.timeline.prev_batch;
   batch.events.reserve(joined.timeline.events.size());
   for(auto &evt : joined.timeline.events) {
-    state_touched |= state_.dispatch(evt, this);
+    state_touched |= state_.dispatch(evt, this, &member_db_, &txn);
     message(evt);
     batch.events.emplace_back(evt);
   }
 
-  if(buffer_.size() >= session_.buffer_size() && session_.buffer_size() != 0) {
+  while(buffer_.size() > 1 && (buffer_size() - buffer_.front().events.size()) >= session_.buffer_size()) {
     for(auto &evt : buffer_.front().events) {
       initial_state_.apply(evt);
     }
@@ -150,10 +232,14 @@ void Room::dispatch(const proto::JoinedRoom &joined) {
 
   state_.prune_departed_members(this);
 
-  if(state_touched) state_changed();
+  if(state_touched) {
+    state_changed();
+  }
+  return state_touched;
 }
 
-bool RoomState::update_membership(const QString &user_id, const QJsonObject &content, Room *room) {
+bool RoomState::update_membership(const QString &user_id, const QJsonObject &content, Room *room,
+                                  lmdb::dbi *member_db, lmdb::txn *txn) {
   Membership membership;
   if(content.empty()) {
     // Empty content arises when moving backwards from an initial event
@@ -161,12 +247,13 @@ bool RoomState::update_membership(const QString &user_id, const QJsonObject &con
   } else {
     auto r = parse_membership(content["membership"].toString());
     if(!r) {
-      qDebug() << "Unrecognized membership type" << content["membership"].toString()
-               << "in content" << content;
+      qDebug() << "Unrecognized membership type" << content["membership"].toString();
       return false;
     }
     membership = *r;
   }
+
+  auto id_utf8 = user_id.toUtf8();
 
   switch(membership) {
   case Membership::INVITE:
@@ -193,6 +280,11 @@ bool RoomState::update_membership(const QString &user_id, const QJsonObject &con
     if(room && member.membership() != old_membership) {
       room->membership_changed(it->second, membership);
     }
+    if(member_db) {
+      auto data = QJsonDocument(member.to_json()).toBinaryData();
+      lmdb::dbi_put(*txn, *member_db, lmdb::val(id_utf8.data(), id_utf8.size()),
+                    lmdb::val(data.data(), data.size()));
+    }
     break;
   }
   case Membership::LEAVE:
@@ -205,17 +297,20 @@ bool RoomState::update_membership(const QString &user_id, const QJsonObject &con
       it->second.update_membership(content);
       if(room) room->membership_changed(it->second, membership);
     }
+    if(member_db) {
+      lmdb::dbi_del(*txn, *member_db, lmdb::val(id_utf8.data(), id_utf8.size()), nullptr);
+    }
     break;
   }
   }
   return true;
 }
 
-bool RoomState::dispatch(const proto::Event &state, Room *room) {
+bool RoomState::dispatch(const proto::Event &state, Room *room, lmdb::dbi *member_db, lmdb::txn *txn) {
   if(state.type == "m.room.message") return false;
   if(state.type == "m.room.aliases") {
     std::unordered_set<QString, QStringHash> all_aliases;
-    auto data = state.content["aliases"].toArray();
+    auto data = state.content["aliases"].toArray();  // FIXME: Need to validate these before using them
     all_aliases.reserve(aliases_.size() + data.size());
 
     std::move(aliases_.begin(), aliases_.end(), std::inserter(all_aliases, all_aliases.end()));
@@ -226,14 +321,19 @@ bool RoomState::dispatch(const proto::Event &state, Room *room) {
 
     aliases_.reserve(all_aliases.size());
     std::move(all_aliases.begin(), all_aliases.end(), std::back_inserter(aliases_));
+    if(room) room->aliases_changed();
     return true;
   }
   if(state.type == "m.room.canonical_alias") {
+    auto old = std::move(canonical_alias_);
     canonical_alias_ = state.content["alias"].toString();
+    if(room && canonical_alias_ != old) room->canonical_alias_changed();
     return true;
   }
   if(state.type == "m.room.name") {
+    auto old = std::move(name_);
     name_ = state.content["name"].toString();
+    if(room && name_ != old) room->name_changed();
     return true;
   }
   if(state.type == "m.room.topic") {
@@ -245,7 +345,9 @@ bool RoomState::dispatch(const proto::Event &state, Room *room) {
     return true;
   }
   if(state.type == "m.room.avatar") {
+    auto old = std::move(avatar_);
     avatar_ = QUrl(state.content["url"].toString());
+    if(room && avatar_ != old) room->avatar_changed();
     return true;
   }
   if(state.type == "m.room.create") {
@@ -253,7 +355,7 @@ bool RoomState::dispatch(const proto::Event &state, Room *room) {
     return false;
   }
   if(state.type == "m.room.member") {
-    return update_membership(state.state_key, state.content, room);
+    return update_membership(state.state_key, state.content, room, member_db, txn);
   }
 
   qDebug() << "Unrecognized message type:" << state.type;
@@ -280,7 +382,7 @@ void RoomState::revert(const proto::Event &state) {
     return;
   }
   if(state.type == "m.room.member") {
-    update_membership(state.state_key, state.prev_content, nullptr);
+    update_membership(state.state_key, state.prev_content, nullptr, nullptr, nullptr);
     return;
   }
 }

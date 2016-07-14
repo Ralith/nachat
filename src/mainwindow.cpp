@@ -89,6 +89,7 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
     });
 
   sync_progress(0, -1);
+  update_rooms();
 }
 
 MainWindow::~MainWindow() { delete ui; }
@@ -110,7 +111,7 @@ void MainWindow::update_rooms() {
   for(auto room : rooms) {
     connect(room, &matrix::Room::state_changed, this, &MainWindow::update_rooms);
     auto item = new QListWidgetItem;
-    item->setText(room->state().pretty_name(session_->user_id()));
+    item->setText(room->pretty_name());
     item->setData(Qt::UserRole, QVariant::fromValue(reinterpret_cast<void*>(room)));
     ui->room_list->addItem(item);
   }

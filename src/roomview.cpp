@@ -53,6 +53,7 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
     member_list_.insert(std::make_pair(room_.state().member_name(*member), member));
   }
 
+  connect(&room_, &matrix::Room::discontinuity, timeline_view_, &TimelineView::reset);
   connect(&room_, &matrix::Room::prev_batch, timeline_view_, &TimelineView::end_batch);
 
   auto replay_state = room_.initial_state();

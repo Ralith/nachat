@@ -1,7 +1,8 @@
 #include "matrix.hpp"
 
 #include <QtNetwork>
-#include <QJsonDocument>
+#include <QJsonObject>
+#include <QStandardPaths>
 
 #include "utils.hpp"
 #include "Session.hpp"
@@ -39,7 +40,7 @@ void Matrix::login(QUrl homeserver, QString username, QString password) {
         login_error(tr("Malformed response from server"));
         return;
       }
-      logged_in(new Session(*this, homeserver, user_id.toString(), token.toString()));
+      logged_in(Session::create(*this, homeserver, user_id.toString(), token.toString()));
     });
 }
 

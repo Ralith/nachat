@@ -30,7 +30,7 @@ class RoomView : public QWidget
   Q_OBJECT
 
 public:
-  explicit RoomView(matrix::Room &room, QWidget *parent = 0);
+  explicit RoomView(matrix::Room &room, QWidget *parent = nullptr);
   ~RoomView();
 
   const matrix::Room &room() { return room_; }
