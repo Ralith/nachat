@@ -17,7 +17,7 @@ struct Unsigned {
 };
 
 struct Event {
-  QJsonObject content, prev_content;
+  QJsonObject content;
   uint64_t origin_server_ts;
   QString sender;
   QString type;

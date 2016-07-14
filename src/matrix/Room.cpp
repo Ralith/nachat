@@ -367,24 +367,36 @@ bool RoomState::dispatch(const proto::Event &state, Room *room, lmdb::dbi *membe
 void RoomState::revert(const proto::Event &state) {
   if(state.type == "m.room.message") return;
   if(state.type == "m.room.canonical_alias") {
-    canonical_alias_ = state.prev_content["alias"].toString();
+    if(state.unsigned_.prev_content)
+      canonical_alias_ = state.unsigned_.prev_content.value()["alias"].toString();
+    else
+      canonical_alias_ = QString();
     return;
   }
   if(state.type == "m.room.name") {
-    name_ = state.prev_content["name"].toString();
+    if(state.unsigned_.prev_content)
+      name_ = state.unsigned_.prev_content.value()["name"].toString();
+    else
+      name_ = QString();
     return;
   }
   if(state.type == "m.room.topic") {
     auto old = std::move(topic_);
-    topic_ = state.prev_content["topic"].toString();
+    if(state.unsigned_.prev_content)
+      topic_ = (*state.unsigned_.prev_content)["topic"].toString();
+    else
+      topic_ = QString();
     return;
   }
   if(state.type == "m.room.avatar") {
-    avatar_ = QUrl(state.prev_content["url"].toString());
+    if(state.unsigned_.prev_content)
+      avatar_ = QUrl((*state.unsigned_.prev_content)["url"].toString());
+    else
+      avatar_ = QUrl();
     return;
   }
   if(state.type == "m.room.member") {
-    update_membership(state.state_key, state.prev_content, nullptr, nullptr, nullptr);
+    update_membership(state.state_key, state.unsigned_.prev_content.value_or(QJsonObject()), nullptr, nullptr, nullptr);
     return;
   }
 }
