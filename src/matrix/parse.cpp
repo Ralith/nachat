@@ -1,6 +1,7 @@
 #include "parse.hpp"
 
 #include <QJsonArray>
+#include <QDebug>
 
 namespace matrix {
 
@@ -14,7 +15,9 @@ Unsigned parse_unsigned(QJsonValue v) {
   if(i != o.end()) {
     u.prev_content = i->toObject();
   }
-  u.age = o["age"].toDouble();
+  auto age = o["age"].toDouble();
+  if(age < 0) qDebug() << "got negative age in Unsigned" << o;
+  u.age = std::max<double>(0, age);
   i = o.find("transaction_id");
   if(i != o.end()) {
     u.transaction_id = i->toString();
