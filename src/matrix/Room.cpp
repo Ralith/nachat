@@ -32,7 +32,7 @@ RoomState::RoomState(const QJsonObject &info, lmdb::txn &txn, lmdb::dbi &member_
   auto cursor = lmdb::cursor::open(txn, member_db);
   while(cursor.get(id_val, state, MDB_NEXT)) {
     const auto id_str = QString::fromUtf8(id_val.data(), id_val.size());
-    auto member = members_by_id_.emplace(
+    auto &member = members_by_id_.emplace(
       std::piecewise_construct,
       std::forward_as_tuple(id_str),
       std::forward_as_tuple(id_str, QJsonDocument::fromBinaryData(QByteArray(state.data(), state.size())).object())).first->second;
