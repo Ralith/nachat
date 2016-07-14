@@ -103,22 +103,22 @@ std::vector<const Member *> RoomState::members() const {
 }
 
 void RoomState::forget_displayname(const Member &member, QString old_name_in, Room *room) {
-  if(!old_name_in.isEmpty()) {
-    QString old_name = old_name_in.normalized(QString::NormalizationForm_C);
-    auto &vec = members_named(old_name);
-    QString other_name;
-    const Member *other_member = nullptr;
-    if(room && vec.size() == 2) {
-      other_member = vec[0] == &member ? vec[1] : vec[0];
-      other_name = member_name(*other_member);
-    }
-    vec.erase(std::remove(vec.begin(), vec.end(), &member), vec.end());
-    if(vec.empty()) {
-      members_by_displayname_.erase(old_name);
-    }
-    if(other_member) {
-      room->member_name_changed(*other_member, other_name);
-    }
+  if(old_name_in.isEmpty()) return;
+
+  QString old_name = old_name_in.normalized(QString::NormalizationForm_C);
+  auto &vec = members_named(old_name);
+  QString other_name;
+  const Member *other_member = nullptr;
+  if(room && vec.size() == 2) {
+    other_member = vec[0] == &member ? vec[1] : vec[0];
+    other_name = member_name(*other_member);
+  }
+  vec.erase(std::remove(vec.begin(), vec.end(), &member), vec.end());
+  if(vec.empty()) {
+    members_by_displayname_.erase(old_name);
+  }
+  if(other_member) {
+    room->member_name_changed(*other_member, other_name);
   }
 }
 
