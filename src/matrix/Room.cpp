@@ -196,8 +196,6 @@ QJsonObject Room::to_json() const {
 }
 
 bool Room::dispatch(lmdb::txn &txn, const proto::JoinedRoom &joined) {
-  prev_batch(joined.timeline.prev_batch);
-
   bool state_touched = false;
 
   if(joined.unread_notifications.highlight_count != highlight_count_) {
@@ -214,6 +212,9 @@ bool Room::dispatch(lmdb::txn &txn, const proto::JoinedRoom &joined) {
     buffer_.clear();
     discontinuity();
   }
+
+  prev_batch(joined.timeline.prev_batch);
+  // Must be called *after* discontinuity so that users can easily discard existing timeline events
 
   Batch batch;
   batch.prev_batch = joined.timeline.prev_batch;
