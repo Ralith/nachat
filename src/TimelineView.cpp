@@ -23,7 +23,14 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
     : system(e.type != "m.room.message"), time(to_time_point(e.origin_server_ts)) {
   QStringList lines;
   if(e.type == "m.room.message") {
-    lines = e.content["body"].toString().split('\n');
+    const auto msgtype = e.content["msgtype"].toString();
+    if(msgtype == "m.emote") {
+      auto &sender = *state.member(e.sender);
+      lines = e.content["body"].toString().split('\n');
+      lines.front() = "* " % state.member_name(sender) % " " % lines.front();
+    } else {
+      lines = e.content["body"].toString().split('\n');
+    }
   } else if(e.type == "m.room.member") {
     switch(matrix::parse_membership(e.content["membership"].toString()).value()) {
     case matrix::Membership::INVITE: {
