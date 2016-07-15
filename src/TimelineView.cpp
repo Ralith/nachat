@@ -10,10 +10,6 @@
 
 #include "matrix/Session.hpp"
 
-const static QColor text_color = Qt::black;
-const static QColor primary_bg(245, 245, 245);
-const static QColor secondary_bg = Qt::white;
-const static QColor header_color(96, 96, 96);
 constexpr static int BACKLOG_BATCH_SIZE = 50;
 constexpr static std::chrono::minutes BLOCK_MERGE_INTERVAL(2);
 constexpr static std::chrono::minutes TIMESTAMP_RANGE_THRESHOLD(2);
@@ -256,7 +252,7 @@ void TimelineView::Block::draw(const TimelineView &view, QPainter &p, QPointF of
                avatar_pixmap);
 
   p.save();
-  p.setPen(header_color);
+  p.setPen(view.palette().color(QPalette::Dark));
   name_layout_.draw(&p, offset);
   timestamp_layout_.draw(&p, offset);
   p.restore();
@@ -266,7 +262,7 @@ void TimelineView::Block::draw(const TimelineView &view, QPainter &p, QPointF of
   for(const auto event : events_) {
     p.save();
     if(event->system) {
-      p.setPen(header_color);
+      p.setPen(view.palette().color(QPalette::Dark));
     }
     QRectF event_bounds;
     for(const auto &layout : event->layouts) {
@@ -380,8 +376,8 @@ void TimelineView::paintEvent(QPaintEvent *) {
   QRectF view_rect = viewport()->contentsRect();
   view_rect.setWidth(view_rect.width());
   QPainter painter(viewport());
-  painter.fillRect(view_rect, Qt::lightGray);
-  painter.setPen(Qt::black);
+  painter.fillRect(view_rect, palette().color(QPalette::Dark));
+  painter.setPen(palette().color(QPalette::Text));
   auto &scroll = *verticalScrollBar();
   QPointF offset(0, view_rect.height() - (scroll.value() - scroll.maximum()));
   auto s = block_spacing();
@@ -403,7 +399,7 @@ void TimelineView::paintEvent(QPaintEvent *) {
         painter.setRenderHint(QPainter::Antialiasing);
         QPainterPath path;
         path.addRoundedRect(outline, margin*2, margin*2);
-        painter.fillPath(path, alternate ? secondary_bg : primary_bg);
+        painter.fillPath(path, palette().color(alternate ? QPalette::AlternateBase : QPalette::Base));
         painter.restore();
       }
       it->draw(*this, painter, offset);
