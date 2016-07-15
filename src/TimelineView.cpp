@@ -23,7 +23,7 @@ static auto to_time_point(uint64_t ts) {
       + std::chrono::duration<uint64_t, std::milli>(ts);
 }
 
-TimelineView::Event::Event(const TimelineView &view, const matrix::proto::Event &e)
+TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &state, const matrix::proto::Event &e)
     : system(e.type != "m.room.message"), time(to_time_point(e.origin_server_ts)) {
   QStringList lines;
   if(e.type == "m.room.message") {
@@ -31,8 +31,8 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::proto::Event 
   } else if(e.type == "m.room.member") {
     switch(matrix::parse_membership(e.content["membership"].toString()).value()) {
     case matrix::Membership::INVITE: {
-      auto &invitee = *view.room_.state().member(e.state_key);
-      lines = QStringList(tr("invited %1").arg(view.room_.state().member_name(invitee)));
+      auto &invitee = *state.member(e.state_key);
+      lines = QStringList(tr("invited %1").arg(state.member_name(invitee)));
       break;
     }
     case matrix::Membership::JOIN: {
@@ -57,8 +57,8 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::proto::Event 
       break;
     }
     case matrix::Membership::BAN: {
-      auto &banned = *view.room_.state().member(e.state_key);
-      lines = QStringList(tr("banned %1").arg(view.room_.state().member_name(banned)));
+      auto &banned = *state.member(e.state_key);
+      lines = QStringList(tr("banned %1").arg(state.member_name(banned)));
       break;
     }
     }
@@ -297,7 +297,8 @@ int TimelineView::visible_width() const {
 void TimelineView::push_back(const matrix::RoomState &state, const matrix::proto::Event &in) {
   backlog_growable_ &= in.type != "m.room.create";
 
-  batches_.back().events.emplace_back(*this, in);
+  assert(!batches_.empty());
+  batches_.back().events.emplace_back(*this, state, in);
   auto &event = batches_.back().events.back();
 
   if(!blocks_.empty()
@@ -453,9 +454,9 @@ void TimelineView::prepend_batch(QString start, QString end, gsl::span<const mat
   prev_batch_ = end;
   batches_.emplace_front();
   auto &batch = batches_.front();
-  batch.token = start;  // FIXME: Verify that this is correct
+  batch.token = start;
   for(const auto &e : events) {  // Events is in reverse order
-    batch.events.emplace_front(*this, e);
+    batch.events.emplace_front(*this, initial_state_, e);
     auto &internal = batch.events.front();
     if(!blocks_.empty()
        && blocks_.front().sender_id() == e.sender

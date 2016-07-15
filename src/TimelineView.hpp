@@ -43,7 +43,7 @@ private:
     std::vector<QTextLayout> layouts;
     const std::chrono::time_point<std::chrono::system_clock, std::chrono::milliseconds> time;
 
-    Event(const TimelineView &, const matrix::proto::Event &);
+    Event(const TimelineView &, const matrix::RoomState &, const matrix::proto::Event &);
     QRectF bounding_rect() const;
     void update_layout(const TimelineView &);
   };
