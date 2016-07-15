@@ -482,6 +482,7 @@ void TimelineView::prepend_batch(QString start, QString end, gsl::span<const mat
       content_height_ += blocks_.front().bounding_rect(*this).height() + block_spacing();
     }
     initial_state_.revert(e);
+    initial_state_.prune_departed_members(nullptr);
     backlog_growable_ &= e.type != "m.room.create";
   }
 
