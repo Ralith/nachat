@@ -41,14 +41,27 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
         break;
       }
       const auto &prev = *e.unsigned_.prev_content;
+      if(matrix::parse_membership(prev["membership"].toString()).value() == matrix::Membership::INVITE) {
+        lines = QStringList(tr("accepted invite"));
+        break;
+      }
       const bool avatar_changed = QUrl(prev["avatar_url"].toString()) != QUrl(e.content["avatar_url"].toString());
-      const bool dn_changed = prev["displayname"].toString() != e.content["displayname"].toString();
+      const auto new_dn = e.content["displayname"].toString();
+      const bool dn_changed = prev["displayname"].toString() != new_dn;
       if(avatar_changed && dn_changed) {
-        lines = QStringList(tr("changed avatar and display name"));
+        if(new_dn.isEmpty())
+          lines = QStringList(tr("unset display name and changed avatar"));
+        else
+          lines = QStringList(tr("changed display name to %1 and changed avatar").arg(new_dn));
       } else if(avatar_changed) {
         lines = QStringList(tr("changed avatar"));
+      } else if(dn_changed) {
+        if(new_dn.isEmpty())
+          lines = QStringList(tr("unset display name"));
+        else
+          lines = QStringList(tr("changed display name to %1").arg(new_dn));
       } else {
-        lines = QStringList(tr("changed display name"));
+        lines = QStringList(tr("sent a no-op join"));
       }
       break;
     }
