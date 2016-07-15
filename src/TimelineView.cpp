@@ -390,11 +390,11 @@ void TimelineView::paintEvent(QPaintEvent *) {
   for(auto it = blocks_.crbegin(); it != blocks_.crend(); ++it) {
     const auto bounds = it->bounding_rect(*this);
     offset.ry() -= bounds.height();
-    if((offset.y() + bounds.height()) < view_rect.top()) {
+    if((offset.y() + bounds.height() + block_spacing()/2) < view_rect.top()) {
       // No further drawing possible
       break;
     }
-    if(offset.y() < view_rect.bottom()) {
+    if(offset.y() - block_spacing()/2 < view_rect.bottom()) {
       {
         QRectF outline(offset.x() + 0.5, offset.y() - (0.5 + s/2.0),
                        view_rect.width() - 1,
