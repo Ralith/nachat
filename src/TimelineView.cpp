@@ -455,6 +455,14 @@ void TimelineView::grow_backlog() {
   auto reply = room_.get_messages(matrix::Room::Direction::BACKWARD, prev_batch_, BACKLOG_BATCH_SIZE);
   connect(reply, &matrix::MessageFetch::finished, this, &TimelineView::prepend_batch);
   connect(reply, &matrix::MessageFetch::error, &room_, &matrix::Room::error);
+  connect(reply, &matrix::MessageFetch::error, this, &TimelineView::backlog_grow_error);
+}
+
+void TimelineView::backlog_grow_error() {
+  backlog_growing_ = false;
+  if(backlog_grow_cancelled_) {
+    backlog_grow_cancelled_ = false;
+  }
 }
 
 void TimelineView::prepend_batch(QString start, QString end, gsl::span<const matrix::proto::Event> events) {
