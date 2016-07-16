@@ -474,6 +474,7 @@ void TimelineView::showEvent(QShowEvent *e) {
 
 void TimelineView::grow_backlog() {
   if(verticalScrollBar()->value() >= scrollback_trigger_size() || backlog_growing_ || !backlog_growable_) return;
+  qDebug() << room_.id() << "fetching more backlog";
   backlog_growing_ = true;
   auto reply = room_.get_messages(matrix::Room::Direction::BACKWARD, prev_batch_, BACKLOG_BATCH_SIZE);
   connect(reply, &matrix::MessageFetch::finished, this, &TimelineView::prepend_batch);
@@ -521,6 +522,7 @@ void TimelineView::prepend_batch(QString start, QString end, gsl::span<const mat
   }
 
   total_events_ += events.size();
+  qDebug() << room_.id() << "backlog got" << events.size() << "events";
 
   update_scrollbar();
 
