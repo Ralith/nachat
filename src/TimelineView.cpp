@@ -583,6 +583,8 @@ void TimelineView::prune_backlog() {
 void TimelineView::set_avatar(const matrix::Content &content, const QString &type, const QString &disposition,
                               const QByteArray &data) {
   (void)disposition;
+  auto it = avatars_.find(content);
+  if(it == avatars_.end()) return;  // Avatar is no longer necessary
   QPixmap pixmap;
   pixmap.loadFromData(data);
   const auto size = avatar_size();

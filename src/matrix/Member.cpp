@@ -8,7 +8,7 @@
 namespace matrix {
 
 std::experimental::optional<Membership> parse_membership(const QString &m) {
-  std::pair<QString, Membership> table[] = {
+  static const std::pair<QString, Membership> table[] = {
     {"invite", Membership::INVITE},
     {"join", Membership::JOIN},
     {"leave", Membership::LEAVE},
