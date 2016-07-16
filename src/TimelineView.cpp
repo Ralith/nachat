@@ -25,7 +25,7 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
   if(e.type == "m.room.message") {
     const auto msgtype = e.content["msgtype"].toString();
     if(msgtype == "m.emote") {
-      auto &sender = *state.member(e.sender);
+      auto &sender = *state.member_from_id(e.sender);
       lines = e.content["body"].toString().split('\n');
       lines.front() = "* " % state.member_name(sender) % " " % lines.front();
     } else {
@@ -34,7 +34,7 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
   } else if(e.type == "m.room.member") {
     switch(matrix::parse_membership(e.content["membership"].toString()).value()) {
     case matrix::Membership::INVITE: {
-      auto &invitee = *state.member(e.state_key);
+      auto &invitee = *state.member_from_id(e.state_key);
       lines = QStringList(tr("invited %1").arg(state.member_name(invitee)));
       break;
     }
@@ -44,27 +44,39 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
         break;
       }
       const auto &prev = *e.unsigned_.prev_content;
-      if(matrix::parse_membership(prev["membership"].toString()).value() == matrix::Membership::INVITE) {
+      auto prev_membership = matrix::parse_membership(prev["membership"].toString()).value();
+      switch(prev_membership) {
+      case matrix::Membership::INVITE:
         lines = QStringList(tr("accepted invite"));
         break;
+      case matrix::Membership::JOIN: {
+        const bool avatar_changed = QUrl(prev["avatar_url"].toString()) != QUrl(e.content["avatar_url"].toString());
+        const auto new_dn = e.content["displayname"].toString();
+        const auto old_dn = prev["displayname"].toString();
+        const bool dn_changed = old_dn != new_dn;
+        if(avatar_changed && dn_changed) {
+          if(new_dn.isEmpty())
+            lines = QStringList(tr("unset display name and changed avatar"));
+          else
+            lines = QStringList(tr("changed display name to %1 and changed avatar").arg(new_dn));
+        } else if(avatar_changed) {
+          lines = QStringList(tr("changed avatar"));
+        } else if(dn_changed) {
+          if(new_dn.isEmpty()) {
+            lines = QStringList(tr("unset display name"));
+          } else if(old_dn.isEmpty()) {
+            lines = QStringList(tr("set display name to %1").arg(new_dn));
+          } else {
+            lines = QStringList(tr("changed display name from %1 to %2").arg(old_dn).arg(new_dn));
+          }
+        } else {
+          lines = QStringList(tr("sent a no-op join"));
+        }
+        break;
       }
-      const bool avatar_changed = QUrl(prev["avatar_url"].toString()) != QUrl(e.content["avatar_url"].toString());
-      const auto new_dn = e.content["displayname"].toString();
-      const bool dn_changed = prev["displayname"].toString() != new_dn;
-      if(avatar_changed && dn_changed) {
-        if(new_dn.isEmpty())
-          lines = QStringList(tr("unset display name and changed avatar"));
-        else
-          lines = QStringList(tr("changed display name to %1 and changed avatar").arg(new_dn));
-      } else if(avatar_changed) {
-        lines = QStringList(tr("changed avatar"));
-      } else if(dn_changed) {
-        if(new_dn.isEmpty())
-          lines = QStringList(tr("unset display name"));
-        else
-          lines = QStringList(tr("changed display name to %1").arg(new_dn));
-      } else {
-        lines = QStringList(tr("sent a no-op join"));
+      default:
+        lines = QStringList(tr("joined"));
+        break;
       }
       break;
     }
@@ -73,7 +85,7 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
       break;
     }
     case matrix::Membership::BAN: {
-      auto &banned = *state.member(e.state_key);
+      auto &banned = *state.member_from_id(e.state_key);
       lines = QStringList(tr("banned %1").arg(state.member_name(banned)));
       break;
     }
@@ -108,28 +120,6 @@ TimelineView::Block::Block(TimelineView &view, const matrix::RoomState &state, c
     : sender_id_(e.sender) {
   events_.emplace_back(&e_internal);
 
-  auto sender = state.member(e.sender);
-
-  if(sender && !sender->avatar_url().isEmpty()) {
-    try {
-      avatar_ = matrix::Content(sender->avatar_url());
-    } catch(const std::invalid_argument &e) {
-      qDebug() << "invalid avatar URL:" << e.what() << ":" << sender->avatar_url();
-    }
-
-    if(avatar_) {
-      auto result = view.avatars_.emplace(std::piecewise_construct,
-                                          std::forward_as_tuple(*avatar_),
-                                          std::forward_as_tuple());
-      if(result.second) {
-        auto reply = view.room_.session().get_thumbnail(result.first->first, QSize(view.avatar_size(), view.avatar_size()));
-        connect(reply, &matrix::ContentFetch::finished, &view, &TimelineView::set_avatar);
-        connect(reply, &matrix::ContentFetch::error, &view.room_, &matrix::Room::error);
-      }
-      ++result.first->second.references;
-    }
-  }
-
   {
     QTextOption options;
     options.setAlignment(Qt::AlignLeft | Qt::AlignTop);
@@ -137,11 +127,6 @@ TimelineView::Block::Block(TimelineView &view, const matrix::RoomState &state, c
     name_layout_.setFont(view.font());
     name_layout_.setTextOption(options);
     name_layout_.setCacheEnabled(true);
-    if(sender) {
-      name_layout_.setText(state.member_name(*sender));
-    } else {
-      name_layout_.setText(sender_id_);
-    }
   }
 
   {
@@ -151,6 +136,42 @@ TimelineView::Block::Block(TimelineView &view, const matrix::RoomState &state, c
     timestamp_layout_.setFont(view.font());
     timestamp_layout_.setTextOption(options);
     timestamp_layout_.setCacheEnabled(true);
+  }
+
+  update_header(view, state);
+}
+
+void TimelineView::Block::update_header(TimelineView &view, const matrix::RoomState &state) {
+  auto sender = state.member_from_id(sender_id_);
+  if(sender && !sender->avatar_url().isEmpty()) {
+    std::experimental::optional<matrix::Content> new_avatar;
+    try {
+      new_avatar = matrix::Content(sender->avatar_url());
+    } catch(const std::invalid_argument &e) {
+      qDebug() << "invalid avatar URL:" << e.what() << ":" << sender->avatar_url();
+    }
+    if(new_avatar != avatar_) {
+      if(avatar_) view.unref_avatar(*avatar_);
+
+      if(new_avatar) {
+        avatar_ = std::move(*new_avatar);
+        auto result = view.avatars_.emplace(std::piecewise_construct,
+                                            std::forward_as_tuple(*avatar_),
+                                            std::forward_as_tuple());
+        if(result.second) {
+          auto reply = view.room_.session().get_thumbnail(result.first->first, QSize(view.avatar_size(), view.avatar_size()));
+          connect(reply, &matrix::ContentFetch::finished, &view, &TimelineView::set_avatar);
+          connect(reply, &matrix::ContentFetch::error, &view.room_, &matrix::Room::error);
+        }
+        ++result.first->second.references;
+      }
+    }
+  }
+
+  if(sender) {
+    name_layout_.setText(state.member_name(*sender));
+  } else {
+    name_layout_.setText(sender_id_);
   }
 
   update_layout(view);
@@ -225,9 +246,8 @@ QRectF TimelineView::Event::bounding_rect() const {
 
 QRectF TimelineView::Block::bounding_rect(const TimelineView &view) const {
   auto metrics = view.fontMetrics();
-  auto margin = view.block_margin();
   auto av_size = view.avatar_size();
-  QRectF rect(margin, margin, view.visible_width() - margin, av_size);
+  QRectF rect(0, 0, view.visible_width() - 2*view.block_margin(), av_size);
   rect |= name_layout_.boundingRect();
   QPointF offset(0, name_layout_.boundingRect().height() + metrics.leading());
   for(const auto event : events_) {
@@ -485,15 +505,18 @@ void TimelineView::prepend_batch(QString start, QString end, gsl::span<const mat
     if(!blocks_.empty()
        && blocks_.front().sender_id() == e.sender
        && internal.time - blocks_.front().events().front()->time <= BLOCK_MERGE_INTERVAL) {
+      int initial_height = blocks_.front().bounding_rect(*this).height();
       blocks_.front().events().emplace_front(&internal);
-      blocks_.front().update_layout(*this);  // Updates timestamp if necessary
-      content_height_ += blocks_.front().events().front()->bounding_rect().height() + fontMetrics().leading();
+      blocks_.front().update_header(*this, initial_state_);  // Updates timestamp, disambig. display name, and avatar if necessary
+      int event_height = blocks_.front().events().front()->bounding_rect().height() + fontMetrics().leading();
+      int new_height = blocks_.front().bounding_rect(*this).height();
+      assert(initial_height + event_height == new_height);
+      content_height_ += event_height;
     } else {
       blocks_.emplace_front(*this, initial_state_, e, internal);
       content_height_ += blocks_.front().bounding_rect(*this).height() + block_spacing();
     }
     initial_state_.revert(e);
-    initial_state_.prune_departed_members(nullptr);
     backlog_growable_ &= e.type != "m.room.create";
   }
 
@@ -543,7 +566,7 @@ void TimelineView::prune_backlog() {
       end_block = &*it;
       break;
     }
-    if(!end_block) return;  // Batch overlaps with viewport, bail out
+    if(!end_block) break;  // Batch overlaps with viewport, bail out
 
     int height_lost = 0;
     // Free blocks
@@ -578,6 +601,7 @@ void TimelineView::prune_backlog() {
     batches_.pop_front();
     backlog_growable_ = true;
   }
+  qDebug() << "pruned" << events_removed << "events";
 }
 
 void TimelineView::set_avatar(const matrix::Content &content, const QString &type, const QString &disposition,

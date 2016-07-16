@@ -51,6 +51,7 @@ private:
   class Block {
   public:
     Block(TimelineView &, const matrix::RoomState &, const matrix::proto::Event &, Event &);
+    void update_header(TimelineView &view, const matrix::RoomState &state);
     void update_layout(const TimelineView &);
     void draw(const TimelineView &view, QPainter &p, QPointF offset) const;
     QRectF bounding_rect(const TimelineView &view) const;

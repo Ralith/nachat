@@ -32,7 +32,10 @@ public:
   RoomState() = default;  // New, empty room
   RoomState(const QJsonObject &state, lmdb::txn &txn, lmdb::dbi &members);  // Load from db
 
-  void apply(const proto::Event &e) { dispatch(e, nullptr, nullptr, nullptr); }
+  void apply(const proto::Event &e) {
+    dispatch(e, nullptr, nullptr, nullptr);
+    prune_departed();
+  }
   void revert(const proto::Event &e);  // Reverts an event that, if a state event, has prev_content
   bool dispatch(const proto::Event &e, Room *room, lmdb::dbi *member_db, lmdb::txn *txn);
   // Returns true if changes were made. Emits state change events on room if supplied.
@@ -44,7 +47,7 @@ public:
   const QUrl &avatar() const { return avatar_; }
 
   std::vector<const Member *> members() const;
-  const Member *member(const QString &id) const;
+  const Member *member_from_id(const MemberID &id) const;
 
   QString pretty_name(const QString &own_id) const;
   // Matrix r0.1.0 11.2.2.5 ish (like vector-web)
@@ -52,7 +55,7 @@ public:
   QString member_name(const Member &member) const;
   // Matrix r0.1.0 11.2.2.3
 
-  void prune_departed_members(Room *room);
+  void prune_departed(Room *room = nullptr);
 
   QJsonObject to_json() const;
   // For serialization
@@ -63,13 +66,14 @@ private:
   std::vector<QString> aliases_;
   QString topic_;
   QUrl avatar_;
-  std::unordered_map<QString, Member, QStringHash> members_by_id_;
-  std::unordered_map<QString, std::vector<Member *>, QStringHash> members_by_displayname_;
+  std::unordered_map<MemberID, Member, QStringHash> members_by_id_;
+  std::unordered_map<QString, std::vector<MemberID>, QStringHash> members_by_displayname_;
+  MemberID departed_;
 
-  void forget_displayname(const Member &member, QString old_name, Room *room);
-  void record_displayname(Member &member, Room *room);
-  std::vector<Member *> &members_named(QString displayname);
-  const std::vector<Member *> &members_named(QString displayname) const;
+  void forget_displayname(const MemberID &member, const QString &old_name, Room *room);
+  void record_displayname(const MemberID &member, const QString &name, Room *room);
+  std::vector<MemberID> &members_named(QString displayname);
+  const std::vector<MemberID> &members_named(QString displayname) const;
 
   bool update_membership(const QString &user_id, const QJsonObject &content, Room *room, lmdb::dbi *member_db, lmdb::txn *txn);
 };

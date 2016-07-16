@@ -36,7 +36,7 @@ RoomState::RoomState(const QJsonObject &info, lmdb::txn &txn, lmdb::dbi &member_
       std::piecewise_construct,
       std::forward_as_tuple(id_str),
       std::forward_as_tuple(id_str, QJsonDocument::fromBinaryData(QByteArray(state.data(), state.size())).object())).first->second;
-    record_displayname(member, nullptr);
+    record_displayname(member.id(), member.display_name(), nullptr);
   }
 }
 
@@ -87,10 +87,10 @@ QString RoomState::member_name(const Member &member) const {
   return QObject::tr("%1 (%2)").arg(member.display_name()).arg(member.id());
 }
 
-std::vector<Member *> &RoomState::members_named(QString displayname) {
+std::vector<MemberID> &RoomState::members_named(QString displayname) {
   return members_by_displayname_.at(displayname.normalized(QString::NormalizationForm_C));
 }
-const std::vector<Member *> &RoomState::members_named(QString displayname) const {
+const std::vector<MemberID> &RoomState::members_named(QString displayname) const {
   return members_by_displayname_.at(displayname.normalized(QString::NormalizationForm_C));
 }
 
@@ -102,18 +102,20 @@ std::vector<const Member *> RoomState::members() const {
   return result;
 }
 
-void RoomState::forget_displayname(const Member &member, QString old_name_in, Room *room) {
+void RoomState::forget_displayname(const MemberID &id, const QString &old_name_in, Room *room) {
   if(old_name_in.isEmpty()) return;
 
   QString old_name = old_name_in.normalized(QString::NormalizationForm_C);
-  auto &vec = members_named(old_name);
+  auto &vec = members_by_displayname_.at(old_name);
   QString other_name;
   const Member *other_member = nullptr;
   if(room && vec.size() == 2) {
-    other_member = vec[0] == &member ? vec[1] : vec[0];
+    other_member = &members_by_id_.at(vec[0] == id ? vec[1] : vec[0]);
     other_name = member_name(*other_member);
   }
-  vec.erase(std::remove(vec.begin(), vec.end(), &member), vec.end());
+  const auto before = vec.size();
+  vec.erase(std::remove(vec.begin(), vec.end(), id), vec.end());
+  assert(before - vec.size() == 1);
   if(vec.empty()) {
     members_by_displayname_.erase(old_name);
   }
@@ -122,21 +124,25 @@ void RoomState::forget_displayname(const Member &member, QString old_name_in, Ro
   }
 }
 
-void RoomState::record_displayname(Member &member, Room *room) {
-  if(member.display_name().isEmpty()) return;
-  auto &vec = members_by_displayname_[member.display_name().normalized(QString::NormalizationForm_C)];
+void RoomState::record_displayname(const MemberID &id, const QString &name, Room *room) {
+  if(name.isEmpty()) return;
+
+  auto &vec = members_by_displayname_[name.normalized(QString::NormalizationForm_C)];
   Member *other_member = nullptr;
   QString other_old_name;
   if(vec.size() == 1) {
     // Third party existing name will become disambiguated
-    other_member = vec[0];
-    other_old_name = member_name(*vec[0]);
+    other_member = &members_by_id_.at(vec[0]);
+    other_old_name = member_name(*other_member);
   }
-  vec.push_back(&member);
+  for(const auto &x : vec) {
+    assert(x != id);
+  }
+  vec.push_back(id);
   if(other_member && room) room->member_name_changed(*other_member, other_old_name);
 }
 
-const Member *RoomState::member(const QString &id) const {
+const Member *RoomState::member_from_id(const QString &id) const {
   auto it = members_by_id_.find(id);
   if(it == members_by_id_.end()) return nullptr;
   return &it->second;
@@ -172,6 +178,7 @@ void Room::load_state(lmdb::txn &txn, gsl::span<const proto::Event> events) {
   for(auto &state : events) {
     initial_state_.apply(state);
     state_.dispatch(state, this, &member_db_, &txn);
+    state_.prune_departed();
   }
 }
 
@@ -222,6 +229,11 @@ bool Room::dispatch(lmdb::txn &txn, const proto::JoinedRoom &joined) {
   for(auto &evt : joined.timeline.events) {
     state_touched |= state_.dispatch(evt, this, &member_db_, &txn);
     message(evt);
+
+    // Must happen after we dispatch the previous event but before we process the next one, to ensure display names are
+    // correct for leave/ban events as well as whatever follows
+    state_.prune_departed(this);
+
     batch.events.emplace_back(evt);
   }
 
@@ -232,8 +244,6 @@ bool Room::dispatch(lmdb::txn &txn, const proto::JoinedRoom &joined) {
     buffer_.pop_front();
   }
   buffer_.emplace_back(std::move(batch));
-
-  state_.prune_departed_members(this);
 
   if(state_touched) {
     state_changed();
@@ -261,27 +271,21 @@ bool RoomState::update_membership(const QString &user_id, const QJsonObject &con
   switch(membership) {
   case Membership::INVITE:
   case Membership::JOIN: {
-    auto it = members_by_id_.find(user_id);
-    bool new_member = false;
-    if(it == members_by_id_.end()) {
-      it = members_by_id_.emplace(
+    auto &member = members_by_id_.emplace(
         std::piecewise_construct,
         std::forward_as_tuple(user_id),
-        std::forward_as_tuple(user_id)).first;
-      new_member = true;
-    }
-    auto &member = it->second;
+        std::forward_as_tuple(user_id)).first->second;
     auto old_membership = member.membership();
     auto old_displayname = member.display_name();
     auto old_member_name = member_name(member);
     member.update_membership(content);
     if(member.display_name() != old_displayname) {
-      forget_displayname(member, old_displayname, room);
-      record_displayname(member, room);
-      if(room && !new_member) room->member_name_changed(member, old_member_name);
+      forget_displayname(member.id(), old_displayname, room);
+      record_displayname(member.id(), member.display_name(), room);
+      if(room && membership_displayable(old_membership)) room->member_name_changed(member, old_member_name);
     }
     if(room && member.membership() != old_membership) {
-      room->membership_changed(it->second, membership);
+      room->membership_changed(member, membership);
     }
     if(member_db) {
       auto data = QJsonDocument(member.to_json()).toBinaryData();
@@ -297,8 +301,16 @@ bool RoomState::update_membership(const QString &user_id, const QJsonObject &con
     }
     auto it = members_by_id_.find(user_id);
     if(it != members_by_id_.end()) {
-      it->second.update_membership(content);
-      if(room) room->membership_changed(it->second, membership);
+      auto &member = it->second;
+      auto old_displayname = member.display_name();
+      member.update_membership(content);
+      if(member.display_name() != old_displayname) {
+        forget_displayname(member.id(), old_displayname, room);
+        record_displayname(member.id(), member.display_name(), room);
+      }
+      if(room) room->membership_changed(member, membership);
+      assert(departed_.isEmpty());
+      departed_ = member.id();
     }
     if(member_db) {
       lmdb::dbi_del(*txn, *member_db, lmdb::val(id_utf8.data(), id_utf8.size()), nullptr);
@@ -398,20 +410,16 @@ void RoomState::revert(const proto::Event &state) {
   }
   if(state.type == "m.room.member") {
     update_membership(state.state_key, state.unsigned_.prev_content.value_or(QJsonObject()), nullptr, nullptr, nullptr);
+    prune_departed();
     return;
   }
 }
 
-void RoomState::prune_departed_members(Room *room) {
-  std::vector<std::pair<QString, const Member *>> departed_;
-  for(const auto &member : members_by_id_) {
-    if(member.second.membership() == Membership::LEAVE || member.second.membership() == Membership::BAN) {
-      departed_.push_back(std::make_pair(member.first, &member.second));
-    }
-  }
-  for(const auto &user : departed_) {
-    forget_displayname(*user.second, user.second->display_name(), room);
-    members_by_id_.erase(user.first);
+void RoomState::prune_departed(Room *room) {
+  if(!departed_.isEmpty()) {
+    forget_displayname(departed_, members_by_id_.at(departed_).display_name(), room);
+    members_by_id_.erase(departed_);
+    departed_ = QString();
   }
 }
 
