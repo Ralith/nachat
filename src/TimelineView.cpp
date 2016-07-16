@@ -245,9 +245,8 @@ QRectF TimelineView::Event::bounding_rect() const {
 }
 
 QRectF TimelineView::Block::bounding_rect(const TimelineView &view) const {
-  auto metrics = view.fontMetrics();
-  auto av_size = view.avatar_size();
-  QRectF rect(0, 0, view.visible_width() - 2*view.block_margin(), av_size);
+  const auto metrics = view.fontMetrics();
+  QRectF rect(0, 0, view.visible_width() - 2*view.block_margin(), view.avatar_size());
   rect |= name_layout_.boundingRect();
   QPointF offset(0, name_layout_.boundingRect().height() + metrics.leading());
   for(const auto event : events_) {
@@ -260,7 +259,6 @@ QRectF TimelineView::Block::bounding_rect(const TimelineView &view) const {
 
 void TimelineView::Block::draw(const TimelineView &view, QPainter &p, QPointF offset) const {
   auto metrics = view.fontMetrics();
-  auto margin = view.block_margin();
 
   QPixmap avatar_pixmap;
   const auto size = view.avatar_size();
@@ -274,7 +272,7 @@ void TimelineView::Block::draw(const TimelineView &view, QPainter &p, QPointF of
   } else {
     avatar_pixmap = view.avatar_missing_.pixmap(size, size);
   }
-  p.drawPixmap(QPoint(offset.x() + margin + (size - avatar_pixmap.width()) / 2,
+  p.drawPixmap(QPoint(offset.x() + view.block_margin() + (size - avatar_pixmap.width()) / 2,
                       offset.y() + (size - avatar_pixmap.height()) / 2),
                avatar_pixmap);
 
@@ -373,7 +371,7 @@ void TimelineView::end_batch(const QString &token) {
 }
 
 int TimelineView::block_margin() const { return fontMetrics().lineSpacing()/3; }
-int TimelineView::block_spacing() const { return fontMetrics().lineSpacing()/3; }
+int TimelineView::block_spacing() const { return fontMetrics().lineSpacing() * 0.75; }
 int TimelineView::avatar_size() const {
   auto metrics = fontMetrics();
   return metrics.height() * 2 + metrics.leading();
@@ -400,28 +398,26 @@ void TimelineView::update_scrollbar() {
 }
 
 void TimelineView::paintEvent(QPaintEvent *) {
-  QRectF view_rect = viewport()->contentsRect();
-  view_rect.setWidth(view_rect.width());
+  const QRectF view_rect = viewport()->contentsRect();
   QPainter painter(viewport());
   painter.fillRect(view_rect, palette().color(QPalette::Dark));
   painter.setPen(palette().color(QPalette::Text));
   auto &scroll = *verticalScrollBar();
   QPointF offset(0, view_rect.height() - (scroll.value() - scroll.maximum()));
-  auto s = block_spacing();
+  const float half_spacing = block_spacing()/2.0;
   bool alternate = head_color_alternate_;
   const int margin = block_margin();
   for(auto it = blocks_.crbegin(); it != blocks_.crend(); ++it) {
     const auto bounds = it->bounding_rect(*this);
-    offset.ry() -= bounds.height();
-    if((offset.y() + bounds.height() + block_spacing()/2) < view_rect.top()) {
+    offset.ry() -= bounds.height() + half_spacing;
+    if((offset.y() + bounds.height() + half_spacing) < view_rect.top()) {
       // No further drawing possible
       break;
     }
-    if(offset.y() - block_spacing()/2 < view_rect.bottom()) {
+    if(offset.y() - half_spacing < view_rect.bottom()) {
       {
-        QRectF outline(offset.x() + 0.5, offset.y() - (0.5 + s/2.0),
-                       view_rect.width() - 1,
-                       bounds.translated(offset).height() + (1 + s/2.0));
+        const QRectF outline(offset.x(), offset.y() - half_spacing,
+                             view_rect.width(), bounds.height() + block_spacing());
         painter.save();
         painter.setRenderHint(QPainter::Antialiasing);
         QPainterPath path;
@@ -431,7 +427,7 @@ void TimelineView::paintEvent(QPaintEvent *) {
       }
       it->draw(*this, painter, offset);
     }
-    offset.ry() -= s;
+    offset.ry() -= half_spacing;
     alternate = !alternate;
   }
 }
