@@ -111,6 +111,7 @@ private:
   void prepend_batch(QString start, QString end, gsl::span<const matrix::proto::Event> events);
   void backlog_grow_error();
   int scrollback_trigger_size() const;
+  int scrollback_status_size() const;
   void set_avatar(const matrix::Content &content, const QString &type, const QString &disposition, const QByteArray &data);
   void unref_avatar(const matrix::Content &);
 

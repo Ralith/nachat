@@ -377,6 +377,10 @@ int TimelineView::avatar_size() const {
   return metrics.height() * 2 + metrics.leading();
 }
 int TimelineView::scrollback_trigger_size() const {
+  return viewport()->contentsRect().height()*2;
+}
+int TimelineView::scrollback_status_size() const {
+  // TODO: Size of feedback widget
   return viewport()->contentsRect().height()/2;
 }
 int TimelineView::block_body_start() const {
@@ -390,7 +394,7 @@ void TimelineView::update_scrollbar() {
   const auto view_height = viewport()->contentsRect().height();
   auto &scroll = *verticalScrollBar();
   const int old_maximum = scroll.maximum();
-  const int fake_height = content_height_ + scrollback_trigger_size();
+  const int fake_height = content_height_ + scrollback_status_size();
   const int old_value = scroll.value();
   scroll.setMaximum(view_height > fake_height ? 0 : fake_height - view_height);
   const int old_delta = (old_maximum - old_value);
@@ -538,16 +542,14 @@ void TimelineView::prune_backlog() {
     auto &batch = batches_.front();  // Candidate for removal
     if(total_events_ - batch.size() < min_backlog_size_) return;
 
-    // Determine the first batch that cannot be removed, i.e. the first to overlap the viewport
-    // This is structurally very similar to the drawing loop.
+    // Determine the first batch that cannot be removed, i.e. the first to overlap the scrollback trigger area
     QPointF offset(0, view_rect.height() - (scroll_pos - scroll.maximum()));
     const Block *limit_block;
     for(auto it = blocks_.rbegin(); it != blocks_.rend(); ++it) {
       limit_block = &*it;
       const auto bounds = it->bounding_rect(*this);
       offset.ry() -= bounds.height();
-      if((offset.y() + bounds.height()) < view_rect.top()) {
-        // No further drawing possible
+      if((offset.y() + bounds.height()) < view_rect.top() - scrollback_trigger_size()) {
         break;
       }
       offset.ry() -= block_spacing();
