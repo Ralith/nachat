@@ -8,6 +8,7 @@
 #include <QApplication>
 
 #include "matrix/matrix.hpp"
+#include "matrix/Session.hpp"
 
 #include "logindialog.h"
 #include "mainwindow.h"

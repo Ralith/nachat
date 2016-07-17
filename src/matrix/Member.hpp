@@ -45,7 +45,7 @@ public:
   void update_membership(const QJsonObject &content);
 
 private:
-  const MemberID id_;
+  MemberID id_;
   QString display_name_;  // Optional
   QUrl avatar_url_;       // Optional
   Membership membership_ = Membership::LEAVE;
