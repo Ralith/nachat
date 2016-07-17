@@ -30,3 +30,8 @@ target_link_libraries(native-chat
   Qt5::Widgets
   Qt5::Network
   )
+
+install(
+  TARGETS native-chat
+  DESTINATION bin
+  )
