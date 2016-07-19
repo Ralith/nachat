@@ -6,7 +6,7 @@
 
 #include "roomview.h"
 
-Application::Application(int argc, char **argv)
+Application::Application(int &argc, char **&argv)
     : QApplication(argc, argv)
 {
   connect(&login_, &LoginDialog::accepted, [this](){
