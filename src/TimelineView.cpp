@@ -7,8 +7,13 @@
 #include <QDebug>
 #include <QScrollBar>
 #include <QPainter>
+#include <QShortcut>
+#include <QApplication>
+#include <QClipboard>
 
 #include "matrix/Session.hpp"
+
+using std::experimental::optional;
 
 constexpr static int BACKLOG_BATCH_SIZE = 50;
 constexpr static std::chrono::minutes BLOCK_MERGE_INTERVAL(2);
@@ -257,7 +262,60 @@ QRectF TimelineView::Block::bounding_rect(const TimelineView &view) const {
   return rect;
 }
 
-void TimelineView::Block::draw(const TimelineView &view, QPainter &p, QPointF offset) const {
+static int cursor_near(const QTextLayout &layout, const QPointF &p) {
+  int cursor;
+  for(int i = 0; i < layout.lineCount(); ++i) {
+    const auto line = layout.lineAt(i);
+    const auto rect = line.rect();
+    if(p.y() < rect.top()) {
+      return line.xToCursor(rect.left());
+    }
+    if(p.y() > rect.top() && p.y() < rect.bottom()) {
+      return line.xToCursor(p.x());
+    }
+    if(p.y() > rect.bottom()) {
+      cursor = line.xToCursor(rect.right());
+    }
+    // TODO: Special handling for right-to-left text?
+  }
+  return cursor;
+}
+
+struct TextRange {
+  int start, length;
+};
+
+static TextRange selection_for(const QTextLayout &layout, QPointF layout_origin, 
+                               bool select_all, optional<QPointF> select_start, optional<QPointF> select_end) {
+  TextRange f;
+  if(select_all) {
+    f.start = 0;
+    f.length = layout.text().length();
+  } else if(select_start && select_end) {
+    auto start_cursor = cursor_near(layout, *select_start - layout_origin);
+    auto end_cursor = cursor_near(layout, *select_end - layout_origin);
+    if(start_cursor == end_cursor) {
+      f.start = 0;
+      f.length = 0;
+    } else {
+      f.start = std::min(start_cursor, end_cursor);
+      f.length = std::max(start_cursor, end_cursor) - f.start;
+    }
+  } else if(select_start) {
+    f.start = 0;
+    f.length = cursor_near(layout, *select_start - layout_origin);
+  } else if(select_end) {
+    f.start = cursor_near(layout, *select_end - layout_origin);
+    f.length = layout.text().length() - f.start;
+  } else {
+    f.start = 0;
+    f.length = 0;
+  }
+  return f;
+}
+
+void TimelineView::Block::draw(const TimelineView &view, QPainter &p, QPointF offset, bool select_all,
+                               optional<QPointF> select_start, optional<QPointF> select_end) const {
   auto metrics = view.fontMetrics();
 
   QPixmap avatar_pixmap;
@@ -276,13 +334,26 @@ void TimelineView::Block::draw(const TimelineView &view, QPainter &p, QPointF of
                       offset.y() + (size - avatar_pixmap.height()) / 2),
                avatar_pixmap);
 
+  QVector<QTextLayout::FormatRange> selections;
+  selections.push_back(QTextLayout::FormatRange());
+  const auto cg = view.hasFocus() ? QPalette::Active : QPalette::Inactive;
+  selections.front().format.setBackground(view.palette().brush(cg, QPalette::Highlight));
+  selections.front().format.setForeground(view.palette().brush(cg, QPalette::HighlightedText));
+  auto &&sel = [&](const QTextLayout &l, QPointF o) {
+    auto range = selection_for(l, o, select_all, select_start, select_end);
+    selections.front().start = range.start;
+    selections.front().length = range.length;
+  };
+
   p.save();
   p.setPen(view.palette().color(QPalette::Dark));
-  name_layout_.draw(&p, offset);
-  timestamp_layout_.draw(&p, offset);
+  sel(name_layout_, QPointF(0, 0));
+  name_layout_.draw(&p, offset, selections);
+  sel(timestamp_layout_, QPointF(0, 0));
+  timestamp_layout_.draw(&p, offset, selections);
   p.restore();
 
-  offset.ry() += name_layout_.boundingRect().height();
+  QPointF local_offset(0, name_layout_.boundingRect().height() + metrics.leading());
 
   for(const auto event : events_) {
     p.save();
@@ -291,12 +362,45 @@ void TimelineView::Block::draw(const TimelineView &view, QPainter &p, QPointF of
     }
     QRectF event_bounds;
     for(const auto &layout : event->layouts) {
-      layout.draw(&p, offset);
+      sel(layout, local_offset);
+      layout.draw(&p, offset + local_offset, selections);
+      event_bounds |= layout.boundingRect();
+    }
+    local_offset.ry() += event_bounds.height() + metrics.leading();
+    p.restore();
+  }
+}
+
+QString TimelineView::Block::selection_text(const QFontMetrics &metrics, bool select_all,
+                                            optional<QPointF> select_start, optional<QPointF> select_end) const {
+  QString result;
+  auto &&get = [&](const QTextLayout &l, const QPointF &o) {
+    const auto range = selection_for(l, o, select_all, select_start, select_end);
+    return l.text().mid(range.start, range.length);
+  };
+  auto name_str = get(name_layout_, QPointF(0, 0));
+  auto timestamp_str = get(timestamp_layout_, QPointF(0, 0));
+  if(!name_str.isEmpty() && !timestamp_str.isEmpty()) {
+    result = name_str % " - " % timestamp_str;
+  } else {
+    result = name_str + timestamp_str;
+  }
+  QPointF offset(0, name_layout_.boundingRect().height() + metrics.leading());
+  for(const auto event : events_) {
+    QRectF event_bounds;
+    bool empty = true;
+    for(const auto &layout : event->layouts) {
+      auto str = get(layout, offset);
+      if(!str.isEmpty()) {
+        if(!result.isEmpty()) result += "\n  ";
+        result += str;
+      }
+      empty &= str.isEmpty();
       event_bounds |= layout.boundingRect();
     }
     offset.ry() += event_bounds.height() + metrics.leading();
-    p.restore();
   }
+  return result;
 }
 
 size_t TimelineView::Block::size() const {
@@ -312,7 +416,8 @@ TimelineView::TimelineView(matrix::Room &room, QWidget *parent)
       head_color_alternate_(true), backlog_growing_(false), backlog_growable_(true), backlog_grow_cancelled_(false),
       min_backlog_size_(50), content_height_(0),
       avatar_missing_(QIcon::fromTheme("unknown")),
-      avatar_loading_(QIcon::fromTheme("image-loading")) {
+      avatar_loading_(QIcon::fromTheme("image-loading")),
+      copy_(new QShortcut(QKeySequence::Copy, this)) {
   setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
   verticalScrollBar()->setSingleStep(20);  // Taken from QScrollArea
@@ -322,6 +427,7 @@ TimelineView::TimelineView(matrix::Room &room, QWidget *parent)
       (void)value;
       grow_backlog();
     });
+  connect(copy_, &QShortcut::activated, this, &TimelineView::copy);
 }
 
 int TimelineView::visible_width() const {
@@ -411,7 +517,19 @@ void TimelineView::paintEvent(QPaintEvent *) {
   const float half_spacing = block_spacing()/2.0;
   bool alternate = head_color_alternate_;
   const int margin = block_margin();
-  for(auto it = blocks_.crbegin(); it != blocks_.crend(); ++it) {
+  visible_blocks_.clear();
+  bool inside_selection = false;
+  bool selection_starts_at_start;
+  for(auto it = blocks_.rbegin(); it != blocks_.rend(); ++it) {
+    const bool on_selection_edge = selection_ && (&*it == selection_->start || &*it == selection_->end);
+    const bool starting_selection = !inside_selection && on_selection_edge;
+    const bool ending_selection = (inside_selection && on_selection_edge)
+      || (on_selection_edge && selection_->start == selection_->end);
+
+    inside_selection |= starting_selection;
+
+    if(starting_selection) selection_starts_at_start = &*it == selection_->start;
+
     const auto bounds = it->bounding_rect(*this);
     offset.ry() -= bounds.height() + half_spacing;
     if((offset.y() + bounds.height() + half_spacing) < view_rect.top()) {
@@ -419,6 +537,7 @@ void TimelineView::paintEvent(QPaintEvent *) {
       break;
     }
     if(offset.y() - half_spacing < view_rect.bottom()) {
+      visible_blocks_.push_back(VisibleBlock{&*it, bounds.translated(offset)});
       {
         const QRectF outline(offset.x(), offset.y() - half_spacing,
                              view_rect.width(), bounds.height() + block_spacing());
@@ -429,10 +548,17 @@ void TimelineView::paintEvent(QPaintEvent *) {
         painter.fillPath(path, palette().color(alternate ? QPalette::AlternateBase : QPalette::Base));
         painter.restore();
       }
-      it->draw(*this, painter, offset);
+      it->draw(*this, painter, offset, inside_selection && !starting_selection && !ending_selection,
+               starting_selection
+               ? optional<QPointF>(selection_starts_at_start ? selection_->start_pos : selection_->end_pos)
+               : optional<QPointF>(),
+               ending_selection
+               ? optional<QPointF>(selection_starts_at_start ? selection_->end_pos : selection_->start_pos)
+               : optional<QPointF>());
     }
     offset.ry() -= half_spacing;
     alternate = !alternate;
+    inside_selection &= !ending_selection;
   }
 }
 
@@ -574,7 +700,7 @@ void TimelineView::prune_backlog() {
       auto &block = blocks_.front();
       height_lost += block.bounding_rect(*this).height() + block_spacing();
       if(block.avatar()) unref_avatar(*block.avatar());
-      blocks_.pop_front();
+      pop_front_block();
     }
 
     // Excise to-be-removed events from end_block, now the first block
@@ -588,7 +714,7 @@ void TimelineView::prune_backlog() {
     int final_first_block_height;
     if(blocks_.front().events().empty()) {
       if(blocks_.front().avatar()) unref_avatar(*blocks_.front().avatar());
-      blocks_.pop_front();
+      pop_front_block();
       final_first_block_height = 0;
     } else {
       final_first_block_height = blocks_.front().bounding_rect(*this).height() + block_spacing();
@@ -602,6 +728,20 @@ void TimelineView::prune_backlog() {
     backlog_growable_ = true;
   }
   qDebug() << "pruned" << events_removed << "events";
+}
+
+void TimelineView::pop_front_block() {
+  if(selection_) {
+    if(blocks_.size() == 1) {
+      selection_ = {};
+    } else {
+      if(selection_->end == &blocks_[0])
+        selection_->end = &blocks_[1];
+      if(selection_->start == &blocks_[0])
+        selection_->start = &blocks_[1];
+    }
+  }
+  blocks_.pop_front();
 }
 
 void TimelineView::set_avatar(const matrix::Content &content, const QString &type, const QString &disposition,
@@ -636,4 +776,95 @@ void TimelineView::reset() {
   content_height_ = 0;
   prev_batch_ = QString();  // Should be filled in again before control returns to Qt
   if(backlog_growing_) backlog_grow_cancelled_ = true;
+}
+
+void TimelineView::mousePressEvent(QMouseEvent *event) {
+  // TODO: Clickable files, images; context menus
+  if(event->button() == Qt::LeftButton) {
+    auto b = block_near(event->pos());
+    if(b) {
+      auto rel_pos = event->pos() - b->bounds.topLeft();
+      selection_ = Selection{b->block, rel_pos, b->block, rel_pos};
+    } else {
+      selection_ = {};
+    }
+    viewport()->update();
+  }
+}
+
+void TimelineView::mouseMoveEvent(QMouseEvent *event) {
+  if(event->buttons() & Qt::LeftButton) {
+    // Update selection
+    auto b = block_near(event->pos());
+    if(b) {
+      if(!selection_) {
+        selection_ = Selection{};
+        selection_->end = b->block;
+        selection_->end_pos = event->pos() - b->bounds.topLeft();
+      }
+      selection_->end = b->block;
+      selection_->end_pos = event->pos() - b->bounds.topLeft();
+      // TODO
+      QApplication::clipboard()->setText(selection_text(), QClipboard::Selection);
+
+      viewport()->update();
+    }
+  }
+}
+
+void TimelineView::copy() {
+  QApplication::clipboard()->setText(selection_text());
+}
+
+static float point_rect_dist(const QPointF &p, const QRectF &r) {
+  auto cx = std::max(std::min(p.x(), r.right()), r.left());
+  auto cy = std::max(std::min(p.y(), r.bottom()), r.top());
+  auto dx = p.x() - cx;
+  auto dy = p.y() - cy;
+  return std::sqrt(dx*dx + dy*dy);
+}
+
+TimelineView::VisibleBlock *TimelineView::block_near(const QPoint &p) {
+  float minimum_distance = std::numeric_limits<float>::max();
+  VisibleBlock *closest = nullptr;
+  for(auto &x : visible_blocks_) {
+    float dist = point_rect_dist(p, x.bounds);
+    if(dist > minimum_distance) return closest;
+    closest = &x;
+    minimum_distance = dist;
+  }
+  return closest;
+}
+
+QString TimelineView::selection_text() const {
+  QString result;
+  // TODO: Deduplicate wrt. draw
+  bool inside_selection = false;
+  bool selection_starts_at_start;
+  for(auto block = blocks_.crbegin(); block != blocks_.crend(); ++block) {
+    const bool on_selection_edge = selection_ && (&*block == selection_->start || &*block == selection_->end);
+    const bool starting_selection = !inside_selection && on_selection_edge;
+    const bool ending_selection = (inside_selection && on_selection_edge)
+      || (on_selection_edge && selection_->start == selection_->end);
+    if(starting_selection) selection_starts_at_start = &*block == selection_->start;
+
+    inside_selection |= starting_selection;
+    result = block->selection_text(
+      fontMetrics(),
+      inside_selection && !starting_selection && !ending_selection,
+      starting_selection
+      ? optional<QPointF>(selection_starts_at_start ? selection_->start_pos : selection_->end_pos)
+      : optional<QPointF>(),
+      ending_selection
+      ? optional<QPointF>(selection_starts_at_start ? selection_->end_pos : selection_->start_pos)
+      : optional<QPointF>()) + (result.isEmpty() ? "" : "\n") + result;
+
+    if(ending_selection) {
+      return result;
+    }
+  }
+
+  qDebug() << "Couldn't find selection end!";
+
+  return result;
 }

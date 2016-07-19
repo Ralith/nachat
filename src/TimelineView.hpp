@@ -18,6 +18,8 @@
 
 #include "QStringHash.hpp"
 
+class QShortcut;
+
 class TimelineView : public QAbstractScrollArea {
   Q_OBJECT
 
@@ -36,6 +38,8 @@ protected:
   void paintEvent(QPaintEvent *event) override;
   void resizeEvent(QResizeEvent *event) override;
   void showEvent(QShowEvent *event) override;
+  void mousePressEvent(QMouseEvent *event) override;
+  void mouseMoveEvent(QMouseEvent *event) override;
 
 private:
   struct Event {
@@ -53,8 +57,13 @@ private:
     Block(TimelineView &, const matrix::RoomState &, const matrix::proto::Event &, Event &);
     void update_header(TimelineView &view, const matrix::RoomState &state);
     void update_layout(const TimelineView &);
-    void draw(const TimelineView &view, QPainter &p, QPointF offset) const;
+    void draw(const TimelineView &view, QPainter &p, QPointF offset, bool select_all,
+              std::experimental::optional<QPointF> select_start,
+              std::experimental::optional<QPointF> select_end) const;
     QRectF bounding_rect(const TimelineView &view) const;
+    QString selection_text(const QFontMetrics &, bool select_all,
+                           std::experimental::optional<QPointF> select_start,
+                           std::experimental::optional<QPointF> select_end) const;
 
     const QString &sender_id() const { return sender_id_; }
     size_t size() const;
@@ -71,6 +80,7 @@ private:
     QTextLayout name_layout_, timestamp_layout_;
 
     std::deque<Event *> events_;  // deque so we can add events to either end
+
   };
 
   struct Batch {
@@ -83,6 +93,18 @@ private:
   struct Avatar {
     size_t references = 0;
     QPixmap pixmap;
+  };
+
+  struct Selection {
+    Block *start;               // Point where selection began
+    QPointF start_pos;           // relative to start origin
+    Block *end;                  // Point where selection completed
+    QPointF end_pos;             // relative to end origin
+  };
+
+  struct VisibleBlock {
+    Block *block;
+    QRectF bounds;               // relative to view
   };
 
   matrix::Room &room_;
@@ -99,6 +121,9 @@ private:
   QString prev_batch_;  // Token for the batch immediately prior to the first message
   std::unordered_map<matrix::Content, Avatar> avatars_;
   QIcon avatar_missing_, avatar_loading_;
+  std::experimental::optional<Selection> selection_;
+  QShortcut *copy_;
+  std::vector<VisibleBlock> visible_blocks_;
 
   void update_scrollbar();
   int visible_width() const;
@@ -114,6 +139,12 @@ private:
   int scrollback_status_size() const;
   void set_avatar(const matrix::Content &content, const QString &type, const QString &disposition, const QByteArray &data);
   void unref_avatar(const matrix::Content &);
+  void copy();
+  void update_origins();
+  void pop_front_block();
+  QString selection_text() const;
+
+  VisibleBlock *block_near(const QPoint &p);   // Point relative to view
 
   void prune_backlog();
   // Removes enough blocks from the backlog that calling for each new event will cause backlog size to approach one
