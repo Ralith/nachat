@@ -22,6 +22,7 @@ add_executable(native-chat WIN32
   TimelineView.cpp
   WrappingTextEdit.cpp
   RoomMenu.cpp
+  sort.cpp
   ${UI_HEADERS}
   )
 
