@@ -2,6 +2,7 @@
 
 #include <QDebug>
 #include <QAbstractTextDocumentLayout>
+#include <QGuiApplication>
 
 WrappingTextEdit::WrappingTextEdit(QWidget *parent) : QTextEdit(parent) {
   connect(document()->documentLayout(), &QAbstractTextDocumentLayout::documentSizeChanged,
@@ -32,4 +33,28 @@ void WrappingTextEdit::document_size_changed(const QSizeF &size) {
   // FIXME: Should be able to rely on sizeHint and QSizePolicy::Preferred
   setMaximumHeight(size.height() + margins.top() + margins.bottom());
   updateGeometry();
+}
+
+void WrappingTextEdit::keyPressEvent(QKeyEvent *event) {
+  auto modifiers = QGuiApplication::keyboardModifiers();
+  // TODO: Autocomplete
+  switch(event->key()) {
+  case Qt::Key_Return:
+  case Qt::Key_Enter:
+    if(!(modifiers & Qt::ShiftModifier)) {
+      send();
+      clear();
+      return;
+    }
+    break;
+  case Qt::Key_PageUp:
+    pageUp();
+    return;
+  case Qt::Key_PageDown:
+    pageDown();
+    return;
+  default:
+    break;
+  }
+  QTextEdit::keyPressEvent(event);
 }

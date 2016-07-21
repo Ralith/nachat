@@ -12,6 +12,14 @@ public:
   QSize sizeHint() const override;
   QSize minimumSizeHint() const override;
 
+signals:
+  void send();
+  void pageUp();
+  void pageDown();
+
+protected:
+  void keyPressEvent(QKeyEvent *event) override;
+
 private:
   void document_size_changed(const QSizeF &size);
 };

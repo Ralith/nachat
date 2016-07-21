@@ -57,8 +57,6 @@ private:
   void topic_changed(const QString &);
   void update_members();
   void append_message(const matrix::RoomState &, const matrix::proto::Event &);
-
-  bool eventFilter(QObject *object, QEvent *event) override;
 };
 
 #endif // ROOMVIEW_H

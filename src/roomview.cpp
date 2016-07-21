@@ -37,7 +37,15 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
 
   ui->layout->insertWidget(2, entry_);
   setFocusProxy(entry_);
-  entry_->installEventFilter(this);
+  connect(entry_, &WrappingTextEdit::send, [this]() {
+      room_.send_message(entry_->toPlainText());
+    });
+  connect(entry_, &WrappingTextEdit::pageUp, [this]() {
+      timeline_view_->verticalScrollBar()->triggerAction(QAbstractSlider::SliderPageStepSub);
+    });
+  connect(entry_, &WrappingTextEdit::pageDown, [this]() {
+      timeline_view_->verticalScrollBar()->triggerAction(QAbstractSlider::SliderPageStepAdd);
+    });
 
   connect(&room_, &matrix::Room::message, this, &RoomView::message);
   connect(&room_, &matrix::Room::error, [this](const QString &message) {
@@ -131,26 +139,4 @@ void RoomView::append_message(const matrix::RoomState &state, const matrix::prot
 void RoomView::topic_changed(const QString &old) {
   (void)old;
   ui->topic->setText(room_.state().topic());
-}
-
-bool RoomView::eventFilter(QObject *object, QEvent *event) {
-  if(event->type() == QEvent::KeyPress) {
-    auto modifiers = QGuiApplication::keyboardModifiers();
-    QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
-    // TODO: Autocomplete
-    if(!(modifiers & Qt::ShiftModifier) &&
-       (keyEvent->key() == Qt::Key_Return
-        || keyEvent->key() == Qt::Key_Enter)) {
-      room_.send_message(entry_->toPlainText());
-      entry_->clear();
-      return true;
-    }
-    if(keyEvent->key() == Qt::Key_PageUp) {
-      timeline_view_->verticalScrollBar()->triggerAction(QAbstractSlider::SliderPageStepSub);
-    }
-    if(keyEvent->key() == Qt::Key_PageDown) {
-      timeline_view_->verticalScrollBar()->triggerAction(QAbstractSlider::SliderPageStepAdd);
-    }
-  }
-  return false;
 }
