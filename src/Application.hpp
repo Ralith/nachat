@@ -7,11 +7,11 @@
 #include <QtNetwork>
 #include <QApplication>
 
-#include "matrix/matrix.hpp"
+#include "matrix/Matrix.hpp"
 #include "matrix/Session.hpp"
 
-#include "logindialog.h"
-#include "mainwindow.h"
+#include "LoginDialog.hpp"
+#include "MainWindow.hpp"
 
 class Application : public QApplication {
   Q_OBJECT

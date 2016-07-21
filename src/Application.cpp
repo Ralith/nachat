@@ -1,10 +1,10 @@
-#include "application.h"
+#include "Application.hpp"
 
 #include <QMenu>
 
 #include "matrix/Session.hpp"
 
-#include "roomview.h"
+#include "RoomView.hpp"
 
 Application::Application(int &argc, char **&argv)
     : QApplication(argc, argv)

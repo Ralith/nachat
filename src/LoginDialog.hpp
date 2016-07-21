@@ -6,7 +6,7 @@
 #include <QDialog>
 #include <QSettings>
 
-#include "matrix/matrix.hpp"
+#include "matrix/Matrix.hpp"
 
 namespace Ui {
 class LoginDialog;

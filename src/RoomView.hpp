@@ -23,7 +23,7 @@ struct Event;
 }
 
 class TimelineView;
-class WrappingTextEdit;
+class EntryBox;
 
 class RoomView : public QWidget
 {
@@ -38,7 +38,7 @@ public:
 private:
   Ui::RoomView *ui;
   TimelineView *timeline_view_;
-  WrappingTextEdit *entry_;
+  EntryBox *entry_;
   matrix::Room &room_;
 
   class Compare {

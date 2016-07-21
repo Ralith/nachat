@@ -1,13 +1,13 @@
-#ifndef NATIVE_CHAT_WRAPPING_TEXT_EDIT_HPP_
-#define NATIVE_CHAT_WRAPPING_TEXT_EDIT_HPP_
+#ifndef NATIVE_CHAT_ENTRY_BOX_HPP_
+#define NATIVE_CHAT_ENTRY_BOX_HPP_
 
 #include <QTextEdit>
 
-class WrappingTextEdit : public QTextEdit {
+class EntryBox : public QTextEdit {
   Q_OBJECT
 
 public:
-  WrappingTextEdit(QWidget *parent = nullptr);
+  EntryBox(QWidget *parent = nullptr);
 
   QSize sizeHint() const override;
   QSize minimumSizeHint() const override;

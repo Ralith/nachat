@@ -1,12 +1,12 @@
-#include "WrappingTextEdit.hpp"
+#include "EntryBox.hpp"
 
 #include <QDebug>
 #include <QAbstractTextDocumentLayout>
 #include <QGuiApplication>
 
-WrappingTextEdit::WrappingTextEdit(QWidget *parent) : QTextEdit(parent) {
+EntryBox::EntryBox(QWidget *parent) : QTextEdit(parent) {
   connect(document()->documentLayout(), &QAbstractTextDocumentLayout::documentSizeChanged,
-          this, &WrappingTextEdit::document_size_changed);
+          this, &EntryBox::document_size_changed);
   QSizePolicy policy(QSizePolicy::Ignored, QSizePolicy::Expanding);
   policy.setHorizontalStretch(1);
   policy.setVerticalStretch(1);
@@ -14,7 +14,7 @@ WrappingTextEdit::WrappingTextEdit(QWidget *parent) : QTextEdit(parent) {
   setAcceptRichText(false);
 }
 
-QSize WrappingTextEdit::sizeHint() const {
+QSize EntryBox::sizeHint() const {
   auto margins = contentsMargins();
   QSize size = document()->size().toSize();
   size.rwidth() += margins.left() + margins.right();
@@ -23,19 +23,19 @@ QSize WrappingTextEdit::sizeHint() const {
   return size;
 }
 
-QSize WrappingTextEdit::minimumSizeHint() const {
+QSize EntryBox::minimumSizeHint() const {
   auto margins = contentsMargins();
   return QSize(fontMetrics().averageCharWidth(), fontMetrics().lineSpacing() + margins.top() + margins.bottom());
 }
 
-void WrappingTextEdit::document_size_changed(const QSizeF &size) {
+void EntryBox::document_size_changed(const QSizeF &size) {
   auto margins = contentsMargins();
   // FIXME: Should be able to rely on sizeHint and QSizePolicy::Preferred
   setMaximumHeight(size.height() + margins.top() + margins.bottom());
   updateGeometry();
 }
 
-void WrappingTextEdit::keyPressEvent(QKeyEvent *event) {
+void EntryBox::keyPressEvent(QKeyEvent *event) {
   auto modifiers = QGuiApplication::keyboardModifiers();
   // TODO: Autocomplete
   switch(event->key()) {

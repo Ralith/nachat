@@ -1,5 +1,5 @@
-#include "logindialog.h"
-#include "ui_logindialog.h"
+#include "LoginDialog.hpp"
+#include "ui_LoginDialog.h"
 
 #include <QMessageBox>
 

@@ -2,7 +2,7 @@
 #include <QMessageBox>
 #include <QSettings>
 
-#include "application.h"
+#include "Application.hpp"
 
 int main(int argc, char *argv[]) {
   QCoreApplication::setOrganizationName("Native Chat");

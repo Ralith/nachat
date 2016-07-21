@@ -6,7 +6,7 @@
 #include <QUrl>
 
 #include "utils.hpp"
-#include "matrix.hpp"
+#include "Matrix.hpp"
 #include "parse.hpp"
 
 namespace matrix {

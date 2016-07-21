@@ -6,10 +6,9 @@
 
 #include <QMainWindow>
 
-#include "matrix/matrix.hpp"
+#include "matrix/Matrix.hpp"
 
 #include "ChatWindow.hpp"
-#include "roomview.h"
 
 class QProgressBar;
 class QSettings;

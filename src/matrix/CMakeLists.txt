@@ -1,6 +1,6 @@
 add_library(matrix
   utils.cpp
-  matrix.cpp
+  Matrix.cpp
   Session.cpp
   Room.cpp
   Member.cpp

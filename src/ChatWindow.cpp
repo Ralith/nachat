@@ -6,7 +6,7 @@
 
 #include "matrix/Room.hpp"
 
-#include "roomview.h"
+#include "RoomView.hpp"
 
 ChatWindow::ChatWindow(QWidget *parent)
     : QWidget(parent), ui(new Ui::ChatWindow) {

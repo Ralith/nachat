@@ -1,5 +1,5 @@
-#include "roomview.h"
-#include "ui_roomview.h"
+#include "RoomView.hpp"
+#include "ui_RoomView.h"
 
 #include <stdexcept>
 
@@ -11,7 +11,7 @@
 #include "matrix/Room.hpp"
 #include "matrix/Member.hpp"
 #include "TimelineView.hpp"
-#include "WrappingTextEdit.hpp"
+#include "EntryBox.hpp"
 #include "RoomMenu.hpp"
 
 QString RoomView::Compare::key(const QString &n) {
@@ -24,7 +24,7 @@ QString RoomView::Compare::key(const QString &n) {
 }
 
 RoomView::RoomView(matrix::Room &room, QWidget *parent)
-    : QWidget(parent), ui(new Ui::RoomView), timeline_view_(new TimelineView(room, this)), entry_(new WrappingTextEdit(this)),
+    : QWidget(parent), ui(new Ui::RoomView), timeline_view_(new TimelineView(room, this)), entry_(new EntryBox(this)),
       room_(room) {
   ui->setupUi(this);
 
@@ -37,13 +37,13 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
 
   ui->layout->insertWidget(2, entry_);
   setFocusProxy(entry_);
-  connect(entry_, &WrappingTextEdit::send, [this]() {
+  connect(entry_, &EntryBox::send, [this]() {
       room_.send_message(entry_->toPlainText());
     });
-  connect(entry_, &WrappingTextEdit::pageUp, [this]() {
+  connect(entry_, &EntryBox::pageUp, [this]() {
       timeline_view_->verticalScrollBar()->triggerAction(QAbstractSlider::SliderPageStepSub);
     });
-  connect(entry_, &WrappingTextEdit::pageDown, [this]() {
+  connect(entry_, &EntryBox::pageDown, [this]() {
       timeline_view_->verticalScrollBar()->triggerAction(QAbstractSlider::SliderPageStepAdd);
     });
 
