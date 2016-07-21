@@ -39,6 +39,7 @@ protected:
   void resizeEvent(QResizeEvent *event) override;
   void showEvent(QShowEvent *event) override;
   void mousePressEvent(QMouseEvent *event) override;
+  void mouseReleaseEvent(QMouseEvent *event) override;
   void mouseMoveEvent(QMouseEvent *event) override;
 
 private:
@@ -68,6 +69,7 @@ private:
     const QString &sender_id() const { return sender_id_; }
     size_t size() const;
     const std::experimental::optional<matrix::Content> &avatar() const { return avatar_; }
+    const Event *event_at(const QFontMetrics &, const QPointF &) const;
 
     std::deque<Event *> &events() { return events_; }
     const std::deque<Event *> &events() const { return events_; }
@@ -106,6 +108,64 @@ private:
     Block *block;
     QRectF bounds;               // relative to view
   };
+
+  template<typename I>
+  class SelectionAwareIterator {
+  public:
+    SelectionAwareIterator(const std::experimental::optional<Selection> &s, I i, bool derefable) : s_(s), i_(i) {
+      if(derefable) check_starting();
+    }
+
+    SelectionAwareIterator &operator++() {
+      inside_selection_ &= !ending_selection();
+      starting_ = false;
+      ending_ = false;
+      ++i_;
+      check_starting();
+      return *this;
+    }
+
+    auto &operator*() { return *i_; }
+    const auto &operator*() const { return *i_; }
+    auto operator->() { return i_.operator->(); }
+    bool operator==(const SelectionAwareIterator &other) const { return i_ == other.i_; }
+    bool operator!=(const SelectionAwareIterator &other) const { return i_ != other.i_; }
+
+    bool on_selection_edge() const { return s_ && (&*i_ == s_->start || &*i_ == s_->end); }
+    bool starting_selection() const { return starting_; }
+    bool ending_selection() const { return ending_; }
+    bool fully_selected() const { return inside_selection_ && !on_selection_edge(); }
+    std::experimental::optional<QPointF> start_point() const {
+      return starting_selection()
+        ? std::experimental::optional<QPointF>(selection_starts_at_start_ ? s_->start_pos : s_->end_pos)
+        : std::experimental::optional<QPointF>();
+    }
+    std::experimental::optional<QPointF> end_point() const {
+      return ending_selection()
+        ? std::experimental::optional<QPointF>(selection_starts_at_start_ ? s_->end_pos : s_->start_pos)
+        : std::experimental::optional<QPointF>();
+    }
+
+  private:
+    const std::experimental::optional<Selection> &s_;
+    I i_;
+
+    bool inside_selection_ = false;
+    bool selection_starts_at_start_;
+
+    bool starting_ = false;
+    bool ending_ = false;
+
+    void check_starting() {
+      starting_ = !inside_selection_ && on_selection_edge();
+      ending_ = on_selection_edge() && (inside_selection_ || s_->start == s_->end);
+      inside_selection_ |= starting_;
+      if(starting_) selection_starts_at_start_ = &*i_ == s_->start;
+    }
+  };
+
+  template<typename I>
+  auto selection_iter(I i, bool derefable) const { return SelectionAwareIterator<I>(selection_, i, derefable); }
 
   matrix::Room &room_;
   matrix::RoomState initial_state_;

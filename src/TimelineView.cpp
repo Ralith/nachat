@@ -407,6 +407,20 @@ size_t TimelineView::Block::size() const {
   return events_.size();
 }
 
+const TimelineView::Event *TimelineView::Block::event_at(const QFontMetrics &metrics, const QPointF &p) const {
+  QPointF offset(0, name_layout_.boundingRect().height() + metrics.leading());
+  for(const auto event : events_) {
+    QRectF event_bounds;
+    for(const auto &layout : event->layouts) {
+      if(layout.boundingRect().contains(p - offset))
+        return event;
+      event_bounds |= layout.boundingRect();
+    }
+    offset.ry() += event_bounds.height() + metrics.leading();
+  }
+  return nullptr;
+}
+
 size_t TimelineView::Batch::size() const {
   return events.size();
 }
@@ -422,6 +436,7 @@ TimelineView::TimelineView(matrix::Room &room, QWidget *parent)
   setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
   verticalScrollBar()->setSingleStep(20);  // Taken from QScrollArea
   setFocusPolicy(Qt::NoFocus);
+  setMouseTracking(true);
 
   connect(verticalScrollBar(), &QAbstractSlider::valueChanged, [this](int value) {
       (void)value;
@@ -518,18 +533,7 @@ void TimelineView::paintEvent(QPaintEvent *) {
   bool alternate = head_color_alternate_;
   const int margin = block_margin();
   visible_blocks_.clear();
-  bool inside_selection = false;
-  bool selection_starts_at_start;
-  for(auto it = blocks_.rbegin(); it != blocks_.rend(); ++it) {
-    const bool on_selection_edge = selection_ && (&*it == selection_->start || &*it == selection_->end);
-    const bool starting_selection = !inside_selection && on_selection_edge;
-    const bool ending_selection = (inside_selection && on_selection_edge)
-      || (on_selection_edge && selection_->start == selection_->end);
-
-    inside_selection |= starting_selection;
-
-    if(starting_selection) selection_starts_at_start = &*it == selection_->start;
-
+  for(auto it = selection_iter(blocks_.rbegin(), true); it != selection_iter(blocks_.rend(), false); ++it) {
     const auto bounds = it->bounding_rect(*this);
     offset.ry() -= bounds.height() + half_spacing;
     if((offset.y() + bounds.height() + half_spacing) < view_rect.top()) {
@@ -548,28 +552,15 @@ void TimelineView::paintEvent(QPaintEvent *) {
         painter.fillPath(path, palette().color(alternate ? QPalette::AlternateBase : QPalette::Base));
         painter.restore();
       }
-      it->draw(*this, painter, offset, inside_selection && !starting_selection && !ending_selection,
-               starting_selection
-               ? optional<QPointF>(selection_starts_at_start ? selection_->start_pos : selection_->end_pos)
-               : optional<QPointF>(),
-               ending_selection
-               ? optional<QPointF>(selection_starts_at_start ? selection_->end_pos : selection_->start_pos)
-               : optional<QPointF>());
+      it->draw(*this, painter, offset, it.fully_selected(), it.start_point(), it.end_point());
     }
     offset.ry() -= half_spacing;
     alternate = !alternate;
-    inside_selection &= !ending_selection;
   }
 }
 
 void TimelineView::resizeEvent(QResizeEvent *e) {
-  {
-    const int unit = avatar_size() + block_spacing();
-    const int window_height = viewport()->contentsRect().height();
-    const int window_units = window_height / unit;
-
-    verticalScrollBar()->setPageStep((window_units - 1) * unit);
-  }
+  verticalScrollBar()->setPageStep(viewport()->contentsRect().height() * 0.75);
 
   if(e->size().width() != e->oldSize().width()) {
     // Linebreaks may have changed, so we need to lay everything out again
@@ -632,13 +623,10 @@ void TimelineView::prepend_batch(QString start, QString end, gsl::span<const mat
     if(!blocks_.empty()
        && blocks_.front().sender_id() == e.sender
        && internal.time - blocks_.front().events().front()->time <= BLOCK_MERGE_INTERVAL) {
-      int initial_height = blocks_.front().bounding_rect(*this).height();
+      content_height_ -= blocks_.front().bounding_rect(*this).height();
       blocks_.front().events().emplace_front(&internal);
       blocks_.front().update_header(*this, initial_state_);  // Updates timestamp, disambig. display name, and avatar if necessary
-      int event_height = blocks_.front().events().front()->bounding_rect().height() + fontMetrics().leading();
-      int new_height = blocks_.front().bounding_rect(*this).height();
-      assert(initial_height + event_height == new_height);
-      content_height_ += event_height;
+      content_height_ += blocks_.front().bounding_rect(*this).height();
     } else {
       blocks_.emplace_front(*this, initial_state_, e, internal);
       content_height_ += blocks_.front().bounding_rect(*this).height() + block_spacing();
@@ -782,6 +770,7 @@ void TimelineView::mousePressEvent(QMouseEvent *event) {
   // TODO: Clickable files, images; context menus
   if(event->button() == Qt::LeftButton) {
     auto b = block_near(event->pos());
+    QApplication::setOverrideCursor(Qt::IBeamCursor);
     if(b) {
       auto rel_pos = event->pos() - b->bounds.topLeft();
       selection_ = Selection{b->block, rel_pos, b->block, rel_pos};
@@ -795,8 +784,8 @@ void TimelineView::mousePressEvent(QMouseEvent *event) {
 void TimelineView::mouseMoveEvent(QMouseEvent *event) {
   if(event->buttons() & Qt::LeftButton) {
     // Update selection
-    auto b = block_near(event->pos());
-    if(b) {
+    // TODO: Start auto-scrolling if cursor out of viewport
+    if(auto b = block_near(event->pos())) {
       if(!selection_) {
         selection_ = Selection{};
         selection_->end = b->block;
@@ -804,11 +793,23 @@ void TimelineView::mouseMoveEvent(QMouseEvent *event) {
       }
       selection_->end = b->block;
       selection_->end_pos = event->pos() - b->bounds.topLeft();
-      // TODO
       QApplication::clipboard()->setText(selection_text(), QClipboard::Selection);
 
       viewport()->update();
     }
+  } else {
+    // Draw hover cursor
+    if(auto b = block_near(event->pos())) {
+      if(b->bounds.contains(event->pos())) {
+        viewport()->setCursor(Qt::IBeamCursor);
+      }
+    }
+  }
+}
+
+void TimelineView::mouseReleaseEvent(QMouseEvent *event) {
+  if(event->button() == Qt::LeftButton) {
+    QApplication::restoreOverrideCursor();
   }
 }
 
@@ -838,28 +839,11 @@ TimelineView::VisibleBlock *TimelineView::block_near(const QPoint &p) {
 
 QString TimelineView::selection_text() const {
   QString result;
-  // TODO: Deduplicate wrt. draw
-  bool inside_selection = false;
-  bool selection_starts_at_start;
-  for(auto block = blocks_.crbegin(); block != blocks_.crend(); ++block) {
-    const bool on_selection_edge = selection_ && (&*block == selection_->start || &*block == selection_->end);
-    const bool starting_selection = !inside_selection && on_selection_edge;
-    const bool ending_selection = (inside_selection && on_selection_edge)
-      || (on_selection_edge && selection_->start == selection_->end);
-    if(starting_selection) selection_starts_at_start = &*block == selection_->start;
+  for(auto block = selection_iter(blocks_.crbegin(), true); block != selection_iter(blocks_.crend(), false); ++block) {
+    result = block->selection_text(fontMetrics(), block.fully_selected(), block.start_point(), block.end_point())
+      + (result.isEmpty() ? "" : "\n") + result;
 
-    inside_selection |= starting_selection;
-    result = block->selection_text(
-      fontMetrics(),
-      inside_selection && !starting_selection && !ending_selection,
-      starting_selection
-      ? optional<QPointF>(selection_starts_at_start ? selection_->start_pos : selection_->end_pos)
-      : optional<QPointF>(),
-      ending_selection
-      ? optional<QPointF>(selection_starts_at_start ? selection_->end_pos : selection_->start_pos)
-      : optional<QPointF>()) + (result.isEmpty() ? "" : "\n") + result;
-
-    if(ending_selection) {
+    if(block.ending_selection()) {
       return result;
     }
   }
