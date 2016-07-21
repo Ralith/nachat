@@ -64,17 +64,35 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
 
   connect(ui->room_list, &QListWidget::itemActivated, [this](QListWidgetItem *item){
       auto &room = *reinterpret_cast<matrix::Room *>(item->data(Qt::UserRole).value<void*>());
+      ChatWindow *window;
       auto it = chat_windows_.find(&room);
-      if(it == chat_windows_.end()) {
-        it = chat_windows_.emplace(
-          std::piecewise_construct,
-          std::forward_as_tuple(&room),
-          std::forward_as_tuple()).first;
+      if(it != chat_windows_.end()) {
+        window = it->second;   // Focus in existing window
+      } else if(last_focused_) {
+        window = last_focused_; // Add to most recently used window
+      } else {
+        if(chat_windows_.empty()) {
+          // Create first window
+          it = chat_windows_.emplace(
+            std::piecewise_construct,
+            std::forward_as_tuple(&room),
+            std::forward_as_tuple(new ChatWindow)).first;
+          window = it->second;
+          connect(window, &ChatWindow::focused, [this, window](){
+              last_focused_ = window;
+            });
+          connect(window, &ChatWindow::released, [this](matrix::Room *r) {
+              chat_windows_.erase(r);
+            });
+        } else {
+          // Select arbitrary window
+          window = chat_windows_.begin()->second;
+        }
       }
-      auto &window = it->second;
-      window.add_or_focus(room);
-      window.show();
-      window.activateWindow();
+      window->add_or_focus(room);
+      window->show();
+      window->raise();
+      window->activateWindow();
     });
 
   sync_progress(0, -1);
@@ -93,8 +111,7 @@ void MainWindow::update_rooms() {
   auto rooms = session_->rooms();
   std::sort(rooms.begin(), rooms.end(),
             [&](const matrix::Room *a, const matrix::Room *b) {
-              return room_sort_key(a->state().pretty_name(session_->user_id()))
-                  < room_sort_key(b->state().pretty_name(session_->user_id()));
+              return room_sort_key(a->pretty_name()) < room_sort_key(b->pretty_name());
             });
   ui->room_list->clear();
   for(auto room : rooms) {

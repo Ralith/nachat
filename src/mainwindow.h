@@ -39,8 +39,9 @@ private:
   std::unique_ptr<matrix::Session> session_;
   QProgressBar *progress_;
   QLabel *sync_label_;
+  ChatWindow *last_focused_ = nullptr;
 
-  std::unordered_map<matrix::Room *, ChatWindow> chat_windows_;
+  std::unordered_map<matrix::Room *, ChatWindow *> chat_windows_;
 
   void update_rooms();
   void sync_progress(qint64 received, qint64 total);
