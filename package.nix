@@ -1,10 +1,10 @@
-{stdenv, cmake, qtbase, lmdb, makeQtWrapper}:
+{stdenv, cmake, ninja, qtbase, qtsvg, lmdb, makeQtWrapper}:
 
 stdenv.mkDerivation rec {
   name = "native-chat-${version}";
   version = "0.0";
 
-  buildInputs = [ cmake qtbase lmdb ];
+  buildInputs = [ cmake ninja qtbase qtsvg lmdb ];
   nativeBuildInputs = [ makeQtWrapper ];
   preFixup = ''
     wrapQtProgram $out/bin/native-chat
