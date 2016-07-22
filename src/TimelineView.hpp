@@ -109,32 +109,21 @@ private:
     QRectF bounds;               // relative to view
   };
 
-  template<typename I>
-  class SelectionAwareIterator {
+  class SelectionScanner {
   public:
-    SelectionAwareIterator(const std::experimental::optional<Selection> &s, I i, bool derefable) : s_(s), i_(i) {
-      if(derefable) check_starting();
-    }
+    SelectionScanner(const std::experimental::optional<Selection> &s) : s_(s) {}
 
-    SelectionAwareIterator &operator++() {
+    void advance(const Block *b) {
       inside_selection_ &= !ending_selection();
       starting_ = false;
       ending_ = false;
-      ++i_;
-      check_starting();
-      return *this;
+      check_starting(b);
     }
 
-    auto &operator*() { return *i_; }
-    const auto &operator*() const { return *i_; }
-    auto operator->() { return i_.operator->(); }
-    bool operator==(const SelectionAwareIterator &other) const { return i_ == other.i_; }
-    bool operator!=(const SelectionAwareIterator &other) const { return i_ != other.i_; }
-
-    bool on_selection_edge() const { return s_ && (&*i_ == s_->start || &*i_ == s_->end); }
+    bool on_selection_edge(const Block *b) const { return s_ && (b == s_->start || b == s_->end); }
     bool starting_selection() const { return starting_; }
     bool ending_selection() const { return ending_; }
-    bool fully_selected() const { return inside_selection_ && !on_selection_edge(); }
+    bool fully_selected(const Block *b) const { return inside_selection_ && !on_selection_edge(b); }
     std::experimental::optional<QPointF> start_point() const {
       return starting_selection()
         ? std::experimental::optional<QPointF>(selection_starts_at_start_ ? s_->start_pos : s_->end_pos)
@@ -148,7 +137,6 @@ private:
 
   private:
     const std::experimental::optional<Selection> &s_;
-    I i_;
 
     bool inside_selection_ = false;
     bool selection_starts_at_start_;
@@ -156,16 +144,13 @@ private:
     bool starting_ = false;
     bool ending_ = false;
 
-    void check_starting() {
-      starting_ = !inside_selection_ && on_selection_edge();
-      ending_ = on_selection_edge() && (inside_selection_ || s_->start == s_->end);
+    void check_starting(const Block *b) {
+      starting_ = !inside_selection_ && on_selection_edge(b);
+      ending_ = on_selection_edge(b) && (inside_selection_ || s_->start == s_->end);
       inside_selection_ |= starting_;
-      if(starting_) selection_starts_at_start_ = &*i_ == s_->start;
+      if(starting_) selection_starts_at_start_ = b == s_->start;
     }
   };
-
-  template<typename I>
-  auto selection_iter(I i, bool derefable) const { return SelectionAwareIterator<I>(selection_, i, derefable); }
 
   matrix::Room &room_;
   matrix::RoomState initial_state_;

@@ -435,7 +435,6 @@ TimelineView::TimelineView(matrix::Room &room, QWidget *parent)
   setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
   verticalScrollBar()->setSingleStep(20);  // Taken from QScrollArea
-  setFocusPolicy(Qt::NoFocus);
   setMouseTracking(true);
 
   connect(verticalScrollBar(), &QAbstractSlider::valueChanged, [this](int value) {
@@ -533,7 +532,9 @@ void TimelineView::paintEvent(QPaintEvent *) {
   bool alternate = head_color_alternate_;
   const int margin = block_margin();
   visible_blocks_.clear();
-  for(auto it = selection_iter(blocks_.rbegin(), true); it != selection_iter(blocks_.rend(), false); ++it) {
+  SelectionScanner ss(selection_);
+  for(auto it = blocks_.rbegin(); it != blocks_.rend(); ++it) {
+    ss.advance(&*it);
     const auto bounds = it->bounding_rect(*this);
     offset.ry() -= bounds.height() + half_spacing;
     if((offset.y() + bounds.height() + half_spacing) < view_rect.top()) {
@@ -552,7 +553,7 @@ void TimelineView::paintEvent(QPaintEvent *) {
         painter.fillPath(path, palette().color(alternate ? QPalette::AlternateBase : QPalette::Base));
         painter.restore();
       }
-      it->draw(*this, painter, offset, it.fully_selected(), it.start_point(), it.end_point());
+      it->draw(*this, painter, offset, ss.fully_selected(&*it), ss.start_point(), ss.end_point());
     }
     offset.ry() -= half_spacing;
     alternate = !alternate;
@@ -844,11 +845,13 @@ TimelineView::VisibleBlock *TimelineView::block_near(const QPoint &p) {
 
 QString TimelineView::selection_text() const {
   QString result;
-  for(auto block = selection_iter(blocks_.crbegin(), true); block != selection_iter(blocks_.crend(), false); ++block) {
-    result = block->selection_text(fontMetrics(), block.fully_selected(), block.start_point(), block.end_point())
+  SelectionScanner ss(selection_);
+  for(auto block = blocks_.crbegin(); block != blocks_.crend(); ++block) {
+    ss.advance(&*block);
+    result = block->selection_text(fontMetrics(), ss.fully_selected(&*block), ss.start_point(), ss.end_point())
       + (result.isEmpty() ? "" : "\n") + result;
 
-    if(block.ending_selection()) {
+    if(ss.ending_selection()) {
       return result;
     }
   }
