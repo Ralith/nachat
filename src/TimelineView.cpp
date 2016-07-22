@@ -39,8 +39,13 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
   } else if(e.type == "m.room.member") {
     switch(matrix::parse_membership(e.content["membership"].toString()).value()) {
     case matrix::Membership::INVITE: {
-      auto &invitee = *state.member_from_id(e.state_key);
-      lines = QStringList(tr("invited %1").arg(state.member_name(invitee)));
+      auto invitee = state.member_from_id(e.state_key);
+      if(!invitee) {
+        qDebug() << "got invite for non-member" << e.state_key << " probably because we're probably stepping backwards over a duplicated event from SYN-645";
+        lines = QStringList(tr("SYN-645 related error"));
+      } else {
+        lines = QStringList(tr("invited %1").arg(state.member_name(*invitee)));
+      }
       break;
     }
     case matrix::Membership::JOIN: {
@@ -90,8 +95,13 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
       break;
     }
     case matrix::Membership::BAN: {
-      auto &banned = *state.member_from_id(e.state_key);
-      lines = QStringList(tr("banned %1").arg(state.member_name(banned)));
+      auto banned = state.member_from_id(e.state_key);
+      if(!banned) {
+        // FIXME: Display name when moving backwards??
+        lines = QStringList(tr("banned %1").arg(e.state_key));
+      } else {
+        lines = QStringList(tr("banned %1").arg(state.member_name(*banned)));
+      }
       break;
     }
     }
