@@ -81,8 +81,8 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
           connect(window, &ChatWindow::focused, [this, window](){
               last_focused_ = window;
             });
-          connect(window, &ChatWindow::released, [this](matrix::Room *r) {
-              chat_windows_.erase(r);
+          connect(window, &ChatWindow::released, [this](matrix::Room &r) {
+              chat_windows_.erase(&r);
             });
         } else {
           // Select arbitrary window

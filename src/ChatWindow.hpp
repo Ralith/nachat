@@ -7,7 +7,7 @@
 #include <QWidget>
 
 class RoomView;
-class QListWidgetItem;
+class RoomViewList;
 
 namespace matrix {
 class Room;
@@ -26,11 +26,12 @@ public:
   ~ChatWindow();
 
   void add_or_focus(matrix::Room &);
+  void room_name_changed(matrix::Room &);
 
 signals:
   void focused();
-  void released(matrix::Room *);
-  void claimed(matrix::Room *);
+  void released(matrix::Room &);
+  void claimed(matrix::Room &);
 
 protected:
   void focusInEvent(QFocusEvent *event) override;
@@ -38,16 +39,10 @@ protected:
 
 private:
   Ui::ChatWindow *ui;
-
-  struct RoomInfo {
-    RoomView *view;
-    QListWidgetItem *item;
-  };
-
-  std::unordered_map<matrix::Room *, RoomInfo> rooms_;
+  RoomViewList *room_list_;
+  std::unordered_map<matrix::Room *, RoomView *> rooms_;
 
   void update_title();
-  void update_room_list();
   void current_changed(int i);
 };
 

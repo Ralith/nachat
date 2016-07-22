@@ -23,6 +23,7 @@ add_executable(native-chat WIN32
   EntryBox.cpp
   RoomMenu.cpp
   sort.cpp
+  RoomViewList.cpp
   ${UI_HEADERS}
   )
 
