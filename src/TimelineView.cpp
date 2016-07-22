@@ -793,7 +793,9 @@ void TimelineView::mouseMoveEvent(QMouseEvent *event) {
       }
       selection_->end = b->block;
       selection_->end_pos = event->pos() - b->bounds.topLeft();
-      QApplication::clipboard()->setText(selection_text(), QClipboard::Selection);
+      QString t = selection_text();
+      if(!t.isEmpty())
+        QApplication::clipboard()->setText(selection_text(), QClipboard::Selection);
 
       viewport()->update();
     }
@@ -814,7 +816,9 @@ void TimelineView::mouseReleaseEvent(QMouseEvent *event) {
 }
 
 void TimelineView::copy() {
-  QApplication::clipboard()->setText(selection_text());
+  QString t = selection_text();
+  if(!t.isEmpty())
+    QApplication::clipboard()->setText(t);
 }
 
 static float point_rect_dist(const QPointF &p, const QRectF &r) {
