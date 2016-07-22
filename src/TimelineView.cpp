@@ -715,7 +715,8 @@ void TimelineView::prune_backlog() {
     batches_.pop_front();
     backlog_growable_ = true;
   }
-  qDebug() << "pruned" << events_removed << "events";
+  if(events_removed > 0)
+    qDebug() << room_.id() << "pruned" << events_removed << "events";
 }
 
 void TimelineView::pop_front_block() {
