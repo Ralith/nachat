@@ -12,7 +12,9 @@
 ChatWindow::ChatWindow(QWidget *parent)
   : QWidget(parent), ui(new Ui::ChatWindow), room_list_(new RoomViewList(this)) {
   ui->setupUi(this);
+
   setAttribute(Qt::WA_DeleteOnClose);
+
   connect(ui->room_stack, &QStackedWidget::currentChanged, this, &ChatWindow::current_changed);
   ui->splitter->insertWidget(0, room_list_);
   ui->splitter->setCollapsible(1, false);
@@ -20,7 +22,9 @@ ChatWindow::ChatWindow(QWidget *parent)
   room_list_->hide();
 
   connect(room_list_, &RoomViewList::activated, [this](matrix::Room &room) {
-      ui->room_stack->setCurrentWidget(rooms_.at(&room));
+      auto &view = *rooms_.at(&room);
+      ui->room_stack->setCurrentWidget(&view);
+      view.setFocus();
     });
   connect(room_list_, &RoomViewList::claimed, this, &ChatWindow::claimed);
   connect(room_list_, &RoomViewList::released, [this](matrix::Room &room) {
