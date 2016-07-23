@@ -189,7 +189,6 @@ private:
   void set_avatar(const matrix::Content &content, const QString &type, const QString &disposition, const QByteArray &data);
   void unref_avatar(const matrix::Content &);
   void copy();
-  void update_origins();
   void pop_front_block();
   QString selection_text() const;
 
