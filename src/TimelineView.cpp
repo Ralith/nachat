@@ -475,9 +475,11 @@ void TimelineView::push_back(const matrix::RoomState &state, const matrix::proto
      && blocks_.back().sender_id() == in.sender
      && event.time - blocks_.back().events().back()->time <= BLOCK_MERGE_INTERVAL) {
     // Add to existing block
-    blocks_.back().events().emplace_back(&event);
-    blocks_.back().update_layout(*this);  // Updates timestamp if necessary
-    content_height_ += blocks_.back().events().back()->bounding_rect().height() + fontMetrics().leading();
+    auto &block = blocks_.back();
+    content_height_ -= block.bounding_rect(*this).height();
+    block.events().emplace_back(&event);
+    block.update_header(*this, state); // Updates timestamp if necessary
+    content_height_ += block.bounding_rect(*this).height();
   } else {
     blocks_.emplace_back(*this, state, in, event);
     head_color_alternate_ = !head_color_alternate_;
