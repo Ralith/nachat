@@ -20,6 +20,7 @@
 #include "QStringHash.hpp"
 
 class QShortcut;
+class QMenu;
 
 class TimelineView : public QAbstractScrollArea {
   Q_OBJECT
@@ -46,13 +47,18 @@ protected:
   void mouseReleaseEvent(QMouseEvent *event) override;
   void mouseMoveEvent(QMouseEvent *event) override;
   void focusOutEvent(QFocusEvent *event) override;
+  void contextMenuEvent(QContextMenuEvent *event) override;
 
 private:
   struct ClickTarget {
+    enum class Type {
+      LINK, CONTENT_LINK, AVATAR
+    };
+    Type type;
     QUrl url;
     const QTextLayout *layout;
     int start, end;
-    bool operator==(const ClickTarget &other) const { return url == other.url && layout == other.layout && start == other.start && end == other.end; }
+    bool operator==(const ClickTarget &other) const { return type == other.type && layout == other.layout && start == other.start && end == other.end; }
   };
 
   class Event {
@@ -64,7 +70,6 @@ private:
     Event(const TimelineView &, const matrix::RoomState &, const matrix::proto::Event &);
     QRectF bounding_rect() const;
     void update_layout(const TimelineView &);
-    void hover(TimelineView &view, const QPointF &pos) const;
 
     std::experimental::optional<ClickTarget> target_at(TimelineView &view, const QPointF &pos);
   };
@@ -194,6 +199,7 @@ private:
   QShortcut *copy_;
   std::vector<VisibleBlock> visible_blocks_;
   std::experimental::optional<ClickTarget> clicked_;
+  QMenu *menu_;
 
   void update_scrollbar(bool grew_upward);
   int visible_width() const;

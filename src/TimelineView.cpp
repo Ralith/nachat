@@ -11,6 +11,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QDesktopServices>
+#include <QMenu>
 
 #include "matrix/Session.hpp"
 
@@ -322,26 +323,12 @@ static optional<QTextLayout::FormatRange> format_at(const QTextLayout &layout, i
   return {};
 }
 
-void TimelineView::Event::hover(TimelineView &view, const QPointF &pos) const {
-  for(const auto &layout : layouts) {
-    if(auto cursor = cursor_at(layout, pos)) {
-      auto format = format_at(layout, *cursor);
-      if(format && format->format.isAnchor()) {
-        view.viewport()->setCursor(Qt::PointingHandCursor);
-      } else {
-        view.viewport()->setCursor(Qt::IBeamCursor);
-      }
-      return;
-    }
-  }
-}
-
 optional<TimelineView::ClickTarget> TimelineView::Event::target_at(TimelineView &view, const QPointF &pos) {
   for(const auto &layout : layouts) {
     if(auto cursor = cursor_at(layout, pos)) {
       auto format = format_at(layout, *cursor);
       if(format && format->format.isAnchor()) {
-        return ClickTarget{format->format.anchorHref(), &layout, format->start, format->length};
+        return ClickTarget{ClickTarget::Type::CONTENT_LINK, format->format.anchorHref(), &layout, format->start, format->length};
       }
       break;
     }
@@ -528,21 +515,26 @@ TimelineView::EventHit TimelineView::Block::event_at(const QFontMetrics &metrics
 }
 
 void TimelineView::Block::hover(TimelineView &view, const QPointF &p) {
-  const auto metrics = view.fontMetrics();
-  if(p.x() > view.avatar_size() + 2*view.block_margin()) {
-    if(p.y() < name_layout_.boundingRect().height() + metrics.leading()) {
-      view.viewport()->setCursor(Qt::IBeamCursor);
-    } else if(auto e = event_at(metrics, p)) {
-      e.event->hover(view, e.pos);
+  if(target_at(view, p)) {
+    view.viewport()->setCursor(Qt::PointingHandCursor);
+  } else {
+    const auto metrics = view.fontMetrics();
+    if(p.x() > view.avatar_size() + 2*view.block_margin()) {
+      if(p.y() < name_layout_.boundingRect().height() + metrics.leading() || event_at(metrics, p)) {
+        view.viewport()->setCursor(Qt::IBeamCursor);
+      } else {
+        view.viewport()->setCursor(Qt::ArrowCursor);
+      }
     } else {
       view.viewport()->setCursor(Qt::ArrowCursor);
     }
-  } else {
-    view.viewport()->setCursor(Qt::ArrowCursor);
   }
 }
 
 optional<TimelineView::ClickTarget> TimelineView::Block::target_at(TimelineView &view, const QPointF &p) {
+  if(avatar_ && QRectF(view.block_margin(), 0, view.avatar_size(), view.avatar_size()).contains(p)) {
+    return ClickTarget{ClickTarget::Type::AVATAR, avatar_->url(), nullptr, 0, 0};
+  }
   if(auto e = event_at(view.fontMetrics(), p)) {
     return e.event->target_at(view, e.pos);
   }
@@ -558,8 +550,9 @@ TimelineView::TimelineView(matrix::Room &room, QWidget *parent)
       head_color_alternate_(true), backlog_growing_(false), backlog_growable_(true), backlog_grow_cancelled_(false),
       min_backlog_size_(50), content_height_(0),
       avatar_missing_(QIcon::fromTheme("unknown")),
-      avatar_loading_(QIcon::fromTheme("image-loading")),
-      copy_(new QShortcut(QKeySequence::Copy, this)) {
+      avatar_loading_(QIcon::fromTheme("image-loading"), avatar_missing_),
+      copy_(new QShortcut(QKeySequence::Copy, this)),
+      menu_(new QMenu(this)) {
   setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
   verticalScrollBar()->setSingleStep(20);  // Taken from QScrollArea
@@ -1035,6 +1028,32 @@ void TimelineView::focusOutEvent(QFocusEvent *e) {
      && e->reason() != Qt::PopupFocusReason) {
     selection_ = {};
     viewport()->update();
+  }
+}
+
+void TimelineView::contextMenuEvent(QContextMenuEvent *event) {
+  if(auto b = block_near(event->pos())) {
+    const auto rel_pos = event->pos() - b->bounds.topLeft();
+    if(auto target = b->block->target_at(*this, rel_pos)) {
+      const QUrl &url = target->url;
+      menu_->clear();
+      auto http_action = menu_->addAction(QIcon::fromTheme("edit-copy"), tr("&Copy link HTTP address"));
+      connect(http_action, &QAction::triggered, [this, url]() {
+          auto data = new QMimeData;
+          auto hurl = http_url(url);
+          data->setText(hurl.toString(QUrl::FullyEncoded));
+          data->setUrls({hurl});
+          QApplication::clipboard()->setMimeData(data);
+        });
+      auto copy_action = menu_->addAction(QIcon::fromTheme("edit-copy"), tr("Copy link address"));
+      connect(copy_action, &QAction::triggered, [url]() {
+          auto data = new QMimeData;
+          data->setUrls({url});
+          data->setText(url.toString(QUrl::FullyEncoded));
+          QApplication::clipboard()->setMimeData(data);
+        });
+      menu_->popup(event->globalPos());
+    }
   }
 }
 
