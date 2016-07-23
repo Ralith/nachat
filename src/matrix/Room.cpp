@@ -431,6 +431,10 @@ void RoomState::ensure_member(const proto::Event &e) {
       std::forward_as_tuple(e.state_key));
     if(!r.second) break;
     auto &member = r.first->second;
+    if(e.unsigned_.prev_content) {
+      // Ensure that we get display name and avatar, if available
+      member.update_membership(*e.unsigned_.prev_content);
+    }
     member.update_membership(e.content);
     record_displayname(member.id(), member.display_name(), nullptr);
   }
