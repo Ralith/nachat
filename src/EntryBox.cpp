@@ -4,7 +4,9 @@
 #include <QAbstractTextDocumentLayout>
 #include <QGuiApplication>
 
-EntryBox::EntryBox(QWidget *parent) : QTextEdit(parent) {
+static constexpr size_t INPUT_HISTORY_SIZE = 127;
+
+EntryBox::EntryBox(QWidget *parent) : QTextEdit(parent), true_history_(INPUT_HISTORY_SIZE), working_history_(1), history_index_(0) {
   connect(document()->documentLayout(), &QAbstractTextDocumentLayout::documentSizeChanged,
           this, &EntryBox::document_size_changed);
   QSizePolicy policy(QSizePolicy::Ignored, QSizePolicy::Expanding);
@@ -12,6 +14,8 @@ EntryBox::EntryBox(QWidget *parent) : QTextEdit(parent) {
   policy.setVerticalStretch(1);
   setSizePolicy(policy);
   setAcceptRichText(false);
+  working_history_.push_back("");
+  connect(this, &QTextEdit::textChanged, this, &EntryBox::text_changed);
 }
 
 QSize EntryBox::sizeHint() const {
@@ -42,19 +46,49 @@ void EntryBox::keyPressEvent(QKeyEvent *event) {
   case Qt::Key_Return:
   case Qt::Key_Enter:
     if(!(modifiers & Qt::ShiftModifier)) {
+      if(true_history_.size() == INPUT_HISTORY_SIZE) true_history_.pop_back();
+      true_history_.push_front(toPlainText());
+      working_history_ = true_history_;
+      working_history_.push_front("");
+      history_index_ = 0;
       send();
       clear();
-      return;
+    } else {
+      QTextEdit::keyPressEvent(event);
     }
     break;
   case Qt::Key_PageUp:
     pageUp();
-    return;
+    break;
   case Qt::Key_PageDown:
     pageDown();
-    return;
-  default:
+    break;
+  case Qt::Key_Up: {
+    auto initial_cursor = textCursor();
+    QTextEdit::keyPressEvent(event);
+    if(textCursor() == initial_cursor && history_index_ + 1 < working_history_.size()) {
+      ++history_index_;
+      setPlainText(working_history_[history_index_]);
+      moveCursor(QTextCursor::End);
+    }
     break;
   }
-  QTextEdit::keyPressEvent(event);
+  case Qt::Key_Down: {
+    auto initial_cursor = textCursor();
+    QTextEdit::keyPressEvent(event);
+    if(textCursor() == initial_cursor && history_index_ > 0) {
+      --history_index_;
+      setPlainText(working_history_[history_index_]);
+      moveCursor(QTextCursor::End);
+    }
+    break;
+  }
+  default:
+    QTextEdit::keyPressEvent(event);
+    break;
+  }
+}
+
+void EntryBox::text_changed() {
+  working_history_[history_index_] = toPlainText();
 }

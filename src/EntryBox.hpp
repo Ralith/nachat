@@ -1,6 +1,8 @@
 #ifndef NATIVE_CHAT_ENTRY_BOX_HPP_
 #define NATIVE_CHAT_ENTRY_BOX_HPP_
 
+#include <deque>
+
 #include <QTextEdit>
 
 class EntryBox : public QTextEdit {
@@ -21,7 +23,11 @@ protected:
   void keyPressEvent(QKeyEvent *event) override;
 
 private:
+  std::deque<QString> true_history_, working_history_;
+  size_t history_index_;
+
   void document_size_changed(const QSizeF &size);
+  void text_changed();
 };
 
 #endif
