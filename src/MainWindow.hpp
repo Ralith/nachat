@@ -43,6 +43,7 @@ private:
   std::unordered_map<matrix::Room *, ChatWindow *> chat_windows_;
 
   void joined(matrix::Room &room);
+  void highlighted(matrix::Room &room, uint64_t old);
   void update_rooms();
   void sync_progress(qint64 received, qint64 total);
   ChatWindow *spawn_chat_window(matrix::Room &);

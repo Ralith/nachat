@@ -96,13 +96,28 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
 MainWindow::~MainWindow() { delete ui; }
 
 void MainWindow::joined(matrix::Room &room) {
-  connect(&room, &matrix::Room::highlight_count_changed, this, &MainWindow::update_rooms);
+  connect(&room, &matrix::Room::highlight_count_changed, [this, &room](uint64_t old) {
+      highlighted(room, old);
+    });
   connect(&room, &matrix::Room::notification_count_changed, this, &MainWindow::update_rooms);
   connect(&room, &matrix::Room::name_changed, this, &MainWindow::update_rooms);
   connect(&room, &matrix::Room::canonical_alias_changed, this, &MainWindow::update_rooms);
   connect(&room, &matrix::Room::aliases_changed, this, &MainWindow::update_rooms);
   connect(&room, &matrix::Room::membership_changed, this, &MainWindow::update_rooms);
   update_rooms();
+}
+
+void MainWindow::highlighted(matrix::Room &room, uint64_t old) {
+  if(old > room.highlight_count()) return;
+  auto it = chat_windows_.find(&room);
+  QWidget *window;
+  if(it == chat_windows_.end()) {
+    window = this;
+  } else {
+    window = it->second;
+  }
+  window->show();
+  QApplication::alert(window);
 }
 
 void MainWindow::update_rooms() {
