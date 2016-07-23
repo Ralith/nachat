@@ -446,6 +446,12 @@ TimelineView::TimelineView(matrix::Room &room, QWidget *parent)
   setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
   verticalScrollBar()->setSingleStep(20);  // Taken from QScrollArea
   setMouseTracking(true);
+  setMinimumSize(minimumSizeHint());
+
+  QSizePolicy policy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+  policy.setHorizontalStretch(1);
+  policy.setVerticalStretch(0);
+  setSizePolicy(policy);
 
   connect(verticalScrollBar(), &QAbstractSlider::valueChanged, [this](int value) {
       (void)value;
@@ -870,4 +876,14 @@ QString TimelineView::selection_text() const {
   qDebug() << "Couldn't find selection end!";
 
   return result;
+}
+
+QSize TimelineView::sizeHint() const {
+  auto metrics = fontMetrics();
+  return QSize(metrics.width('x')*80 + avatar_size() + verticalScrollBar()->sizeHint().width(), 2*metrics.lineSpacing());
+}
+
+QSize TimelineView::minimumSizeHint() const {
+  auto metrics = fontMetrics();
+  return QSize(metrics.width('x')*20 + avatar_size() + verticalScrollBar()->sizeHint().width(), 2*metrics.lineSpacing());
 }

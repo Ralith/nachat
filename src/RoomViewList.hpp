@@ -20,6 +20,8 @@ public:
   void activate(matrix::Room &room);
   void update_name(matrix::Room &room);
 
+  QSize sizeHint() const override;
+
 signals:
   void released(matrix::Room &);
   void claimed(matrix::Room &);

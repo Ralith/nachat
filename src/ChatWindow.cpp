@@ -18,7 +18,6 @@ ChatWindow::ChatWindow(QWidget *parent)
   connect(ui->room_stack, &QStackedWidget::currentChanged, this, &ChatWindow::current_changed);
   ui->splitter->insertWidget(0, room_list_);
   ui->splitter->setCollapsible(1, false);
-  ui->splitter->setSizes({0, -1});
   room_list_->hide();
 
   connect(room_list_, &RoomViewList::activated, [this](matrix::Room &room) {
@@ -54,7 +53,6 @@ void ChatWindow::add_or_focus(matrix::Room &room) {
     ui->room_stack->addWidget(it->second);
     room_list_->add(room);
     if(room_list_->count() == 2) {
-      ui->splitter->setSizes({room_list_->sizeHintForColumn(0), -1});
       room_list_->show();
     }
   }

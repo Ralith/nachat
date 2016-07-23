@@ -2,10 +2,13 @@
 
 #include <QMenu>
 #include <QContextMenuEvent>
+#include <QScrollBar>
 
 #include "matrix/Room.hpp"
 
 RoomViewList::RoomViewList(QWidget *parent) : QListWidget(parent), menu_(new QMenu(this)) {
+  setMovement(QListView::Free);
+  setDefaultDropAction(Qt::MoveAction);
   connect(this, &QListWidget::currentItemChanged, [this](QListWidgetItem *item, QListWidgetItem *previous) {
       (void)previous;
       if(item != nullptr) {
@@ -17,6 +20,8 @@ RoomViewList::RoomViewList(QWidget *parent) : QListWidget(parent), menu_(new QMe
   connect(close, &QAction::triggered, [this]() {
       release(*context_);
     });
+  QSizePolicy policy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+  setSizePolicy(policy);
 }
 
 void RoomViewList::add(matrix::Room &room) {
@@ -50,4 +55,10 @@ void RoomViewList::contextMenuEvent(QContextMenuEvent *e) {
     context_ = reinterpret_cast<matrix::Room *>(item->data(Qt::UserRole).value<quintptr>());
     menu_->popup(e->globalPos());
   }
+}
+
+QSize RoomViewList::sizeHint() const {
+  auto margins = contentsMargins();
+  return QSize(sizeHintForColumn(0) + verticalScrollBar()->sizeHint().width() + margins.left() + margins.right(),
+               fontMetrics().lineSpacing() + horizontalScrollBar()->sizeHint().height());
 }

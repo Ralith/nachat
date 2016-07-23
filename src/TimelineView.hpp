@@ -34,6 +34,9 @@ public:
   void reset();
   // Call if a gap arises in events
 
+  QSize sizeHint() const override;
+  QSize minimumSizeHint() const override;
+
 protected:
   void paintEvent(QPaintEvent *event) override;
   void resizeEvent(QResizeEvent *event) override;

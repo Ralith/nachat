@@ -9,11 +9,12 @@ static constexpr size_t INPUT_HISTORY_SIZE = 127;
 EntryBox::EntryBox(QWidget *parent) : QTextEdit(parent), true_history_(INPUT_HISTORY_SIZE), working_history_(1), history_index_(0) {
   connect(document()->documentLayout(), &QAbstractTextDocumentLayout::documentSizeChanged,
           this, &EntryBox::document_size_changed);
-  QSizePolicy policy(QSizePolicy::Ignored, QSizePolicy::Expanding);
+  QSizePolicy policy(QSizePolicy::Ignored, QSizePolicy::Maximum);
   policy.setHorizontalStretch(1);
   policy.setVerticalStretch(1);
   setSizePolicy(policy);
   setAcceptRichText(false);
+  document()->setDocumentMargin(2);
   working_history_.push_back("");
   connect(this, &QTextEdit::textChanged, this, &EntryBox::text_changed);
 }
@@ -28,14 +29,15 @@ QSize EntryBox::sizeHint() const {
 }
 
 QSize EntryBox::minimumSizeHint() const {
-  auto margins = contentsMargins();
-  return QSize(fontMetrics().averageCharWidth(), fontMetrics().lineSpacing() + margins.top() + margins.bottom());
+  auto margins = contentsMargins() + viewportMargins();
+  margins += document()->documentMargin();
+  return QSize(fontMetrics().averageCharWidth() * 10, fontMetrics().lineSpacing() + margins.top() + margins.bottom());
 }
 
 void EntryBox::document_size_changed(const QSizeF &size) {
   auto margins = contentsMargins();
   // FIXME: Should be able to rely on sizeHint and QSizePolicy::Preferred
-  setMaximumHeight(size.height() + margins.top() + margins.bottom());
+  //setMaximumHeight(size.height() + margins.top() + margins.bottom());
   updateGeometry();
 }
 
