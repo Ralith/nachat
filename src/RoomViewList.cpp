@@ -15,13 +15,27 @@ RoomViewList::RoomViewList(QWidget *parent) : QListWidget(parent), menu_(new QMe
       }
     });
 
-  auto close = menu_->addAction(QIcon::fromTheme("window-close"), tr("&Close"));
-  connect(close, &QAction::triggered, [this]() {
-      release(*context_);
+  auto move_up = menu_->addAction(tr("Move up"));
+  connect(move_up, &QAction::triggered, [this]() {
+      auto r = row(items_.at(context_));
+      auto item = takeItem(r);
+      insertItem(r > 0 ? r - 1 : 0, item);
+      setCurrentItem(item);
+    });
+  auto move_down = menu_->addAction(tr("Move down"));
+  connect(move_down, &QAction::triggered, [this]() {
+      auto r = row(items_.at(context_));
+      auto item = takeItem(r);
+      insertItem(r+1, item);
+      setCurrentItem(item);
     });
   auto pop_out_action = menu_->addAction(QIcon::fromTheme("window-open"), tr("&Pop out"));
   connect(pop_out_action, &QAction::triggered, [this]() {
       pop_out(*context_);
+      release(*context_);
+    });
+  auto close = menu_->addAction(QIcon::fromTheme("window-close"), tr("&Close"));
+  connect(close, &QAction::triggered, [this]() {
       release(*context_);
     });
 

@@ -23,7 +23,6 @@ ChatWindow::ChatWindow(QWidget *parent)
   connect(room_list_, &RoomViewList::activated, [this](matrix::Room &room) {
       auto &view = *rooms_.at(&room);
       ui->room_stack->setCurrentWidget(&view);
-      view.setFocus();
     });
   connect(room_list_, &RoomViewList::claimed, this, &ChatWindow::claimed);
   connect(room_list_, &RoomViewList::released, [this](matrix::Room &room) {
