@@ -10,6 +10,7 @@
 #include <QShortcut>
 #include <QApplication>
 #include <QClipboard>
+#include <QDesktopServices>
 
 #include "matrix/Session.hpp"
 
@@ -30,31 +31,53 @@ static QString pretty_size(double n) {
   return QString::number(n / std::pow<double>(1024, idx), 'g', 4) + " " + units[idx];
 }
 
+static std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> plain_text(const QString &str) {
+  std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> result;
+  auto lines = str.split('\n');
+  // TODO: Detect URLs
+  result.reserve(lines.size());
+  std::transform(lines.begin(), lines.end(), std::back_inserter(result),
+                 [](const QString &s){ return std::pair<QString, QVector<QTextLayout::FormatRange>>(s, {}); });
+  return result;
+}
+
 TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &state, const matrix::proto::Event &e)
-    : system(e.type != "m.room.message"), time(to_time_point(e.origin_server_ts)) {
-  QStringList lines;
+  : data(e), time(to_time_point(e.origin_server_ts)) {
+  std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> lines;
   if(e.type == "m.room.message") {
     const auto msgtype = e.content["msgtype"].toString();
     if(msgtype == "m.emote") {
       auto &sender = *state.member_from_id(e.sender);
-      lines = e.content["body"].toString().split('\n');
-      lines.front() = "* " % state.member_name(sender) % " " % lines.front();
+      lines = plain_text("* " % state.member_name(sender) % " " % e.content["body"].toString());
     } else if(msgtype == "m.file" || msgtype == "m.image" || msgtype == "m.video" || msgtype == "m.audio") {
-      QString str = e.content["body"].toString();
+      lines.emplace_back();
+      auto &line = lines.front();
+      line.first = e.content["filename"].toString();
+      {
+        QTextLayout::FormatRange range;
+        range.start = 0;
+        range.length = line.first.length();
+        QTextCharFormat format;
+        format.setAnchor(true);
+        format.setAnchorHref(e.content["url"].toString());
+        format.setForeground(view.palette().link());
+        format.setFontUnderline(true);
+        range.format = format;
+        line.second.push_back(range);
+      }
       auto info = e.content["info"].toObject();
       auto type = info["mimetype"];
       auto size = info["size"];
       if(type.isString() || size.isDouble())
-        str += " (";
+        line.first += " (";
       if(size.isDouble())
-        str += pretty_size(size.toDouble());
+        line.first += pretty_size(size.toDouble());
       if(type.isString())
-        str += " " % type.toString();
+        line.first += " " % type.toString();
       if(type.isString() || size.isDouble())
-        str += ")";
-      lines = str.split('\n');
+        line.first += ")";
     } else {
-      lines = e.content["body"].toString().split('\n');
+      lines = plain_text(e.content["body"].toString());
     }
   } else if(e.type == "m.room.member") {
     switch(matrix::parse_membership(e.content["membership"].toString()).value()) {
@@ -62,22 +85,22 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
       auto invitee = state.member_from_id(e.state_key);
       if(!invitee) {
         qDebug() << "got invite for non-member" << e.state_key << " probably because we're probably stepping backwards over a duplicated event from SYN-645";
-        lines = QStringList(tr("SYN-645 related error"));
+        lines = plain_text(tr("SYN-645 related error"));
       } else {
-        lines = QStringList(tr("invited %1").arg(state.member_name(*invitee)));
+        lines = plain_text(tr("invited %1").arg(state.member_name(*invitee)));
       }
       break;
     }
     case matrix::Membership::JOIN: {
       if(!e.unsigned_.prev_content) {
-        lines = QStringList(tr("joined"));
+        lines = plain_text(tr("joined"));
         break;
       }
       const auto &prev = *e.unsigned_.prev_content;
       auto prev_membership = matrix::parse_membership(prev["membership"].toString()).value();
       switch(prev_membership) {
       case matrix::Membership::INVITE:
-        lines = QStringList(tr("accepted invite"));
+        lines = plain_text(tr("accepted invite"));
         break;
       case matrix::Membership::JOIN: {
         const bool avatar_changed = QUrl(prev["avatar_url"].toString()) != QUrl(e.content["avatar_url"].toString());
@@ -86,57 +109,58 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
         const bool dn_changed = old_dn != new_dn;
         if(avatar_changed && dn_changed) {
           if(new_dn.isEmpty())
-            lines = QStringList(tr("unset display name and changed avatar"));
+            lines = plain_text(tr("unset display name and changed avatar"));
           else
-            lines = QStringList(tr("changed display name to %1 and changed avatar").arg(new_dn));
+            lines = plain_text(tr("changed display name to %1 and changed avatar").arg(new_dn));
         } else if(avatar_changed) {
-          lines = QStringList(tr("changed avatar"));
+          lines = plain_text(tr("changed avatar"));
         } else if(dn_changed) {
           if(new_dn.isEmpty()) {
-            lines = QStringList(tr("unset display name"));
+            lines = plain_text(tr("unset display name"));
           } else if(old_dn.isEmpty()) {
-            lines = QStringList(tr("set display name to %1").arg(new_dn));
+            lines = plain_text(tr("set display name to %1").arg(new_dn));
           } else {
-            lines = QStringList(tr("changed display name from %1 to %2").arg(old_dn).arg(new_dn));
+            lines = plain_text(tr("changed display name from %1 to %2").arg(old_dn).arg(new_dn));
           }
         } else {
-          lines = QStringList(tr("sent a no-op join"));
+          lines = plain_text(tr("sent a no-op join"));
         }
         break;
       }
       default:
-        lines = QStringList(tr("joined"));
+        lines = plain_text(tr("joined"));
         break;
       }
       break;
     }
     case matrix::Membership::LEAVE: {
-      lines = QStringList(tr("left"));
+      lines = plain_text(tr("left"));
       break;
     }
     case matrix::Membership::BAN: {
       auto banned = state.member_from_id(e.state_key);
       if(!banned) {
         qDebug() << "INTERNAL ERROR: displaying ban of unknown member" << e.state_key;
-        lines = QStringList(tr("banned %1").arg(e.state_key));
+        lines = plain_text(tr("banned %1").arg(e.state_key));
       } else {
-        lines = QStringList(tr("banned %1").arg(state.member_name(*banned)));
+        lines = plain_text(tr("banned %1").arg(state.member_name(*banned)));
       }
       break;
     }
     }
   } else {
-    lines = QStringList(tr("unrecognized event type %1").arg(e.type));
+    lines = plain_text(tr("unrecognized event type %1").arg(e.type));
   }
   layouts = std::vector<QTextLayout>(lines.size());
   QTextOption body_options;
   body_options.setAlignment(Qt::AlignLeft | Qt::AlignTop);
   body_options.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
-  for(int i = 0; i < lines.size(); ++i) {
+  for(size_t i = 0; i < lines.size(); ++i) {
     layouts[i].setFont(view.font());
     layouts[i].setTextOption(body_options);
     layouts[i].setCacheEnabled(true);
-    layouts[i].setText(lines[i]);
+    layouts[i].setText(lines[i].first);
+    layouts[i].setFormats(lines[i].second);
   }
 
   update_layout(view);
@@ -279,6 +303,52 @@ QRectF TimelineView::Event::bounding_rect() const {
   return rect;
 }
 
+static optional<int> cursor_at(const QTextLayout &layout, const QPointF &p) {
+  for(int i = 0; i < layout.lineCount(); ++i) {
+    const auto line = layout.lineAt(i);
+    if(line.naturalTextRect().contains(p)) {
+      return line.xToCursor(p.x());
+    }
+  }
+  return {};
+}
+
+static optional<QTextLayout::FormatRange> format_at(const QTextLayout &layout, int cursor) {
+  for(auto &format : layout.formats()) {
+    if(format.start <= cursor && format.start + format.length > cursor) {
+      return format;
+    }
+  }
+  return {};
+}
+
+void TimelineView::Event::hover(TimelineView &view, const QPointF &pos) const {
+  for(const auto &layout : layouts) {
+    if(auto cursor = cursor_at(layout, pos)) {
+      auto format = format_at(layout, *cursor);
+      if(format && format->format.isAnchor()) {
+        view.viewport()->setCursor(Qt::PointingHandCursor);
+      } else {
+        view.viewport()->setCursor(Qt::IBeamCursor);
+      }
+      return;
+    }
+  }
+}
+
+optional<TimelineView::ClickTarget> TimelineView::Event::target_at(TimelineView &view, const QPointF &pos) {
+  for(const auto &layout : layouts) {
+    if(auto cursor = cursor_at(layout, pos)) {
+      auto format = format_at(layout, *cursor);
+      if(format && format->format.isAnchor()) {
+        return ClickTarget{format->format.anchorHref(), &layout, format->start, format->length};
+      }
+      break;
+    }
+  }
+  return {};
+}
+
 QRectF TimelineView::Block::bounding_rect(const TimelineView &view) const {
   const auto metrics = view.fontMetrics();
   QRectF rect(0, 0, view.visible_width() - 2*view.block_margin(), view.avatar_size());
@@ -291,6 +361,8 @@ QRectF TimelineView::Block::bounding_rect(const TimelineView &view) const {
   }
   return rect;
 }
+
+enum class Accuracy { EXACT, NEAR };
 
 static int cursor_near(const QTextLayout &layout, const QPointF &p) {
   int cursor;
@@ -387,7 +459,7 @@ void TimelineView::Block::draw(const TimelineView &view, QPainter &p, QPointF of
 
   for(const auto event : events_) {
     p.save();
-    if(event->system) {
+    if(event->data.type != "m.room.message") {
       p.setPen(view.palette().color(QPalette::Dark));
     }
     QRectF event_bounds;
@@ -437,18 +509,44 @@ size_t TimelineView::Block::size() const {
   return events_.size();
 }
 
-const TimelineView::Event *TimelineView::Block::event_at(const QFontMetrics &metrics, const QPointF &p) const {
+TimelineView::EventHit TimelineView::Block::event_at(const QFontMetrics &metrics, const QPointF &p) {
   QPointF offset(0, name_layout_.boundingRect().height() + metrics.leading());
   for(const auto event : events_) {
+    const auto rel_pos = p - offset;
     QRectF event_bounds;
+    bool hit = false;
     for(const auto &layout : event->layouts) {
-      if(layout.boundingRect().contains(p - offset))
-        return event;
+      hit |= layout.boundingRect().contains(rel_pos);
       event_bounds |= layout.boundingRect();
+    }
+    if(hit) {
+      return EventHit{rel_pos, event};
     }
     offset.ry() += event_bounds.height() + metrics.leading();
   }
-  return nullptr;
+  return EventHit{QPointF(), nullptr};
+}
+
+void TimelineView::Block::hover(TimelineView &view, const QPointF &p) {
+  const auto metrics = view.fontMetrics();
+  if(p.x() > view.avatar_size() + 2*view.block_margin()) {
+    if(p.y() < name_layout_.boundingRect().height() + metrics.leading()) {
+      view.viewport()->setCursor(Qt::IBeamCursor);
+    } else if(auto e = event_at(metrics, p)) {
+      e.event->hover(view, e.pos);
+    } else {
+      view.viewport()->setCursor(Qt::ArrowCursor);
+    }
+  } else {
+    view.viewport()->setCursor(Qt::ArrowCursor);
+  }
+}
+
+optional<TimelineView::ClickTarget> TimelineView::Block::target_at(TimelineView &view, const QPointF &p) {
+  if(auto e = event_at(view.fontMetrics(), p)) {
+    return e.event->target_at(view, e.pos);
+  }
+  return {};
 }
 
 size_t TimelineView::Batch::size() const {
@@ -818,19 +916,23 @@ void TimelineView::mousePressEvent(QMouseEvent *event) {
   // TODO: Clickable files, images; context menus
   if(event->button() == Qt::LeftButton) {
     auto b = block_near(event->pos());
-    QApplication::setOverrideCursor(Qt::IBeamCursor);
-    if(b) {
-      auto rel_pos = event->pos() - b->bounds.topLeft();
-      selection_ = Selection{b->block, rel_pos, b->block, rel_pos};
-    } else {
-      selection_ = {};
+    auto rel_pos = event->pos() - b->bounds.topLeft();
+    clicked_ = b->block->target_at(*this, rel_pos);
+    if(!clicked_) {
+      QApplication::setOverrideCursor(Qt::IBeamCursor);
+      if(b) {
+        selection_ = Selection{b->block, rel_pos, b->block, rel_pos};
+      } else {
+        selection_ = {};
+      }
+      viewport()->update();
     }
-    viewport()->update();
   }
 }
 
 void TimelineView::mouseMoveEvent(QMouseEvent *event) {
-  if(event->buttons() & Qt::LeftButton) {
+  // TODO: Explore using hover event instead
+  if(!clicked_ && event->buttons() & Qt::LeftButton) {
     // Update selection
     // TODO: Start auto-scrolling if cursor out of viewport
     if(auto b = block_near(event->pos())) {
@@ -850,8 +952,9 @@ void TimelineView::mouseMoveEvent(QMouseEvent *event) {
   } else {
     // Draw hover cursor
     if(auto b = block_near(event->pos())) {
-      if(event->pos().x() > avatar_size() + 2*block_margin() && b->bounds.contains(event->pos())) {
-        viewport()->setCursor(Qt::IBeamCursor);
+      if(b->bounds.contains(event->pos())) {
+        const auto rel_pos = event->pos() - b->bounds.topLeft();
+        b->block->hover(*this, rel_pos);
       } else {
         viewport()->setCursor(Qt::ArrowCursor);
       }
@@ -861,7 +964,14 @@ void TimelineView::mouseMoveEvent(QMouseEvent *event) {
 
 void TimelineView::mouseReleaseEvent(QMouseEvent *event) {
   if(event->button() == Qt::LeftButton) {
-    QApplication::restoreOverrideCursor();
+    auto b = block_near(event->pos());
+    if(b && clicked_ && clicked_ == b->block->target_at(*this, event->pos() - b->bounds.topLeft())) {
+      if(!QDesktopServices::openUrl(http_url(clicked_->url))) {
+        qDebug() << "failed to open URL" << clicked_->url;
+      }
+    } else {
+      QApplication::restoreOverrideCursor();
+    }
   }
 }
 
@@ -926,4 +1036,11 @@ void TimelineView::focusOutEvent(QFocusEvent *e) {
     selection_ = {};
     viewport()->update();
   }
+}
+
+QUrl TimelineView::http_url(const QUrl &url) const {
+  if(url.scheme() == "mxc") {
+    return matrix::Content(url).url_on(room_.session().homeserver());
+  }
+  return url;
 }

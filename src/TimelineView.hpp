@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <experimental/optional>
+#include <functional>
 
 #include <QAbstractScrollArea>
 #include <QTextLayout>
@@ -47,14 +48,31 @@ protected:
   void focusOutEvent(QFocusEvent *event) override;
 
 private:
-  struct Event {
-    bool system;
+  struct ClickTarget {
+    QUrl url;
+    const QTextLayout *layout;
+    int start, end;
+    bool operator==(const ClickTarget &other) const { return url == other.url && layout == other.layout && start == other.start && end == other.end; }
+  };
+
+  class Event {
+  public:
+    matrix::proto::Event data;
     std::vector<QTextLayout> layouts;
     const std::chrono::time_point<std::chrono::system_clock, std::chrono::milliseconds> time;
 
     Event(const TimelineView &, const matrix::RoomState &, const matrix::proto::Event &);
     QRectF bounding_rect() const;
     void update_layout(const TimelineView &);
+    void hover(TimelineView &view, const QPointF &pos) const;
+
+    std::experimental::optional<ClickTarget> target_at(TimelineView &view, const QPointF &pos);
+  };
+
+  struct EventHit {
+    QPointF pos;
+    Event *event;
+    explicit operator bool(){ return event; }
   };
 
   class Block {
@@ -73,10 +91,13 @@ private:
     const QString &sender_id() const { return sender_id_; }
     size_t size() const;
     const std::experimental::optional<matrix::Content> &avatar() const { return avatar_; }
-    const Event *event_at(const QFontMetrics &, const QPointF &) const;
+    EventHit event_at(const QFontMetrics &, const QPointF &);
 
     std::deque<Event *> &events() { return events_; }
     const std::deque<Event *> &events() const { return events_; }
+
+    void hover(TimelineView &view, const QPointF &pos);
+    std::experimental::optional<ClickTarget> target_at(TimelineView &view, const QPointF &pos);
 
   private:
     const QString event_id_;
@@ -86,7 +107,6 @@ private:
     QTextLayout name_layout_, timestamp_layout_;
 
     std::deque<Event *> events_;  // deque so we can add events to either end
-
   };
 
   struct Batch {
@@ -173,6 +193,7 @@ private:
   std::experimental::optional<Selection> selection_;
   QShortcut *copy_;
   std::vector<VisibleBlock> visible_blocks_;
+  std::experimental::optional<ClickTarget> clicked_;
 
   void update_scrollbar(bool grew_upward);
   int visible_width() const;
@@ -191,6 +212,7 @@ private:
   void copy();
   void pop_front_block();
   QString selection_text() const;
+  QUrl http_url(const QUrl &) const;
 
   VisibleBlock *block_near(const QPoint &p);   // Point relative to view
 
