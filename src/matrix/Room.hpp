@@ -37,6 +37,12 @@ public:
     prune_departed();
   }
   void revert(const proto::Event &e);  // Reverts an event that, if a state event, has prev_content
+
+  void ensure_member(const proto::Event &e);
+  // Recovers member whose membership is set to "leave" or "ban" by
+  // e. Useful for allowing name disambiguation of departed members,
+  // e.g. when stepping backwards.
+
   bool dispatch(const proto::Event &e, Room *room, lmdb::dbi *member_db, lmdb::txn *txn);
   // Returns true if changes were made. Emits state change events on room if supplied.
 

@@ -97,7 +97,7 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
     case matrix::Membership::BAN: {
       auto banned = state.member_from_id(e.state_key);
       if(!banned) {
-        // FIXME: Display name when moving backwards??
+        qDebug() << "INTERNAL ERROR: displaying ban of unknown member" << e.state_key;
         lines = QStringList(tr("banned %1").arg(e.state_key));
       } else {
         lines = QStringList(tr("banned %1").arg(state.member_name(*banned)));
@@ -629,6 +629,7 @@ void TimelineView::prepend_batch(QString start, QString end, gsl::span<const mat
   auto &batch = batches_.front();
   batch.token = start;
   for(const auto &e : events) {  // Events is in reverse order
+    initial_state_.ensure_member(e); // Make sure a just-departed member is accounted for
     batch.events.emplace_front(*this, initial_state_, e);
     auto &internal = batch.events.front();
     if(!blocks_.empty()

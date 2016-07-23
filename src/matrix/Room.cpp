@@ -415,6 +415,30 @@ void RoomState::revert(const proto::Event &state) {
   }
 }
 
+void RoomState::ensure_member(const proto::Event &e) {
+  if(e.type != "m.room.member") return;
+  auto r = parse_membership(e.content["membership"].toString());
+  if(!r) {
+    qDebug() << "Unrecognized membership type" << e.content["membership"].toString();
+    return;
+  }
+  switch(*r) {
+  case Membership::LEAVE:
+  case Membership::BAN: {
+    auto r = members_by_id_.emplace(
+      std::piecewise_construct,
+      std::forward_as_tuple(e.state_key),
+      std::forward_as_tuple(e.state_key));
+    if(!r.second) break;
+    auto &member = r.first->second;
+    member.update_membership(e.content);
+    record_displayname(member.id(), member.display_name(), nullptr);
+  }
+  default:
+    break;
+  }
+}
+
 void RoomState::prune_departed(Room *room) {
   if(!departed_.isEmpty()) {
     forget_displayname(departed_, members_by_id_.at(departed_).display_name(), room);
