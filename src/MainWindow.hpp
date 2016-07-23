@@ -8,11 +8,10 @@
 
 #include "matrix/Matrix.hpp"
 
-#include "ChatWindow.hpp"
-
 class QProgressBar;
 class QSettings;
 class QLabel;
+class ChatWindow;
 
 namespace Ui {
 class MainWindow;
@@ -44,6 +43,7 @@ private:
 
   void update_rooms();
   void sync_progress(qint64 received, qint64 total);
+  ChatWindow *spawn_chat_window(matrix::Room &);
 };
 
 #endif // MAINWINDOW_H

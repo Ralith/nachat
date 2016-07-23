@@ -12,6 +12,8 @@
 #include "matrix/Session.hpp"
 
 #include "sort.hpp"
+#include "RoomView.hpp"
+#include "ChatWindow.hpp"
 
 MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> session)
     : ui(new Ui::MainWindow), settings_(settings), session_(std::move(session)),
@@ -68,23 +70,17 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
       auto it = chat_windows_.find(&room);
       if(it != chat_windows_.end()) {
         window = it->second;   // Focus in existing window
+        qDebug() << "chat window exists";
       } else if(last_focused_) {
         window = last_focused_; // Add to most recently used window
+        qDebug() << "adding to last focused" << last_focused_;
       } else {
         if(chat_windows_.empty()) {
+          qDebug() << "creating first window";
           // Create first window
-          it = chat_windows_.emplace(
-            std::piecewise_construct,
-            std::forward_as_tuple(&room),
-            std::forward_as_tuple(new ChatWindow)).first;
-          window = it->second;
-          connect(window, &ChatWindow::focused, [this, window](){
-              last_focused_ = window;
-            });
-          connect(window, &ChatWindow::released, [this](matrix::Room &r) {
-              chat_windows_.erase(&r);
-            });
+          window = spawn_chat_window(room);
         } else {
+          qDebug() << "adding to arbitrary window";
           // Select arbitrary window
           window = chat_windows_.begin()->second;
         }
@@ -133,4 +129,25 @@ void MainWindow::sync_progress(qint64 received, qint64 total) {
     progress_->setMaximum(1000);
     progress_->setValue(1000 * static_cast<float>(received)/static_cast<float>(total));
   }
+}
+
+ChatWindow *MainWindow::spawn_chat_window(matrix::Room &room) {
+  auto window = chat_windows_.emplace(
+    std::piecewise_construct,
+    std::forward_as_tuple(&room),
+    std::forward_as_tuple(new ChatWindow)).first->second;
+  connect(window, &ChatWindow::focused, [this, window](){
+      last_focused_ = window;
+    });
+  connect(window, &ChatWindow::released, [this](matrix::Room &r) {
+      chat_windows_.erase(&r);
+    });
+  connect(window, &ChatWindow::pop_out, [this](matrix::Room &r, RoomView *v) {
+      auto w = spawn_chat_window(r);
+      w->add(r, v);
+      w->show();
+      w->raise();
+      w->activateWindow();
+    });
+  return window;
 }

@@ -27,11 +27,15 @@ ChatWindow::ChatWindow(QWidget *parent)
     });
   connect(room_list_, &RoomViewList::claimed, this, &ChatWindow::claimed);
   connect(room_list_, &RoomViewList::released, [this](matrix::Room &room) {
-      auto view = rooms_.at(&room);
-      ui->room_stack->removeWidget(view);
-      // TODO: Pass ownership elsewhere if necessary
-      view->setParent(nullptr);
-      delete view;
+      auto it = rooms_.find(&room);
+      if(it != rooms_.end()) {
+        auto view = it->second;
+        ui->room_stack->removeWidget(view);
+        // TODO: Pass ownership elsewhere if necessary
+        view->setParent(nullptr);
+        rooms_.erase(it);
+        delete view;
+      }
       switch(ui->room_stack->count()) {
       case 0: close(); break;
       case 1: room_list_->hide(); break;
@@ -39,24 +43,36 @@ ChatWindow::ChatWindow(QWidget *parent)
       }
       released(room);
     });
+  connect(room_list_, &RoomViewList::pop_out, [this](matrix::Room &room) {
+      auto it = rooms_.find(&room);
+      auto view = it->second;
+      rooms_.erase(it);
+      pop_out(room, view);
+    });
 }
 
 ChatWindow::~ChatWindow() { delete ui; }
 
-void ChatWindow::add_or_focus(matrix::Room &room) {
-  auto it = rooms_.find(&room);
-  if(it == rooms_.end()) {
-    it = rooms_.emplace(
+void ChatWindow::add(matrix::Room &r, RoomView *v) {
+  v->setParent(this);
+  rooms_.emplace(
       std::piecewise_construct,
-      std::forward_as_tuple(&room),
-      std::forward_as_tuple(new RoomView(room, this))).first;
-    ui->room_stack->addWidget(it->second);
-    room_list_->add(room);
-    if(room_list_->count() == 2) {
-      room_list_->show();
-    }
+      std::forward_as_tuple(&r),
+      std::forward_as_tuple(v));
+  ui->room_stack->addWidget(v);
+  room_list_->add(r);
+  if(room_list_->count() == 2) {
+    room_list_->show();
   }
-  room_list_->activate(room);
+  room_list_->activate(r);
+}
+
+void ChatWindow::add_or_focus(matrix::Room &room) {
+  if(rooms_.find(&room) == rooms_.end()) {
+    add(room, new RoomView(room, this));
+  } else {
+    room_list_->activate(room);
+  }
 }
 
 void ChatWindow::room_name_changed(matrix::Room &room) {
@@ -77,8 +93,11 @@ void ChatWindow::current_changed(int i) {
   update_title();
 }
 
-void ChatWindow::focusInEvent(QFocusEvent *) {
-  focused();
+void ChatWindow::changeEvent(QEvent *e) {   
+  QWidget::changeEvent(e);
+  if(e->type() == QEvent::ActivationChange && isActiveWindow()) {
+    focused();
+  }
 }
 
 void ChatWindow::closeEvent(QCloseEvent *evt) {

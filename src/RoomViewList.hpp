@@ -26,6 +26,7 @@ signals:
   void released(matrix::Room &);
   void claimed(matrix::Room &);
   void activated(matrix::Room &);
+  void pop_out(matrix::Room &);
 
 protected:
   void contextMenuEvent(QContextMenuEvent *) override;

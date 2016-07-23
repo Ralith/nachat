@@ -25,6 +25,7 @@ public:
   explicit ChatWindow(QWidget *parent = 0);
   ~ChatWindow();
 
+  void add(matrix::Room &r, RoomView *); // Takes ownership
   void add_or_focus(matrix::Room &);
   void room_name_changed(matrix::Room &);
 
@@ -32,9 +33,10 @@ signals:
   void focused();
   void released(matrix::Room &);
   void claimed(matrix::Room &);
+  void pop_out(matrix::Room &, RoomView *);
 
 protected:
-  void focusInEvent(QFocusEvent *event) override;
+  void changeEvent(QEvent *event) override;
   void closeEvent(QCloseEvent *event) override;
 
 private:

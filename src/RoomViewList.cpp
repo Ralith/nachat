@@ -16,10 +16,17 @@ RoomViewList::RoomViewList(QWidget *parent) : QListWidget(parent), menu_(new QMe
         activated(room);
       }
     });
+
   auto close = menu_->addAction(QIcon::fromTheme("window-close"), tr("&Close"));
   connect(close, &QAction::triggered, [this]() {
       release(*context_);
     });
+  auto pop_out_action = menu_->addAction(QIcon::fromTheme("window-open"), tr("&Pop out"));
+  connect(pop_out_action, &QAction::triggered, [this]() {
+      pop_out(*context_);
+      release(*context_);
+    });
+
   QSizePolicy policy(QSizePolicy::Preferred, QSizePolicy::Preferred);
   setSizePolicy(policy);
 }
