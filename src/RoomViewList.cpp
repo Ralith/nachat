@@ -55,7 +55,10 @@ void RoomViewList::add(matrix::Room &room) {
 }
 
 void RoomViewList::release(matrix::Room &room) {
-  delete items_.at(&room);
+  auto it = items_.find(&room);
+  assert(it != items_.end());
+  delete it->second;
+  items_.erase(it);
   released(room);
 }
 
