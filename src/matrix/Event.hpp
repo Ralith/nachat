@@ -23,6 +23,7 @@ struct Event {
   QString type;
   Unsigned unsigned_;
   QString state_key;
+  QString event_id;
 };
 
 QJsonObject to_json(const Unsigned &);

@@ -36,6 +36,7 @@ Event parse_event(QJsonValue v) {
   e.type = o["type"].toString();
   e.unsigned_ = parse_unsigned(o["unsigned"]);
   e.state_key = o["state_key"].toString();
+  e.event_id = o["event_id"].toString();
 
   return e;
 }
