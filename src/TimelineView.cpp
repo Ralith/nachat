@@ -887,3 +887,12 @@ QSize TimelineView::minimumSizeHint() const {
   auto metrics = fontMetrics();
   return QSize(metrics.width('x')*20 + avatar_size() + verticalScrollBar()->sizeHint().width(), 2*metrics.lineSpacing());
 }
+
+void TimelineView::focusOutEvent(QFocusEvent *e) {
+  // Taken from QWidgetTextControl
+  if(e->reason() != Qt::ActiveWindowFocusReason
+     && e->reason() != Qt::PopupFocusReason) {
+    selection_ = {};
+    viewport()->update();
+  }
+}
