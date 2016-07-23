@@ -529,12 +529,11 @@ int TimelineView::block_body_width() const {
 void TimelineView::update_scrollbar() {
   const auto view_height = viewport()->contentsRect().height();
   auto &scroll = *verticalScrollBar();
-  const int old_maximum = scroll.maximum();
   const int fake_height = content_height_ + scrollback_status_size();
-  const int old_value = scroll.value();
+  const bool was_at_bottom = scroll.value() == scroll.maximum();
   scroll.setMaximum(view_height > fake_height ? 0 : fake_height - view_height);
-  const int old_delta = (old_maximum - old_value);
-  scroll.setValue(old_delta > scroll.maximum() ? 0 : scroll.maximum() - old_delta);
+  if(was_at_bottom)
+    scroll.setValue(scroll.maximum());
 }
 
 void TimelineView::paintEvent(QPaintEvent *) {
