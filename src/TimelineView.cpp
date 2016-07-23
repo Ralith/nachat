@@ -658,6 +658,7 @@ void TimelineView::prepend_batch(QString start, QString end, gsl::span<const mat
   update_scrollbar();
 
   grow_backlog();  // Check if the user is still seeing blank space.
+  viewport()->update();
 }
 
 void TimelineView::prune_backlog() {
