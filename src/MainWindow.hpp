@@ -5,6 +5,7 @@
 #include <memory>
 
 #include <QMainWindow>
+#include <QPointer>
 
 #include "matrix/Matrix.hpp"
 
@@ -37,7 +38,7 @@ private:
   std::unique_ptr<matrix::Session> session_;
   QProgressBar *progress_;
   QLabel *sync_label_;
-  ChatWindow *last_focused_ = nullptr;
+  QPointer<ChatWindow> last_focused_;
 
   std::unordered_map<matrix::Room *, ChatWindow *> chat_windows_;
 
