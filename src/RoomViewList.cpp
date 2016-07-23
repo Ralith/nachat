@@ -7,8 +7,6 @@
 #include "matrix/Room.hpp"
 
 RoomViewList::RoomViewList(QWidget *parent) : QListWidget(parent), menu_(new QMenu(this)) {
-  setMovement(QListView::Free);
-  setDefaultDropAction(Qt::MoveAction);
   connect(this, &QListWidget::currentItemChanged, [this](QListWidgetItem *item, QListWidgetItem *previous) {
       (void)previous;
       if(item != nullptr) {
