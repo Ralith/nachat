@@ -43,7 +43,8 @@ static std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> plain_
 }
 
 TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &state, const matrix::proto::Event &e)
-  : data(e), time(to_time_point(e.origin_server_ts)) {
+  : data(e), time(to_time_point(e.origin_server_ts)),
+    highlight(e.content["body"].toString().contains(state.member_from_id(view.room_.session().user_id())->display_name())) {
   std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> lines;
   if(e.type == "m.room.message") {
     const auto msgtype = e.content["msgtype"].toString();
@@ -446,7 +447,13 @@ void TimelineView::Block::draw(const TimelineView &view, QPainter &p, QPointF of
 
   for(const auto event : events_) {
     p.save();
-    if(event->data.type != "m.room.message") {
+    if(event->data.type == "m.room.message") {
+      if(event->highlight) {
+        p.setPen(view.palette().color(QPalette::BrightText));
+        p.setBackgroundMode(Qt::OpaqueMode);
+        p.setBackground(view.palette().dark());
+      }
+    } else {
       p.setPen(view.palette().color(QPalette::Dark));
     }
     QRectF event_bounds;

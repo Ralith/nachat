@@ -64,6 +64,7 @@ private:
   class Event {
   public:
     matrix::proto::Event data;
+    bool highlight;
     std::vector<QTextLayout> layouts;
     const std::chrono::time_point<std::chrono::system_clock, std::chrono::milliseconds> time;
 
