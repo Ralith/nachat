@@ -168,6 +168,14 @@ Room::Room(Matrix &universe, Session &session, QString id, const QJsonObject &in
         buffer_.back().events.emplace_back(parse_event(e));
       }
     }
+    auto highlights = initial["highlight_count"];
+    if(highlights.isDouble()) {
+      highlight_count_ = highlights.toDouble();
+    }
+    auto notifications = initial["notification_count"];
+    if(notifications.isDouble()) {
+      notification_count_ = notifications.toDouble();
+    }
   }
 }
 
@@ -200,7 +208,12 @@ QJsonObject Room::to_json() const {
     }
     o["events"] = std::move(es);
   }
-  return QJsonObject{{"state", state_.to_json()}, {"buffer", std::move(o)}};
+  return QJsonObject{
+    {"state", state_.to_json()},
+    {"buffer", std::move(o)},
+    {"highlight_count", static_cast<double>(highlight_count_)},
+    {"notification_count", static_cast<double>(notification_count_)}
+  };
 }
 
 bool Room::dispatch(lmdb::txn &txn, const proto::JoinedRoom &joined) {
