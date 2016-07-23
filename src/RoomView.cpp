@@ -90,5 +90,11 @@ void RoomView::append_message(const matrix::RoomState &state, const matrix::prot
 
 void RoomView::topic_changed(const QString &old) {
   (void)old;
-  ui->topic->setText(room_.state().topic());
+  if(room_.state().topic().isEmpty()) {
+    ui->topic->setTextFormat(Qt::RichText);
+    ui->topic->setText("<h2>" + room_.pretty_name() + "</h2>");
+  } else {
+    ui->topic->setTextFormat(Qt::PlainText);
+    ui->topic->setText(room_.state().topic());
+  }
 }
