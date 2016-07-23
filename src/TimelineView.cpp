@@ -490,7 +490,7 @@ void TimelineView::push_back(const matrix::RoomState &state, const matrix::proto
 
   prune_backlog();
 
-  update_scrollbar();
+  update_scrollbar(false);
 
   viewport()->update();
 }
@@ -526,14 +526,21 @@ int TimelineView::block_body_width() const {
   return visible_width() - (block_body_start() + block_margin());
 }
 
-void TimelineView::update_scrollbar() {
+void TimelineView::update_scrollbar(bool grew_upward) {
   const auto view_height = viewport()->contentsRect().height();
   auto &scroll = *verticalScrollBar();
   const int fake_height = content_height_ + scrollback_status_size();
   const bool was_at_bottom = scroll.value() == scroll.maximum();
+  const int old_wrt_bottom = scroll.maximum() - scroll.value();
   scroll.setMaximum(view_height > fake_height ? 0 : fake_height - view_height);
-  if(was_at_bottom)
+  if(was_at_bottom) {
+    // Always remain at the bottom if we started there
     scroll.setValue(scroll.maximum());
+  } else if(grew_upward) {
+    // Stay fixed relative to bottom if the top grew
+    scroll.setValue(old_wrt_bottom > scroll.maximum() ? 0 : scroll.maximum() - old_wrt_bottom);
+  }
+  // Otherwise we want to stay fixed relative to the top, i.e. do nothing
 }
 
 void TimelineView::paintEvent(QPaintEvent *) {
@@ -593,7 +600,7 @@ void TimelineView::resizeEvent(QResizeEvent *e) {
     }
   }
 
-  update_scrollbar();
+  update_scrollbar(false);
   // Required uncondtionally since height *and* width matter due to text wrapping. Placed after content_height_ changes
   // to ensure they're accounted for.
 
@@ -655,7 +662,7 @@ void TimelineView::prepend_batch(QString start, QString end, gsl::span<const mat
   total_events_ += events.size();
   qDebug() << room_.id() << "backlog got" << events.size() << "events";
 
-  update_scrollbar();
+  update_scrollbar(true);
 
   grow_backlog();  // Check if the user is still seeing blank space.
   viewport()->update();

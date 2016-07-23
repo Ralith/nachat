@@ -174,7 +174,7 @@ private:
   QShortcut *copy_;
   std::vector<VisibleBlock> visible_blocks_;
 
-  void update_scrollbar();
+  void update_scrollbar(bool grew_upward);
   int visible_width() const;
   int block_spacing() const;
   int block_margin() const;
