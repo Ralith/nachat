@@ -194,7 +194,7 @@ private:
   qreal content_height_;
   QString prev_batch_;  // Token for the batch immediately prior to the first message
   std::unordered_map<matrix::Content, Avatar> avatars_;
-  QIcon avatar_missing_, avatar_loading_;
+  QIcon avatar_unset_, avatar_loading_;
   std::experimental::optional<Selection> selection_;
   QShortcut *copy_;
   std::vector<VisibleBlock> visible_blocks_;

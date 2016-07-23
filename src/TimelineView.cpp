@@ -417,7 +417,7 @@ void TimelineView::Block::draw(const TimelineView &view, QPainter &p, QPointF of
       avatar_pixmap = a.pixmap;
     }
   } else {
-    avatar_pixmap = view.avatar_missing_.pixmap(size, size);
+    avatar_pixmap = view.avatar_unset_.pixmap(size, size);
   }
   p.drawPixmap(QPoint(offset.x() + view.block_margin() + (size - avatar_pixmap.width()) / 2,
                       offset.y() + (size - avatar_pixmap.height()) / 2),
@@ -549,8 +549,8 @@ TimelineView::TimelineView(matrix::Room &room, QWidget *parent)
     : QAbstractScrollArea(parent), room_(room), initial_state_(room.initial_state()), total_events_(0),
       head_color_alternate_(true), backlog_growing_(false), backlog_growable_(true), backlog_grow_cancelled_(false),
       min_backlog_size_(50), content_height_(0),
-      avatar_missing_(QIcon::fromTheme("unknown")),
-      avatar_loading_(QIcon::fromTheme("image-loading"), avatar_missing_),
+      avatar_unset_(QIcon::fromTheme("unknown")),
+      avatar_loading_(QIcon::fromTheme("image-loading", avatar_unset_)),
       copy_(new QShortcut(QKeySequence::Copy, this)),
       menu_(new QMenu(this)) {
   setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
