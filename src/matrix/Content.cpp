@@ -20,7 +20,7 @@ QUrl Content::url() const noexcept {
   QUrl url;
   url.setScheme("mxc");
   url.setHost(host_, QUrl::StrictMode);
-  url.setPath(id_, QUrl::StrictMode);
+  url.setPath("/" + id_, QUrl::StrictMode);
   if(!fragment_.isEmpty())
     url.setFragment(fragment_, QUrl::StrictMode);
   return url;
