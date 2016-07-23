@@ -80,6 +80,14 @@ void ChatWindow::room_name_changed(matrix::Room &room) {
   update_title();
 }
 
+RoomView *ChatWindow::take(matrix::Room &room) {
+  auto it = rooms_.find(&room);
+  auto view = it->second;
+  rooms_.erase(it);
+  released(room);
+  return view;
+}
+
 void ChatWindow::update_title() {
   if(auto w = ui->room_stack->currentWidget()) {
     setWindowTitle(static_cast<RoomView*>(w)->room().pretty_name());

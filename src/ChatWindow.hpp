@@ -29,6 +29,8 @@ public:
   void add_or_focus(matrix::Room &);
   void room_name_changed(matrix::Room &);
 
+  RoomView *take(matrix::Room &); // Releases ownership
+
 signals:
   void focused();
   void released(matrix::Room &);
