@@ -18,7 +18,7 @@ MemberList::MemberList(const matrix::RoomState &s, QWidget *parent) : QListWidge
   for(const auto &member : initial_members) {
     members_.insert(std::make_pair(s.member_name(*member), member));
   }
-  update();
+  update_members();
 }
 
 void MemberList::member_display_changed(const matrix::RoomState &s, const matrix::Member &m, const QString &old) {
@@ -28,7 +28,7 @@ void MemberList::member_display_changed(const matrix::RoomState &s, const matrix
     throw std::logic_error(msg.toStdString().c_str());
   }
   members_.insert(std::make_pair(s.member_name(m), &m));
-  update();
+  update_members();
 }
 
 void MemberList::membership_changed(const matrix::RoomState &s, const matrix::Member &m) {
@@ -37,10 +37,10 @@ void MemberList::membership_changed(const matrix::RoomState &s, const matrix::Me
   } else {
     members_.erase(s.member_name(m));
   }
-  update();
+  update_members();
 }
 
-void MemberList::update() {
+void MemberList::update_members() {
   clear();
   for(const auto &member : members_) {
     auto item = new QListWidgetItem;
@@ -53,6 +53,7 @@ void MemberList::update() {
   auto margins = contentsMargins();
   size_hint_ = QSize(sizeHintForColumn(0) + verticalScrollBar()->sizeHint().width() + margins.left() + margins.right(),
                      fontMetrics().lineSpacing() + horizontalScrollBar()->sizeHint().height());
+  update();
 }
 
 QSize MemberList::sizeHint() const {

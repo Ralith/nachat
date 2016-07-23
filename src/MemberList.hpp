@@ -31,7 +31,7 @@ private:
   std::map<QString, const matrix::Member *, Compare> members_;
   QSize size_hint_;             // cache to avoid recomputing
 
-  void update();
+  void update_members();
 };
 
 #endif

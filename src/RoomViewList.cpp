@@ -32,6 +32,7 @@ void RoomViewList::add(matrix::Room &room) {
   addItem(item);
   items_.emplace(&room, item);
   claimed(room);
+  update();
 }
 
 void RoomViewList::release(matrix::Room &room) {
