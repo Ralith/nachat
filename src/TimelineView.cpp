@@ -43,8 +43,11 @@ static std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> plain_
 }
 
 TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &state, const matrix::proto::Event &e)
-  : data(e), time(to_time_point(e.origin_server_ts)),
-    highlight(e.content["body"].toString().contains(state.member_from_id(view.room_.session().user_id())->display_name())) {
+  : data(e), time(to_time_point(e.origin_server_ts)) {
+  {
+    auto self = state.member_from_id(view.room_.session().user_id());
+    highlight = self && e.content["body"].toString().toCaseFolded().contains(self->display_name().toCaseFolded());
+  }
   std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> lines;
   if(e.type == "m.room.message") {
     const auto msgtype = e.content["msgtype"].toString();
