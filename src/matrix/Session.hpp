@@ -64,7 +64,7 @@ public:
   QNetworkReply *get(const QString &path, QUrlQuery query = QUrlQuery());
 
   QNetworkReply *post(const QString &path, QJsonObject body = QJsonObject(), QUrlQuery query = QUrlQuery());
-  QNetworkReply *post(const QString &path, QIODevice *data, QUrlQuery query = QUrlQuery());
+  QNetworkReply *post(const QString &path, QIODevice *data, const QString &content_type);
 
   QNetworkReply *put(const QString &path, QJsonObject body);
 
@@ -95,7 +95,7 @@ private:
   std::chrono::steady_clock::time_point last_sync_error_;
   // Last time a sync failed. Used to ensure we don't spin if errors happen quickly.
 
-  QNetworkRequest request(const QString &path, QUrlQuery query = QUrlQuery());
+  QNetworkRequest request(const QString &path, QUrlQuery query = QUrlQuery(), const QString &content_type = "application/json");
 
   void sync(QUrlQuery query = QUrlQuery());
   void handle_sync_reply(QNetworkReply *);

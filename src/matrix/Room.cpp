@@ -6,6 +6,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QFile>
+#include <QMimeDatabase>
 #include <QDebug>
 
 #include "proto.hpp"
@@ -519,14 +520,15 @@ void Room::send(const QString &type, QJsonObject content) {
 
 void Room::send_file(const QString &path) {
   auto f = new QFile(path, this);
+  QFileInfo info(*f);
   if(!f->open(QIODevice::ReadOnly)) {
     error(f->errorString());
     delete f;
     return;
   }
-  auto reply = session_.post("media/r0/upload", f);
-  connect(reply, &QNetworkReply::finished, [this, reply, f]() {
-      QFileInfo info(*f);
+  QString type = QMimeDatabase().mimeTypeForFile(info).name();
+  auto reply = session_.post("media/r0/upload", f, type);
+  connect(reply, &QNetworkReply::finished, [this, reply, f, info, type]() {
       delete f;
       reply->deleteLater();
       auto r = decode(reply);
@@ -539,7 +541,11 @@ void Room::send_file(const QString &path) {
            {{"msgtype", "m.file"},  // Autodetect image/audio/video?
              {"url", uri},
              {"filename", info.fileName()},
-             {"body", info.fileName()}});
+             {"body", QString(info.fileName())},
+             {"info", QJsonObject{
+                 {"mimetype", type},
+                 {"size", info.size()}}}
+           });
     });
 }
 

@@ -185,13 +185,13 @@ std::vector<Room *> Session::rooms() {
   return result;
 }
 
-QNetworkRequest Session::request(const QString &path, QUrlQuery query) {
+QNetworkRequest Session::request(const QString &path, QUrlQuery query, const QString &content_type) {
   QUrl url(homeserver_);
   url.setPath("/_matrix/" % path);
   query.addQueryItem("access_token", access_token_);
   url.setQuery(query);
   QNetworkRequest req(url);
-  req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+  req.setHeader(QNetworkRequest::ContentTypeHeader, content_type);
   req.setRawHeader("Accept", "application/json");
   return req;
 }
@@ -204,8 +204,8 @@ QNetworkReply *Session::post(const QString &path, QJsonObject body, QUrlQuery qu
   return universe_.net.post(request(path, query), encode(body));
 }
 
-QNetworkReply *Session::post(const QString &path, QIODevice *data, QUrlQuery query) {
-  return universe_.net.post(request(path, query), data);
+QNetworkReply *Session::post(const QString &path, QIODevice *data, const QString &content_type) {
+  return universe_.net.post(request(path, QUrlQuery(), content_type), data);
 }
 
 QNetworkReply *Session::put(const QString &path, QJsonObject body) {
