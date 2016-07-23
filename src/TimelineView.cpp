@@ -821,8 +821,10 @@ void TimelineView::mouseMoveEvent(QMouseEvent *event) {
   } else {
     // Draw hover cursor
     if(auto b = block_near(event->pos())) {
-      if(b->bounds.contains(event->pos())) {
+      if(event->pos().x() > avatar_size() + 2*block_margin() && b->bounds.contains(event->pos())) {
         viewport()->setCursor(Qt::IBeamCursor);
+      } else {
+        viewport()->setCursor(Qt::ArrowCursor);
       }
     }
   }
