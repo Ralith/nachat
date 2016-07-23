@@ -164,8 +164,8 @@ signals:
   void membership_changed(const Member &, Membership old);
   void member_name_changed(const Member &, const QString &old);
   void state_changed();
-  void highlight_count_changed();
-  void notification_count_changed();
+  void highlight_count_changed(uint64_t old);
+  void notification_count_changed(uint64_t old);
   void name_changed();
   void canonical_alias_changed();
   void aliases_changed();

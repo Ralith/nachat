@@ -220,13 +220,15 @@ bool Room::dispatch(lmdb::txn &txn, const proto::JoinedRoom &joined) {
   bool state_touched = false;
 
   if(joined.unread_notifications.highlight_count != highlight_count_) {
+    auto old = highlight_count_;
     highlight_count_ = joined.unread_notifications.highlight_count;
-    highlight_count_changed();
+    highlight_count_changed(old);
   }
 
   if(joined.unread_notifications.notification_count != notification_count_) {
+    auto old = notification_count_;
     notification_count_ = joined.unread_notifications.notification_count;
-    notification_count_changed();
+    notification_count_changed(old);
   }
 
   if(joined.timeline.limited) {
