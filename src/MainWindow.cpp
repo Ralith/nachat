@@ -57,9 +57,7 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
       progress_->hide();
       sync_label_->hide();
     });
-  connect(session_.get(), &matrix::Session::joined, [this](matrix::Room &room) {
-      update_rooms();
-    });
+  connect(session_.get(), &matrix::Session::joined, this, &MainWindow::joined);
 
   ui->action_quit->setShortcuts(QKeySequence::Quit);
   connect(ui->action_quit, &QAction::triggered, this, &MainWindow::quit);
@@ -97,13 +95,17 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
 
 MainWindow::~MainWindow() { delete ui; }
 
-void MainWindow::update_rooms() {
-  // Disconnect signals
-  for(int i = 0; i < ui->room_list->count(); ++i) {
-    auto &room = *reinterpret_cast<matrix::Room *>(ui->room_list->item(i)->data(Qt::UserRole).value<void*>());
-    disconnect(&room, &matrix::Room::state_changed, this, &MainWindow::update_rooms);
-  }
+void MainWindow::joined(matrix::Room &room) {
+  connect(&room, &matrix::Room::highlight_count_changed, this, &MainWindow::update_rooms);
+  connect(&room, &matrix::Room::notification_count_changed, this, &MainWindow::update_rooms);
+  connect(&room, &matrix::Room::name_changed, this, &MainWindow::update_rooms);
+  connect(&room, &matrix::Room::canonical_alias_changed, this, &MainWindow::update_rooms);
+  connect(&room, &matrix::Room::aliases_changed, this, &MainWindow::update_rooms);
+  connect(&room, &matrix::Room::membership_changed, this, &MainWindow::update_rooms);
+  update_rooms();
+}
 
+void MainWindow::update_rooms() {
   auto rooms = session_->rooms();
   std::sort(rooms.begin(), rooms.end(),
             [&](const matrix::Room *a, const matrix::Room *b) {
@@ -111,9 +113,13 @@ void MainWindow::update_rooms() {
             });
   ui->room_list->clear();
   for(auto room : rooms) {
-    connect(room, &matrix::Room::state_changed, this, &MainWindow::update_rooms);
     auto item = new QListWidgetItem;
-    item->setText(room->pretty_name());
+    item->setText(room->pretty_name_highlights());
+    {
+      auto f = font();
+      f.setBold(room->highlight_count() != 0 || room->notification_count() != 0);
+      item->setFont(f);
+    }
     item->setData(Qt::UserRole, QVariant::fromValue(reinterpret_cast<void*>(room)));
     ui->room_list->addItem(item);
   }
@@ -131,13 +137,31 @@ void MainWindow::sync_progress(qint64 received, qint64 total) {
   }
 }
 
+RoomWindowBridge::RoomWindowBridge(matrix::Room &room, ChatWindow &parent) : QObject(&parent), room_(room), window_(parent) {
+  connect(&room, &matrix::Room::highlight_count_changed, this, &RoomWindowBridge::display_changed);
+  connect(&room, &matrix::Room::notification_count_changed, this, &RoomWindowBridge::display_changed);
+  connect(&room, &matrix::Room::name_changed, this, &RoomWindowBridge::display_changed);
+  connect(&room, &matrix::Room::canonical_alias_changed, this, &RoomWindowBridge::display_changed);
+  connect(&room, &matrix::Room::aliases_changed, this, &RoomWindowBridge::display_changed);
+  connect(&room, &matrix::Room::membership_changed, this, &RoomWindowBridge::display_changed);
+}
+
+void RoomWindowBridge::display_changed() {
+  window_.room_display_changed(room_);
+}
+
 ChatWindow *MainWindow::spawn_chat_window(matrix::Room &room) {
-  auto window = chat_windows_.emplace(
-    std::piecewise_construct,
-    std::forward_as_tuple(&room),
-    std::forward_as_tuple(new ChatWindow)).first->second;
+  auto window = new ChatWindow;
   connect(window, &ChatWindow::focused, [this, window](){
       last_focused_ = window;
+    });
+  connect(window, &ChatWindow::claimed, [this, window](matrix::Room &r) {
+      auto x = chat_windows_.emplace(
+        std::piecewise_construct,
+        std::forward_as_tuple(&r),
+        std::forward_as_tuple(window));
+      assert(x.second);
+      new RoomWindowBridge(r, *window);
     });
   connect(window, &ChatWindow::released, [this](matrix::Room &r) {
       chat_windows_.erase(&r);

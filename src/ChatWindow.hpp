@@ -27,7 +27,7 @@ public:
 
   void add(matrix::Room &r, RoomView *); // Takes ownership
   void add_or_focus(matrix::Room &);
-  void room_name_changed(matrix::Room &);
+  void room_display_changed(matrix::Room &);
 
   RoomView *take(matrix::Room &); // Releases ownership
 

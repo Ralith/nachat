@@ -42,9 +42,22 @@ private:
 
   std::unordered_map<matrix::Room *, ChatWindow *> chat_windows_;
 
+  void joined(matrix::Room &room);
   void update_rooms();
   void sync_progress(qint64 received, qint64 total);
   ChatWindow *spawn_chat_window(matrix::Room &);
+};
+
+class RoomWindowBridge : public QObject {
+  Q_OBJECT
+public:
+  RoomWindowBridge(matrix::Room &room, ChatWindow &parent);
+
+  void display_changed();
+
+private:
+  matrix::Room &room_;
+  ChatWindow &window_;
 };
 
 #endif // MAINWINDOW_H

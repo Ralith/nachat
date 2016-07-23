@@ -79,8 +79,8 @@ void ChatWindow::add_or_focus(matrix::Room &room) {
   view->setFocus();
 }
 
-void ChatWindow::room_name_changed(matrix::Room &room) {
-  room_list_->update_name(room);
+void ChatWindow::room_display_changed(matrix::Room &room) {
+  room_list_->update_display(room);
   update_title();
 }
 
@@ -94,7 +94,7 @@ RoomView *ChatWindow::take(matrix::Room &room) {
 
 void ChatWindow::update_title() {
   if(auto w = ui->room_stack->currentWidget()) {
-    setWindowTitle(static_cast<RoomView*>(w)->room().pretty_name());
+    setWindowTitle(static_cast<RoomView*>(w)->room().pretty_name_highlights());
   } else {
     setWindowTitle("");
   }

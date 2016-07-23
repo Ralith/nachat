@@ -136,6 +136,9 @@ public:
   const RoomState &state() const { return state_; }
 
   QString pretty_name() const;
+  QString pretty_name_highlights() const {
+    return pretty_name() + (highlight_count() != 0 ? " (" + QString::number(highlight_count()) + ")" : "");
+  }
 
   void load_state(lmdb::txn &txn, gsl::span<const proto::Event>);
   bool dispatch(lmdb::txn &txn, const proto::JoinedRoom &);

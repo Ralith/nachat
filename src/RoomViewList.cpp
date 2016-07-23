@@ -3,6 +3,8 @@
 #include <QMenu>
 #include <QContextMenuEvent>
 #include <QScrollBar>
+#include <qstringbuilder.h>
+#include <QDebug>
 
 #include "matrix/Room.hpp"
 
@@ -46,11 +48,12 @@ RoomViewList::RoomViewList(QWidget *parent) : QListWidget(parent), menu_(new QMe
 void RoomViewList::add(matrix::Room &room) {
   auto item = new QListWidgetItem;
   item->setToolTip(room.id());
-  item->setText(room.pretty_name());
   item->setData(Qt::UserRole, QVariant::fromValue(reinterpret_cast<quintptr>(&room)));
   addItem(item);
-  items_.emplace(&room, item);
+  auto r = items_.emplace(&room, item);
+  assert(r.second);
   claimed(room);
+  update_display(room);
   update();
 }
 
@@ -69,8 +72,12 @@ void RoomViewList::activate(matrix::Room &room) {
   activated(room);
 }
 
-void RoomViewList::update_name(matrix::Room &room) {
-  items_.at(&room)->setText(room.pretty_name());
+void RoomViewList::update_display(matrix::Room &room) {
+  auto &i = *items_.at(&room);
+  i.setText(room.pretty_name_highlights());
+  auto font = i.font();
+  font.setBold(room.highlight_count() != 0 || room.notification_count() != 0);
+  i.setFont(font);
 }
 
 void RoomViewList::contextMenuEvent(QContextMenuEvent *e) {

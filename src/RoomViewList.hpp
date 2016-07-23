@@ -18,7 +18,7 @@ public:
   void add(matrix::Room &room);
   void release(matrix::Room &room);
   void activate(matrix::Room &room);
-  void update_name(matrix::Room &room);
+  void update_display(matrix::Room &room);
 
   QSize sizeHint() const override;
 
