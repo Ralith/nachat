@@ -24,6 +24,12 @@ static auto to_time_point(uint64_t ts) {
       + std::chrono::duration<uint64_t, std::milli>(ts);
 }
 
+static QString pretty_size(double n) {
+  constexpr const static char *const units[9] = {"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"}; // should be enough for anyone!
+  uint64_t idx = std::min<size_t>(8, std::log(n)/std::log(1024.));
+  return QString::number(n / std::pow<double>(1024, idx), 'g', 4) + " " + units[idx];
+}
+
 TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &state, const matrix::proto::Event &e)
     : system(e.type != "m.room.message"), time(to_time_point(e.origin_server_ts)) {
   QStringList lines;
@@ -33,6 +39,20 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
       auto &sender = *state.member_from_id(e.sender);
       lines = e.content["body"].toString().split('\n');
       lines.front() = "* " % state.member_name(sender) % " " % lines.front();
+    } else if(msgtype == "m.file" || msgtype == "m.image" || msgtype == "m.video" || msgtype == "m.audio") {
+      QString str = e.content["body"].toString();
+      auto info = e.content["info"].toObject();
+      auto type = info["mimetype"];
+      auto size = info["size"];
+      if(type.isString() || size.isDouble())
+        str += " (";
+      if(size.isDouble())
+        str += pretty_size(size.toDouble());
+      if(type.isString())
+        str += " " % type.toString();
+      if(type.isString() || size.isDouble())
+        str += ")";
+      lines = str.split('\n');
     } else {
       lines = e.content["body"].toString().split('\n');
     }
