@@ -64,14 +64,19 @@ void ChatWindow::add(matrix::Room &r, RoomView *v) {
     room_list_->show();
   }
   room_list_->activate(r);
+  v->setFocus();
 }
 
 void ChatWindow::add_or_focus(matrix::Room &room) {
+  RoomView *view;
   if(rooms_.find(&room) == rooms_.end()) {
-    add(room, new RoomView(room, this));
+    view = new RoomView(room, this);
+    add(room, view);
   } else {
     room_list_->activate(room);
+    view = static_cast<RoomView*>(ui->room_stack->currentWidget());
   }
+  view->setFocus();
 }
 
 void ChatWindow::room_name_changed(matrix::Room &room) {
