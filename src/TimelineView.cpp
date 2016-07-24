@@ -13,8 +13,10 @@
 #include <QDesktopServices>
 #include <QMenu>
 #include <QRegularExpression>
+#include <QTimer>
 
 #include "matrix/Session.hpp"
+#include "Spinner.hpp"
 
 using std::experimental::optional;
 
@@ -608,6 +610,15 @@ TimelineView::TimelineView(matrix::Room &room, QWidget *parent)
       grow_backlog();
     });
   connect(copy_, &QShortcut::activated, this, &TimelineView::copy);
+
+  {
+    const int extent = scrollback_status_size() - block_spacing();
+    spinner_ = QPixmap(extent, extent);
+    spinner_.fill(Qt::transparent);
+    QPainter painter(&spinner_);
+    painter.setRenderHint(QPainter::Antialiasing);
+    Spinner::paint(palette().color(QPalette::Shadow), palette().color(QPalette::Base), painter, extent);
+  }
 }
 
 int TimelineView::visible_width() const {
@@ -668,8 +679,8 @@ int TimelineView::scrollback_trigger_size() const {
   return viewport()->contentsRect().height()*2;
 }
 int TimelineView::scrollback_status_size() const {
-  // TODO: Size of feedback widget
-  return viewport()->contentsRect().height()/2;
+  auto metrics = fontMetrics();
+  return metrics.height() * 4;
 }
 int TimelineView::block_body_start() const {
   return avatar_size() + 2*block_margin();
@@ -731,6 +742,19 @@ void TimelineView::paintEvent(QPaintEvent *) {
     }
     offset.ry() -= half_spacing;
     alternate = !alternate;
+  }
+  if(backlog_growing_ && offset.y() > view_rect.top()) {
+    painter.save();
+    painter.setRenderHint(QPainter::SmoothPixmapTransform);
+    const int extent = spinner_.width();
+    painter.translate(view_rect.width() / 2, offset.y() - view_rect.top() - (extent/2 + half_spacing));
+    auto t = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now());
+    const qreal rotation_seconds = 2;
+    const qreal angle = 360. * static_cast<qreal>(t.time_since_epoch().count() % static_cast<uint64_t>(1000 * rotation_seconds)) / (1000 * rotation_seconds);
+    painter.rotate(angle);
+    painter.drawPixmap(QPoint(-extent/2, -extent/2), spinner_);
+    painter.restore();
+    QTimer::singleShot(30, viewport(), static_cast<void (QWidget::*)()>(&QWidget::update));
   }
 }
 

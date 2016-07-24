@@ -12,6 +12,7 @@
 #include <QAbstractScrollArea>
 #include <QTextLayout>
 #include <QIcon>
+#include <QPixmap>
 
 #include "matrix/Event.hpp"
 #include "matrix/Room.hpp"
@@ -201,6 +202,7 @@ private:
   std::vector<VisibleBlock> visible_blocks_;
   std::experimental::optional<ClickTarget> clicked_;
   QMenu *menu_;
+  QPixmap spinner_;
 
   void update_scrollbar(bool grew_upward);
   int visible_width() const;
