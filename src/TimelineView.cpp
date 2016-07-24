@@ -17,6 +17,7 @@
 
 #include "matrix/Session.hpp"
 #include "Spinner.hpp"
+#include "RedactDialog.hpp"
 
 using std::experimental::optional;
 
@@ -35,7 +36,9 @@ static QString pretty_size(double n) {
   return QString::number(n / std::pow<double>(1024, idx), 'g', 4) + " " + units[idx];
 }
 
-std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> TimelineView::format_text(const matrix::RoomState &state, const QString &str) const {
+std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>>
+  TimelineView::format_text(const matrix::RoomState &state, const matrix::proto::Event &evt, const QString &str) const {
+
   std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> result;
   const static QRegularExpression line_re("\\R", QRegularExpression::UseUnicodePropertiesOption | QRegularExpression::OptimizeOnFirstUsageOption);
   auto lines = str.split(line_re);
@@ -43,12 +46,20 @@ std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> TimelineView:
   std::transform(lines.begin(), lines.end(), std::back_inserter(result),
                  [](const QString &s){ return std::pair<QString, QVector<QTextLayout::FormatRange>>(s, {}); });
 
+  if(evt.type == "m.room.message") {
+    const auto msgtype = evt.content["msgtype"].toString();
+    if(msgtype == "m.emote" && !result.empty()) {
+      auto &member = *state.member_from_id(evt.sender);
+      result.front().first = "* " % member.pretty_name() % " " % result.front().first;
+    }
+  }
+
   // Detect highlights
   auto self = state.member_from_id(room_.session().user_id());
   const bool highlight = self && str.toCaseFolded().contains(self->display_name().toCaseFolded());
   if(highlight) {
     QTextCharFormat highlight_format;
-    highlight_format.setFontWeight(QFont::Black);
+    highlight_format.setFontWeight(QFont::Bold);
     for(auto &line : result) {
       QTextLayout::FormatRange range;
       range.start = 0;
@@ -95,10 +106,7 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
   std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> lines;
   if(e.type == "m.room.message") {
     const auto msgtype = e.content["msgtype"].toString();
-    if(msgtype == "m.emote") {
-      auto &sender = *state.member_from_id(e.sender);
-      lines = view.format_text(state, "* " % sender.pretty_name() % " " % e.content["body"].toString());
-    } else if(msgtype == "m.file" || msgtype == "m.image" || msgtype == "m.video" || msgtype == "m.audio") {
+    if(msgtype == "m.file" || msgtype == "m.image" || msgtype == "m.video" || msgtype == "m.audio") {
       lines.emplace_back();
       auto &line = lines.front();
       line.first = e.content["filename"].toString();
@@ -126,7 +134,7 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
       if(type.isString() || size.isDouble())
         line.first += ")";
     } else {
-      lines = view.format_text(state, e.content["body"].toString());
+      lines = view.format_text(state, e, e.content["body"].toString());
     }
   } else if(e.type == "m.room.member") {
     switch(matrix::parse_membership(e.content["membership"].toString()).value()) {
@@ -134,22 +142,22 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
       auto invitee = state.member_from_id(e.state_key);
       if(!invitee) {
         qDebug() << "got invite for non-member" << e.state_key << " probably because we're probably stepping backwards over a duplicated event from SYN-645";
-        lines = view.format_text(state, tr("SYN-645 related error"));
+        lines = view.format_text(state, e, tr("SYN-645 related error"));
       } else {
-        lines = view.format_text(state, tr("invited %1").arg(state.member_name(*invitee)));
+        lines = view.format_text(state, e, tr("invited %1").arg(state.member_name(*invitee)));
       }
       break;
     }
     case matrix::Membership::JOIN: {
       if(!e.unsigned_.prev_content) {
-        lines = view.format_text(state, tr("joined"));
+        lines = view.format_text(state, e, tr("joined"));
         break;
       }
       const auto &prev = *e.unsigned_.prev_content;
       auto prev_membership = matrix::parse_membership(prev["membership"].toString()).value();
       switch(prev_membership) {
       case matrix::Membership::INVITE:
-        lines = view.format_text(state, tr("accepted invite"));
+        lines = view.format_text(state, e, tr("accepted invite"));
         break;
       case matrix::Membership::JOIN: {
         const bool avatar_changed = QUrl(prev["avatar_url"].toString()) != QUrl(e.content["avatar_url"].toString());
@@ -158,47 +166,47 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
         const bool dn_changed = old_dn != new_dn;
         if(avatar_changed && dn_changed) {
           if(new_dn.isEmpty())
-            lines = view.format_text(state, tr("unset display name and changed avatar"));
+            lines = view.format_text(state, e, tr("unset display name and changed avatar"));
           else
-            lines = view.format_text(state, tr("changed display name to %1 and changed avatar").arg(new_dn));
+            lines = view.format_text(state, e, tr("changed display name to %1 and changed avatar").arg(new_dn));
         } else if(avatar_changed) {
-          lines = view.format_text(state, tr("changed avatar"));
+          lines = view.format_text(state, e, tr("changed avatar"));
         } else if(dn_changed) {
           if(new_dn.isEmpty()) {
-            lines = view.format_text(state, tr("unset display name"));
+            lines = view.format_text(state, e, tr("unset display name"));
           } else if(old_dn.isEmpty()) {
-            lines = view.format_text(state, tr("set display name to %1").arg(new_dn));
+            lines = view.format_text(state, e, tr("set display name to %1").arg(new_dn));
           } else {
-            lines = view.format_text(state, tr("changed display name from %1 to %2").arg(old_dn).arg(new_dn));
+            lines = view.format_text(state, e, tr("changed display name from %1 to %2").arg(old_dn).arg(new_dn));
           }
         } else {
-          lines = view.format_text(state, tr("sent a no-op join"));
+          lines = view.format_text(state, e, tr("sent a no-op join"));
         }
         break;
       }
       default:
-        lines = view.format_text(state, tr("joined"));
+        lines = view.format_text(state, e, tr("joined"));
         break;
       }
       break;
     }
     case matrix::Membership::LEAVE: {
-      lines = view.format_text(state, tr("left"));
+      lines = view.format_text(state, e, tr("left"));
       break;
     }
     case matrix::Membership::BAN: {
       auto banned = state.member_from_id(e.state_key);
       if(!banned) {
         qDebug() << "INTERNAL ERROR: displaying ban of unknown member" << e.state_key;
-        lines = view.format_text(state, tr("banned %1").arg(e.state_key));
+        lines = view.format_text(state, e, tr("banned %1").arg(e.state_key));
       } else {
-        lines = view.format_text(state, tr("banned %1").arg(state.member_name(*banned)));
+        lines = view.format_text(state, e, tr("banned %1").arg(state.member_name(*banned)));
       }
       break;
     }
     }
   } else {
-    lines = view.format_text(state, tr("unrecognized event type %1").arg(e.type));
+    lines = view.format_text(state, e, tr("unrecognized event type %1").arg(e.type));
   }
   layouts = std::vector<QTextLayout>(lines.size());
   QTextOption body_options;
@@ -390,12 +398,12 @@ optional<TimelineView::ClickTarget> TimelineView::Event::target_at(TimelineView 
       auto formats = formats_at(layout, *cursor);
       auto anchor = std::find_if(formats.begin(), formats.end(), [](const QTextLayout::FormatRange &f) { return f.format.isAnchor(); });
       if(anchor != formats.end()) {
-        return ClickTarget{ClickTarget::Type::CONTENT_LINK, anchor->format.anchorHref(), &layout, anchor->start, anchor->length};
+        return ClickTarget{ClickTarget::Type::CONTENT_LINK, this, anchor->format.anchorHref(), &layout, anchor->start, anchor->length};
       }
       break;
     }
   }
-  return {};
+  return ClickTarget{ClickTarget::Type::EVENT, this, QUrl(), nullptr, 0, 0};
 }
 
 QRectF TimelineView::Block::bounding_rect(const TimelineView &view) const {
@@ -577,7 +585,8 @@ TimelineView::EventHit TimelineView::Block::event_at(const QFontMetrics &metrics
 }
 
 void TimelineView::Block::hover(TimelineView &view, const QPointF &p) {
-  if(target_at(view, p)) {
+  auto target = target_at(view, p);
+  if(target && target->type != ClickTarget::Type::EVENT) {
     view.viewport()->setCursor(Qt::PointingHandCursor);
   } else {
     const auto metrics = view.fontMetrics();
@@ -595,7 +604,7 @@ void TimelineView::Block::hover(TimelineView &view, const QPointF &p) {
 
 optional<TimelineView::ClickTarget> TimelineView::Block::target_at(TimelineView &view, const QPointF &p) {
   if(avatar_ && QRectF(view.block_margin(), 0, view.avatar_size(), view.avatar_size()).contains(p)) {
-    return ClickTarget{ClickTarget::Type::AVATAR, avatar_->url(), nullptr, 0, 0};
+    return ClickTarget{ClickTarget::Type::AVATAR, nullptr, avatar_->url(), nullptr, 0, 0};
   }
   if(auto e = event_at(view.fontMetrics(), p)) {
     return e.event->target_at(view, e.pos);
@@ -811,7 +820,6 @@ void TimelineView::showEvent(QShowEvent *e) {
 
 void TimelineView::grow_backlog() {
   if(verticalScrollBar()->value() >= scrollback_trigger_size() || backlog_growing_ || !backlog_growable_) return;
-  qDebug() << room_.id() << "fetching more backlog";
   backlog_growing_ = true;
   auto reply = room_.get_messages(matrix::Room::Direction::BACKWARD, prev_batch_, BACKLOG_BATCH_SIZE);
   connect(reply, &matrix::MessageFetch::finished, this, &TimelineView::prepend_batch);
@@ -857,7 +865,6 @@ void TimelineView::prepend_batch(QString start, QString end, gsl::span<const mat
   }
 
   total_events_ += events.size();
-  qDebug() << room_.id() << "backlog got" << events.size() << "events";
 
   update_scrollbar(true);
 
@@ -995,7 +1002,7 @@ void TimelineView::mousePressEvent(QMouseEvent *event) {
     auto b = block_near(event->pos());
     auto rel_pos = event->pos() - b->bounds.topLeft();
     clicked_ = b->block->target_at(*this, rel_pos);
-    if(!clicked_) {
+    if(!clicked_ || clicked_->type != ClickTarget::Type::EVENT) {
       QApplication::setOverrideCursor(Qt::IBeamCursor);
       if(b) {
         selection_ = Selection{b->block, rel_pos, b->block, rel_pos};
@@ -1042,7 +1049,7 @@ void TimelineView::mouseMoveEvent(QMouseEvent *event) {
 void TimelineView::mouseReleaseEvent(QMouseEvent *event) {
   if(event->button() == Qt::LeftButton) {
     auto b = block_near(event->pos());
-    if(b && clicked_ && clicked_ == b->block->target_at(*this, event->pos() - b->bounds.topLeft())) {
+    if(b && clicked_ && clicked_ == b->block->target_at(*this, event->pos() - b->bounds.topLeft()) && clicked_->type != ClickTarget::Type::EVENT) {
       if(!QDesktopServices::openUrl(http_url(clicked_->url))) {
         qDebug() << "failed to open URL" << http_url(clicked_->url).toString(QUrl::FullyEncoded);
       }
@@ -1119,24 +1126,36 @@ void TimelineView::contextMenuEvent(QContextMenuEvent *event) {
   if(auto b = block_near(event->pos())) {
     const auto rel_pos = event->pos() - b->bounds.topLeft();
     if(auto target = b->block->target_at(*this, rel_pos)) {
-      const QUrl &url = target->url;
       menu_->clear();
-      if(url.scheme() == "mxc") {
-        auto http_action = menu_->addAction(QIcon::fromTheme("edit-copy"), tr("&Copy link HTTP address"));
-        connect(http_action, &QAction::triggered, [this, url]() {
+      if(target->type != ClickTarget::Type::EVENT) {
+        const QUrl &url = target->url;
+        if(url.scheme() == "mxc") {
+          auto http_action = menu_->addAction(QIcon::fromTheme("edit-copy"), tr("&Copy link HTTP address"));
+          connect(http_action, &QAction::triggered, [this, url]() {
+              auto data = new QMimeData;
+              auto hurl = http_url(url);
+              data->setText(hurl.toString(QUrl::FullyEncoded));
+              data->setUrls({hurl});
+              QApplication::clipboard()->setMimeData(data);
+            });
+        }
+        auto copy_action = menu_->addAction(QIcon::fromTheme("edit-copy"), url.scheme() == "mxc" ? tr("Copy link &address") : tr("&Copy link address"));
+        connect(copy_action, &QAction::triggered, [url]() {
             auto data = new QMimeData;
-            auto hurl = http_url(url);
-            data->setText(hurl.toString(QUrl::FullyEncoded));
-            data->setUrls({hurl});
+            data->setText(url.toString(QUrl::FullyEncoded));
+            data->setUrls({url});
             QApplication::clipboard()->setMimeData(data);
           });
       }
-      auto copy_action = menu_->addAction(QIcon::fromTheme("edit-copy"), url.scheme() == "mxc" ? tr("Copy link &address") : tr("&Copy link address"));
-      connect(copy_action, &QAction::triggered, [url]() {
-          auto data = new QMimeData;
-          data->setText(url.toString(QUrl::FullyEncoded));
-          data->setUrls({url});
-          QApplication::clipboard()->setMimeData(data);
+      const QString &id = target->event->data.event_id;
+      auto redact_action = menu_->addAction(QIcon::fromTheme("edit-delete"), tr("&Redact..."));
+      connect(redact_action, &QAction::triggered, [this, id]() {
+          auto dialog = new RedactDialog(this);
+          dialog->setAttribute(Qt::WA_DeleteOnClose);
+          connect(dialog, &QDialog::accepted, [this, id, dialog]() {
+              room_.redact(id, dialog->reason());
+            });
+          dialog->open();
         });
       menu_->popup(event->globalPos());
     }

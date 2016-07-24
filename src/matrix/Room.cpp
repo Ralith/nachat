@@ -548,6 +548,22 @@ void Room::send(const QString &type, QJsonObject content) {
                             content);
   auto es = new EventSend(reply);
   connect(reply, &QNetworkReply::finished, [reply, es]() {
+      reply->deleteLater();
+      if(reply->error()) es->error(reply->errorString());
+      else es->finished();
+    });
+  connect(es, &EventSend::error, this, &Room::error);
+}
+
+void Room::redact(const EventID &event, const QString &reason) {
+  auto id = transaction_id_;
+  transaction_id_ += 1;
+  auto reply = session_.put("client/r0/rooms/" % id_ % "/redact/" % event % "/" % QString::number(id),
+                            reason.isEmpty() ? QJsonObject() : QJsonObject{{"reason", reason}}
+    );
+  auto es = new EventSend(reply);
+  connect(reply, &QNetworkReply::finished, [reply, es]() {
+      reply->deleteLater();
       if(reply->error()) es->error(reply->errorString());
       else es->finished();
     });

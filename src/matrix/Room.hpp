@@ -28,6 +28,7 @@ struct JoinedRoom;
 }
 
 using RoomID = QString;
+using EventID = QString;
 
 class RoomState {
 public:
@@ -158,6 +159,7 @@ public:
   void leave();
 
   void send(const QString &type, QJsonObject content);
+  void redact(const EventID &event, const QString &reason = "");
 
   void send_file(const QString &path);
   void send_message(const QString &body);

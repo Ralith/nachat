@@ -51,11 +51,14 @@ protected:
   void contextMenuEvent(QContextMenuEvent *event) override;
 
 private:
+  class Event;
+
   struct ClickTarget {
     enum class Type {
-      LINK, CONTENT_LINK, AVATAR
+      LINK, CONTENT_LINK, AVATAR, EVENT
     };
     Type type;
+    Event *event;
     QUrl url;
     const QTextLayout *layout;
     int start, end;
@@ -231,7 +234,7 @@ private:
   // Removes enough blocks from the backlog that calling for each new event will cause backlog size to approach one
   // batch size greater than min_backlog_size_. Requires but does not perform scrollbar update!
 
-  std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> format_text(const matrix::RoomState &state, const QString &) const;
+  std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> format_text(const matrix::RoomState &state, const matrix::proto::Event &, const QString &) const;
 };
 
 #endif

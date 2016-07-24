@@ -7,6 +7,7 @@ qt5_wrap_ui(UI_HEADERS
   RoomView.ui
   LabeledProgressBar.ui
   ChatWindow.ui
+  RedactDialog.ui
   )
 
 add_subdirectory(matrix)
@@ -26,6 +27,7 @@ add_executable(native-chat WIN32
   RoomViewList.cpp
   MemberList.cpp
   Spinner.cpp
+  RedactDialog.cpp
   ${UI_HEADERS}
   )
 
