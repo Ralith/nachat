@@ -1139,7 +1139,7 @@ void TimelineView::contextMenuEvent(QContextMenuEvent *event) {
               QApplication::clipboard()->setMimeData(data);
             });
         }
-        auto copy_action = menu_->addAction(QIcon::fromTheme("edit-copy"), url.scheme() == "mxc" ? tr("Copy link &address") : tr("&Copy link address"));
+        auto copy_action = menu_->addAction(QIcon::fromTheme("edit-copy"), url.scheme() == "mxc" ? tr("Copy link &MXC address") : tr("&Copy link address"));
         connect(copy_action, &QAction::triggered, [url]() {
             auto data = new QMimeData;
             data->setText(url.toString(QUrl::FullyEncoded));
