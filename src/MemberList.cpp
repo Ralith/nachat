@@ -53,6 +53,7 @@ void MemberList::update_members() {
   auto margins = contentsMargins();
   size_hint_ = QSize(sizeHintForColumn(0) + verticalScrollBar()->sizeHint().width() + margins.left() + margins.right(),
                      fontMetrics().lineSpacing() + horizontalScrollBar()->sizeHint().height());
+  updateGeometry();
   update();
 }
 

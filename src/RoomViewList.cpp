@@ -54,6 +54,7 @@ void RoomViewList::add(matrix::Room &room) {
   assert(r.second);
   claimed(room.id());
   update_display(room);
+  updateGeometry();
   update();
 }
 
@@ -63,6 +64,8 @@ void RoomViewList::release(const matrix::RoomID &room) {
   delete it->second;
   items_.erase(it);
   released(room);
+  updateGeometry();
+  update();
 }
 
 void RoomViewList::activate(const matrix::RoomID &room) {
