@@ -108,6 +108,7 @@ void MainWindow::joined(matrix::Room &room) {
 }
 
 void MainWindow::highlighted(matrix::Room &room, uint64_t old) {
+  update_rooms();
   if(old > room.highlight_count()) return;
   auto it = chat_windows_.find(room.id());
   QWidget *window;
@@ -138,6 +139,7 @@ void MainWindow::update_rooms() {
     item->setData(Qt::UserRole, QVariant::fromValue(reinterpret_cast<void*>(room)));
     ui->room_list->addItem(item);
   }
+  update();
 }
 
 void MainWindow::sync_progress(qint64 received, qint64 total) {
