@@ -55,6 +55,7 @@ public:
   RoomWindowBridge(matrix::Room &room, ChatWindow &parent);
 
   void display_changed();
+  void check_release(const matrix::RoomID &room);
 
 private:
   matrix::Room &room_;

@@ -161,10 +161,15 @@ RoomWindowBridge::RoomWindowBridge(matrix::Room &room, ChatWindow &parent) : QOb
   connect(&room, &matrix::Room::canonical_alias_changed, this, &RoomWindowBridge::display_changed);
   connect(&room, &matrix::Room::aliases_changed, this, &RoomWindowBridge::display_changed);
   connect(&room, &matrix::Room::membership_changed, this, &RoomWindowBridge::display_changed);
+  connect(&parent, &ChatWindow::released, this, &RoomWindowBridge::check_release);
 }
 
 void RoomWindowBridge::display_changed() {
   window_.room_display_changed(room_);
+}
+
+void RoomWindowBridge::check_release(const matrix::RoomID &room) {
+  if(room_.id() == room) deleteLater();
 }
 
 ChatWindow *MainWindow::spawn_chat_window() {
