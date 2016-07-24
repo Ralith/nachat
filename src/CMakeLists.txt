@@ -25,6 +25,7 @@ add_executable(native-chat WIN32
   sort.cpp
   RoomViewList.cpp
   MemberList.cpp
+  Spinner.cpp
   ${UI_HEADERS}
   )
 
@@ -32,6 +33,15 @@ target_link_libraries(native-chat
   matrix
   Qt5::Widgets
   Qt5::Network
+  )
+
+add_executable(spinner-test WIN32
+  spinner_test.cpp
+  Spinner.cpp
+  )
+
+target_link_libraries(spinner-test
+  Qt5::Widgets
   )
 
 install(
