@@ -12,6 +12,7 @@
 #include <QClipboard>
 #include <QDesktopServices>
 #include <QMenu>
+#include <QRegularExpression>
 
 #include "matrix/Session.hpp"
 
@@ -32,13 +33,41 @@ static QString pretty_size(double n) {
   return QString::number(n / std::pow<double>(1024, idx), 'g', 4) + " " + units[idx];
 }
 
-static std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> plain_text(const QString &str) {
+std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> TimelineView::format_text(const QString &str) const {
   std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> result;
-  auto lines = str.split('\n');
-  // TODO: Detect URLs
+  const static QRegularExpression line_re("\\R", QRegularExpression::UseUnicodePropertiesOption | QRegularExpression::OptimizeOnFirstUsageOption);
+  auto lines = str.split(line_re);
   result.reserve(lines.size());
   std::transform(lines.begin(), lines.end(), std::back_inserter(result),
                  [](const QString &s){ return std::pair<QString, QVector<QTextLayout::FormatRange>>(s, {}); });
+  const static QRegularExpression maybe_url_re(
+    "("
+    R"([a-z][a-z0-9+-.]*://[^\s]+)"
+    R"(|[^\s]+\.(com|net|org)(/[^\s]*)?)"
+    R"(|www\.[^\s]+\.[^\s]+)"
+    ")",
+    QRegularExpression::UseUnicodePropertiesOption | QRegularExpression::OptimizeOnFirstUsageOption | QRegularExpression::CaseInsensitiveOption);
+  for(auto &line : result) {
+    auto urls = maybe_url_re.globalMatch(line.first);
+    while(urls.hasNext()) {
+      auto candidate = urls.next();
+      // QUrl doesn't handle some things consistently (e.g. emoticons in .la) so we round-trip it
+      QUrl url(QUrl(candidate.captured(), QUrl::StrictMode).toString(QUrl::FullyEncoded), QUrl::StrictMode);
+      if(!url.isValid()) continue;
+      if(url.scheme().isEmpty()) url = QUrl("https://" + url.toString(QUrl::FullyEncoded), QUrl::StrictMode);
+
+      QTextLayout::FormatRange range;
+      range.start = candidate.capturedStart();
+      range.length = candidate.capturedLength();
+      QTextCharFormat format;
+      format.setAnchor(true);
+      format.setAnchorHref(url.toString(QUrl::FullyEncoded));
+      format.setForeground(palette().link());
+      format.setFontUnderline(true);
+      range.format = format;
+      line.second.push_back(range);
+    }
+  }
   return result;
 }
 
@@ -53,7 +82,7 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
     const auto msgtype = e.content["msgtype"].toString();
     if(msgtype == "m.emote") {
       auto &sender = *state.member_from_id(e.sender);
-      lines = plain_text("* " % state.member_name(sender) % " " % e.content["body"].toString());
+      lines = view.format_text("* " % state.member_name(sender) % " " % e.content["body"].toString());
     } else if(msgtype == "m.file" || msgtype == "m.image" || msgtype == "m.video" || msgtype == "m.audio") {
       lines.emplace_back();
       auto &line = lines.front();
@@ -82,7 +111,7 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
       if(type.isString() || size.isDouble())
         line.first += ")";
     } else {
-      lines = plain_text(e.content["body"].toString());
+      lines = view.format_text(e.content["body"].toString());
     }
   } else if(e.type == "m.room.member") {
     switch(matrix::parse_membership(e.content["membership"].toString()).value()) {
@@ -90,22 +119,22 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
       auto invitee = state.member_from_id(e.state_key);
       if(!invitee) {
         qDebug() << "got invite for non-member" << e.state_key << " probably because we're probably stepping backwards over a duplicated event from SYN-645";
-        lines = plain_text(tr("SYN-645 related error"));
+        lines = view.format_text(tr("SYN-645 related error"));
       } else {
-        lines = plain_text(tr("invited %1").arg(state.member_name(*invitee)));
+        lines = view.format_text(tr("invited %1").arg(state.member_name(*invitee)));
       }
       break;
     }
     case matrix::Membership::JOIN: {
       if(!e.unsigned_.prev_content) {
-        lines = plain_text(tr("joined"));
+        lines = view.format_text(tr("joined"));
         break;
       }
       const auto &prev = *e.unsigned_.prev_content;
       auto prev_membership = matrix::parse_membership(prev["membership"].toString()).value();
       switch(prev_membership) {
       case matrix::Membership::INVITE:
-        lines = plain_text(tr("accepted invite"));
+        lines = view.format_text(tr("accepted invite"));
         break;
       case matrix::Membership::JOIN: {
         const bool avatar_changed = QUrl(prev["avatar_url"].toString()) != QUrl(e.content["avatar_url"].toString());
@@ -114,47 +143,47 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
         const bool dn_changed = old_dn != new_dn;
         if(avatar_changed && dn_changed) {
           if(new_dn.isEmpty())
-            lines = plain_text(tr("unset display name and changed avatar"));
+            lines = view.format_text(tr("unset display name and changed avatar"));
           else
-            lines = plain_text(tr("changed display name to %1 and changed avatar").arg(new_dn));
+            lines = view.format_text(tr("changed display name to %1 and changed avatar").arg(new_dn));
         } else if(avatar_changed) {
-          lines = plain_text(tr("changed avatar"));
+          lines = view.format_text(tr("changed avatar"));
         } else if(dn_changed) {
           if(new_dn.isEmpty()) {
-            lines = plain_text(tr("unset display name"));
+            lines = view.format_text(tr("unset display name"));
           } else if(old_dn.isEmpty()) {
-            lines = plain_text(tr("set display name to %1").arg(new_dn));
+            lines = view.format_text(tr("set display name to %1").arg(new_dn));
           } else {
-            lines = plain_text(tr("changed display name from %1 to %2").arg(old_dn).arg(new_dn));
+            lines = view.format_text(tr("changed display name from %1 to %2").arg(old_dn).arg(new_dn));
           }
         } else {
-          lines = plain_text(tr("sent a no-op join"));
+          lines = view.format_text(tr("sent a no-op join"));
         }
         break;
       }
       default:
-        lines = plain_text(tr("joined"));
+        lines = view.format_text(tr("joined"));
         break;
       }
       break;
     }
     case matrix::Membership::LEAVE: {
-      lines = plain_text(tr("left"));
+      lines = view.format_text(tr("left"));
       break;
     }
     case matrix::Membership::BAN: {
       auto banned = state.member_from_id(e.state_key);
       if(!banned) {
         qDebug() << "INTERNAL ERROR: displaying ban of unknown member" << e.state_key;
-        lines = plain_text(tr("banned %1").arg(e.state_key));
+        lines = view.format_text(tr("banned %1").arg(e.state_key));
       } else {
-        lines = plain_text(tr("banned %1").arg(state.member_name(*banned)));
+        lines = view.format_text(tr("banned %1").arg(state.member_name(*banned)));
       }
       break;
     }
     }
   } else {
-    lines = plain_text(tr("unrecognized event type %1").arg(e.type));
+    lines = view.format_text(tr("unrecognized event type %1").arg(e.type));
   }
   layouts = std::vector<QTextLayout>(lines.size());
   QTextOption body_options;
@@ -970,7 +999,7 @@ void TimelineView::mouseReleaseEvent(QMouseEvent *event) {
     auto b = block_near(event->pos());
     if(b && clicked_ && clicked_ == b->block->target_at(*this, event->pos() - b->bounds.topLeft())) {
       if(!QDesktopServices::openUrl(http_url(clicked_->url))) {
-        qDebug() << "failed to open URL" << clicked_->url;
+        qDebug() << "failed to open URL" << http_url(clicked_->url).toString(QUrl::FullyEncoded);
       }
     } else {
       QApplication::restoreOverrideCursor();
@@ -1047,19 +1076,21 @@ void TimelineView::contextMenuEvent(QContextMenuEvent *event) {
     if(auto target = b->block->target_at(*this, rel_pos)) {
       const QUrl &url = target->url;
       menu_->clear();
-      auto http_action = menu_->addAction(QIcon::fromTheme("edit-copy"), tr("&Copy link HTTP address"));
-      connect(http_action, &QAction::triggered, [this, url]() {
-          auto data = new QMimeData;
-          auto hurl = http_url(url);
-          data->setText(hurl.toString(QUrl::FullyEncoded));
-          data->setUrls({hurl});
-          QApplication::clipboard()->setMimeData(data);
-        });
-      auto copy_action = menu_->addAction(QIcon::fromTheme("edit-copy"), tr("Copy link address"));
+      if(url.scheme() == "mxc") {
+        auto http_action = menu_->addAction(QIcon::fromTheme("edit-copy"), tr("&Copy link HTTP address"));
+        connect(http_action, &QAction::triggered, [this, url]() {
+            auto data = new QMimeData;
+            auto hurl = http_url(url);
+            data->setText(hurl.toString(QUrl::FullyEncoded));
+            data->setUrls({hurl});
+            QApplication::clipboard()->setMimeData(data);
+          });
+      }
+      auto copy_action = menu_->addAction(QIcon::fromTheme("edit-copy"), url.scheme() == "mxc" ? tr("Copy link &address") : tr("&Copy link address"));
       connect(copy_action, &QAction::triggered, [url]() {
           auto data = new QMimeData;
-          data->setUrls({url});
           data->setText(url.toString(QUrl::FullyEncoded));
+          data->setUrls({url});
           QApplication::clipboard()->setMimeData(data);
         });
       menu_->popup(event->globalPos());

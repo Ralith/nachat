@@ -226,6 +226,8 @@ private:
   void prune_backlog();
   // Removes enough blocks from the backlog that calling for each new event will cause backlog size to approach one
   // batch size greater than min_backlog_size_. Requires but does not perform scrollbar update!
+
+  std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> format_text(const QString &) const;
 };
 
 #endif
