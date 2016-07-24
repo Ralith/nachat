@@ -1147,16 +1147,18 @@ void TimelineView::contextMenuEvent(QContextMenuEvent *event) {
             QApplication::clipboard()->setMimeData(data);
           });
       }
-      const QString &id = target->event->data.event_id;
-      auto redact_action = menu_->addAction(QIcon::fromTheme("edit-delete"), tr("&Redact..."));
-      connect(redact_action, &QAction::triggered, [this, id]() {
-          auto dialog = new RedactDialog(this);
-          dialog->setAttribute(Qt::WA_DeleteOnClose);
-          connect(dialog, &QDialog::accepted, [this, id, dialog]() {
-              room_.redact(id, dialog->reason());
-            });
-          dialog->open();
-        });
+      if(target->event) {
+        const QString &id = target->event->data.event_id;
+        auto redact_action = menu_->addAction(QIcon::fromTheme("edit-delete"), tr("&Redact..."));
+        connect(redact_action, &QAction::triggered, [this, id]() {
+            auto dialog = new RedactDialog(this);
+            dialog->setAttribute(Qt::WA_DeleteOnClose);
+            connect(dialog, &QDialog::accepted, [this, id, dialog]() {
+                room_.redact(id, dialog->reason());
+              });
+            dialog->open();
+          });
+      }
       menu_->popup(event->globalPos());
     }
   }
