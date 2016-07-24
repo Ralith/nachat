@@ -1128,6 +1128,7 @@ void TimelineView::contextMenuEvent(QContextMenuEvent *event) {
     if(auto target = b->block->target_at(*this, rel_pos)) {
       menu_->clear();
       if(target->type != ClickTarget::Type::EVENT) {
+        menu_->addSection("Link");
         const QUrl &url = target->url;
         if(url.scheme() == "mxc") {
           auto http_action = menu_->addAction(QIcon::fromTheme("edit-copy"), tr("&Copy link HTTP address"));
@@ -1148,6 +1149,7 @@ void TimelineView::contextMenuEvent(QContextMenuEvent *event) {
           });
       }
       if(target->event) {
+        menu_->addSection("Event");
         const QString &id = target->event->data.event_id;
         auto redact_action = menu_->addAction(QIcon::fromTheme("edit-delete"), tr("&Redact..."));
         connect(redact_action, &QAction::triggered, [this, id]() {

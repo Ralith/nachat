@@ -31,6 +31,7 @@ RoomViewList::RoomViewList(QWidget *parent) : QListWidget(parent), menu_(new QMe
       insertItem(r+1, item);
       setCurrentItem(item);
     });
+  menu_->addSeparator();
   auto pop_out_action = menu_->addAction(QIcon::fromTheme("window-open"), tr("&Pop out"));
   connect(pop_out_action, &QAction::triggered, [this]() {
       pop_out(context_);
