@@ -4,6 +4,8 @@
 #include <QListWidget>
 #include <unordered_map>
 
+#include "matrix/Room.hpp"
+
 class QMenu;
 
 namespace matrix {
@@ -16,25 +18,25 @@ public:
   RoomViewList(QWidget *parent = nullptr);
 
   void add(matrix::Room &room);
-  void release(matrix::Room &room);
-  void activate(matrix::Room &room);
+  void release(const matrix::RoomID &room);
+  void activate(const matrix::RoomID &room);
   void update_display(matrix::Room &room);
 
   QSize sizeHint() const override;
 
 signals:
-  void released(matrix::Room &);
-  void claimed(matrix::Room &);
-  void activated(matrix::Room &);
-  void pop_out(matrix::Room &);
+  void released(const matrix::RoomID &);
+  void claimed(const matrix::RoomID &);
+  void activated(const matrix::RoomID &);
+  void pop_out(const matrix::RoomID &);
 
 protected:
   void contextMenuEvent(QContextMenuEvent *) override;
 
 private:
-  std::unordered_map<matrix::Room *, QListWidgetItem *> items_;
+  std::unordered_map<matrix::RoomID, QListWidgetItem *, QStringHash> items_;
   QMenu *menu_;
-  matrix::Room *context_;
+  matrix::RoomID context_;
 };
 
 #endif

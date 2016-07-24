@@ -27,6 +27,8 @@ namespace proto {
 struct JoinedRoom;
 }
 
+using RoomID = QString;
+
 class RoomState {
 public:
   RoomState() = default;  // New, empty room
@@ -128,7 +130,7 @@ public:
 
   const Session &session() const { return session_; }
   Session &session() { return session_; }
-  const QString &id() const { return id_; }
+  const RoomID &id() const { return id_; }
   uint64_t highlight_count() const { return highlight_count_; }
   uint64_t notification_count() const { return notification_count_; }
 
@@ -182,7 +184,7 @@ signals:
 private:
   Matrix &universe_;
   Session &session_;
-  const QString id_;
+  const RoomID id_;
   lmdb::env &db_env_;
   lmdb::dbi member_db_;
 

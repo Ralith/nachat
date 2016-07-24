@@ -58,6 +58,16 @@ public:
 
   bool synced() const { return synced_; }
   std::vector<Room *> rooms();
+  Room *room_from_id(const RoomID &r) {
+    auto it = rooms_.find(r);
+    if(it == rooms_.end()) return nullptr;
+    return &it->second;
+  }
+  const Room *room_from_id(const RoomID &r) const {
+    auto it = rooms_.find(r);
+    if(it == rooms_.end()) return nullptr;
+    return &it->second;
+  }
 
   size_t buffer_size() const { return buffer_size_; }
   void set_buffer_size(size_t size) { buffer_size_ = size; }
@@ -89,7 +99,7 @@ private:
   lmdb::env env_;
   lmdb::dbi state_db_, room_db_;
   size_t buffer_size_;
-  std::unordered_map<QString, Room, QStringHash> rooms_;
+  std::unordered_map<RoomID, Room, QStringHash> rooms_;
   bool synced_;
   QString next_batch_;
 

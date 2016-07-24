@@ -65,7 +65,7 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
   connect(ui->room_list, &QListWidget::itemActivated, [this](QListWidgetItem *item){
       auto &room = *reinterpret_cast<matrix::Room *>(item->data(Qt::UserRole).value<void*>());
       ChatWindow *window;
-      auto it = chat_windows_.find(&room);
+      auto it = chat_windows_.find(room.id());
       if(it != chat_windows_.end()) {
         window = it->second;   // Focus in existing window
         qDebug() << "chat window exists";
@@ -76,7 +76,7 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
         if(chat_windows_.empty()) {
           qDebug() << "creating first window";
           // Create first window
-          window = spawn_chat_window(room);
+          window = spawn_chat_window();
         } else {
           qDebug() << "adding to arbitrary window";
           // Select arbitrary window
@@ -109,7 +109,7 @@ void MainWindow::joined(matrix::Room &room) {
 
 void MainWindow::highlighted(matrix::Room &room, uint64_t old) {
   if(old > room.highlight_count()) return;
-  auto it = chat_windows_.find(&room);
+  auto it = chat_windows_.find(room.id());
   QWidget *window;
   if(it == chat_windows_.end()) {
     window = this;
@@ -165,25 +165,25 @@ void RoomWindowBridge::display_changed() {
   window_.room_display_changed(room_);
 }
 
-ChatWindow *MainWindow::spawn_chat_window(matrix::Room &room) {
+ChatWindow *MainWindow::spawn_chat_window() {
   auto window = new ChatWindow;
   connect(window, &ChatWindow::focused, [this, window](){
       last_focused_ = window;
     });
-  connect(window, &ChatWindow::claimed, [this, window](matrix::Room &r) {
+  connect(window, &ChatWindow::claimed, [this, window](const matrix::RoomID &r) {
       auto x = chat_windows_.emplace(
         std::piecewise_construct,
-        std::forward_as_tuple(&r),
+        std::forward_as_tuple(r),
         std::forward_as_tuple(window));
       assert(x.second);
-      new RoomWindowBridge(r, *window);
+      new RoomWindowBridge(*session_->room_from_id(r), *window);
     });
-  connect(window, &ChatWindow::released, [this](matrix::Room &r) {
-      chat_windows_.erase(&r);
+  connect(window, &ChatWindow::released, [this](const matrix::RoomID &rid) {
+      chat_windows_.erase(rid);
     });
-  connect(window, &ChatWindow::pop_out, [this](matrix::Room &r, RoomView *v) {
-      auto w = spawn_chat_window(r);
-      w->add(r, v);
+  connect(window, &ChatWindow::pop_out, [this](const matrix::RoomID &r, RoomView *v) {
+      auto w = spawn_chat_window();
+      w->add(*session_->room_from_id(r), v);
       w->show();
       w->raise();
       w->activateWindow();

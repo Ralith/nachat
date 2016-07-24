@@ -6,6 +6,8 @@
 
 #include <QWidget>
 
+#include "matrix/Room.hpp"
+
 class RoomView;
 class RoomViewList;
 
@@ -29,13 +31,13 @@ public:
   void add_or_focus(matrix::Room &);
   void room_display_changed(matrix::Room &);
 
-  RoomView *take(matrix::Room &); // Releases ownership
+  RoomView *take(const matrix::RoomID &); // Releases ownership
 
 signals:
   void focused();
-  void released(matrix::Room &);
-  void claimed(matrix::Room &);
-  void pop_out(matrix::Room &, RoomView *);
+  void released(const matrix::RoomID &);
+  void claimed(const matrix::RoomID &);
+  void pop_out(const matrix::RoomID &, RoomView *);
 
 protected:
   void changeEvent(QEvent *event) override;
@@ -44,7 +46,7 @@ protected:
 private:
   Ui::ChatWindow *ui;
   RoomViewList *room_list_;
-  std::unordered_map<matrix::Room *, RoomView *> rooms_;
+  std::unordered_map<matrix::RoomID, RoomView *, QStringHash> rooms_;
 
   void update_title();
   void current_changed(int i);
