@@ -72,20 +72,31 @@ QString RoomState::pretty_name(const QString &own_id) const {
   }
   switch(ms.size()) {
   case 0: return QObject::tr("Empty room");
-  case 1: return member_name(*ms[0]);
+  case 1: return member_name(ms[0]->pretty_name());
   case 2: return QObject::tr("%1 and %2").arg(member_name(*ms[0])).arg(member_name(*ms[1]));
   default: return QObject::tr("%1 and %2 others").arg(member_name(*ms[0])).arg(ms.size() - 1);
   }
 }
 
-QString RoomState::member_name(const Member &member) const {
+QString RoomState::member_disambiguation(const Member &member) const {
   if(member.display_name().isEmpty()) {
+    if(members_by_displayname_.find(member.id()) != members_by_displayname_.end()) {
+      return member.id();
+    } else {
+      return "";
+    }
+  } else if(members_named(member.display_name()).size() > 1 || member_from_id(member.display_name())) {
     return member.id();
+  } else {
+    return "";
   }
-  if(members_named(member.display_name()).size() == 1) {
-    return member.display_name();
-  }
-  return QObject::tr("%1 (%2)").arg(member.display_name()).arg(member.id());
+}
+
+QString RoomState::member_name(const Member &member) const {
+  auto result = member.pretty_name();
+  auto disambig = member_disambiguation(member);
+  if(disambig.isEmpty()) return result;
+  return result % " (" % disambig % ")";
 }
 
 std::vector<MemberID> &RoomState::members_named(QString displayname) {
@@ -106,13 +117,18 @@ std::vector<const Member *> RoomState::members() const {
 void RoomState::forget_displayname(const MemberID &id, const QString &old_name_in, Room *room) {
   if(old_name_in.isEmpty()) return;
 
-  QString old_name = old_name_in.normalized(QString::NormalizationForm_C);
+  const QString old_name = old_name_in.normalized(QString::NormalizationForm_C);
   auto &vec = members_by_displayname_.at(old_name);
-  QString other_name;
+  QString other_disambiguation;
   const Member *other_member = nullptr;
-  if(room && vec.size() == 2) {
-    other_member = &members_by_id_.at(vec[0] == id ? vec[1] : vec[0]);
-    other_name = member_name(*other_member);
+  const bool existing_displayname = vec.size() == 2;
+  const Member *const existing_mxid = member_from_id(old_name);
+  if(room && (!existing_displayname || !existing_mxid)) {
+    if(existing_displayname) other_member = &members_by_id_.at(vec[0] == id ? vec[1] : vec[0]);
+    if(existing_mxid) other_member = existing_mxid;
+  }
+  if(other_member) {
+    other_disambiguation = member_disambiguation(*other_member);
   }
   const auto before = vec.size();
   vec.erase(std::remove(vec.begin(), vec.end(), id), vec.end());
@@ -121,26 +137,31 @@ void RoomState::forget_displayname(const MemberID &id, const QString &old_name_i
     members_by_displayname_.erase(old_name);
   }
   if(other_member) {
-    room->member_name_changed(*other_member, other_name);
+    room->member_disambiguation_changed(*other_member, other_disambiguation);
   }
 }
 
 void RoomState::record_displayname(const MemberID &id, const QString &name, Room *room) {
   if(name.isEmpty()) return;
 
-  auto &vec = members_by_displayname_[name.normalized(QString::NormalizationForm_C)];
-  Member *other_member = nullptr;
-  QString other_old_name;
-  if(vec.size() == 1) {
-    // Third party existing name will become disambiguated
-    other_member = &members_by_id_.at(vec[0]);
-    other_old_name = member_name(*other_member);
-  }
+  const auto normalized = name.normalized(QString::NormalizationForm_C);
+  auto &vec = members_by_displayname_[normalized];
   for(const auto &x : vec) {
     assert(x != id);
   }
   vec.push_back(id);
-  if(other_member && room) room->member_name_changed(*other_member, other_old_name);
+
+  if(room) {
+    const Member *other_member = nullptr;
+    const bool existing_displayname = vec.size() == 2;
+    const Member *const existing_mxid = member_from_id(normalized);
+    if(!existing_displayname || !existing_mxid) {
+      // If there's only one user with the name, they get newly disambiguated too
+      if(existing_displayname) other_member = &members_by_id_.at(vec[0]);
+      if(existing_mxid) other_member = existing_mxid;
+    }
+    if(other_member) room->member_disambiguation_changed(*other_member, "");
+  }
 }
 
 const Member *RoomState::member_from_id(const QString &id) const {

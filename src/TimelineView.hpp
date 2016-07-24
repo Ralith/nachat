@@ -65,7 +65,6 @@ private:
   class Event {
   public:
     matrix::proto::Event data;
-    bool highlight;
     std::vector<QTextLayout> layouts;
     const std::chrono::time_point<std::chrono::system_clock, std::chrono::milliseconds> time;
 
@@ -205,12 +204,15 @@ private:
   QPixmap spinner_;
 
   void update_scrollbar(bool grew_upward);
+
   int visible_width() const;
   int block_spacing() const;
   int block_margin() const;
   int avatar_size() const;
   int block_body_start() const;
   int block_body_width() const;
+  QTextCharFormat header_format() const;
+
   void grow_backlog();
   void prepend_batch(QString start, QString end, gsl::span<const matrix::proto::Event> events);
   void backlog_grow_error();
@@ -229,7 +231,7 @@ private:
   // Removes enough blocks from the backlog that calling for each new event will cause backlog size to approach one
   // batch size greater than min_backlog_size_. Requires but does not perform scrollbar update!
 
-  std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> format_text(const QString &) const;
+  std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> format_text(const matrix::RoomState &state, const QString &) const;
 };
 
 #endif

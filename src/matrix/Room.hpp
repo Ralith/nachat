@@ -60,6 +60,7 @@ public:
   QString pretty_name(const QString &own_id) const;
   // Matrix r0.1.0 11.2.2.5 ish (like vector-web)
 
+  QString member_disambiguation(const Member &member) const;
   QString member_name(const Member &member) const;
   // Matrix r0.1.0 11.2.2.3
 
@@ -164,7 +165,8 @@ public:
 
 signals:
   void membership_changed(const Member &, Membership old);
-  void member_name_changed(const Member &, const QString &old);
+  void member_disambiguation_changed(const Member &, const QString &old);
+  void member_name_changed(const Member &, const QString &old); // Assume disambiguation changed as well
   void state_changed();
   void highlight_count_changed(uint64_t old);
   void notification_count_changed(uint64_t old);

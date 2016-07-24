@@ -35,13 +35,30 @@ static QString pretty_size(double n) {
   return QString::number(n / std::pow<double>(1024, idx), 'g', 4) + " " + units[idx];
 }
 
-std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> TimelineView::format_text(const QString &str) const {
+std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> TimelineView::format_text(const matrix::RoomState &state, const QString &str) const {
   std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> result;
   const static QRegularExpression line_re("\\R", QRegularExpression::UseUnicodePropertiesOption | QRegularExpression::OptimizeOnFirstUsageOption);
   auto lines = str.split(line_re);
   result.reserve(lines.size());
   std::transform(lines.begin(), lines.end(), std::back_inserter(result),
                  [](const QString &s){ return std::pair<QString, QVector<QTextLayout::FormatRange>>(s, {}); });
+
+  // Detect highlights
+  auto self = state.member_from_id(room_.session().user_id());
+  const bool highlight = self && str.toCaseFolded().contains(self->display_name().toCaseFolded());
+  if(highlight) {
+    QTextCharFormat highlight_format;
+    highlight_format.setFontWeight(QFont::Black);
+    for(auto &line : result) {
+      QTextLayout::FormatRange range;
+      range.start = 0;
+      range.length = line.first.length();
+      range.format = highlight_format;
+      line.second.push_back(range);
+    }
+  }
+
+  // Detect URLs
   const static QRegularExpression maybe_url_re(
     "("
     R"([a-z][a-z0-9+-.]*://[^\s]+)"
@@ -75,16 +92,12 @@ std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> TimelineView:
 
 TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &state, const matrix::proto::Event &e)
   : data(e), time(to_time_point(e.origin_server_ts)) {
-  {
-    auto self = state.member_from_id(view.room_.session().user_id());
-    highlight = self && e.content["body"].toString().toCaseFolded().contains(self->display_name().toCaseFolded());
-  }
   std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> lines;
   if(e.type == "m.room.message") {
     const auto msgtype = e.content["msgtype"].toString();
     if(msgtype == "m.emote") {
       auto &sender = *state.member_from_id(e.sender);
-      lines = view.format_text("* " % state.member_name(sender) % " " % e.content["body"].toString());
+      lines = view.format_text(state, "* " % sender.pretty_name() % " " % e.content["body"].toString());
     } else if(msgtype == "m.file" || msgtype == "m.image" || msgtype == "m.video" || msgtype == "m.audio") {
       lines.emplace_back();
       auto &line = lines.front();
@@ -113,7 +126,7 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
       if(type.isString() || size.isDouble())
         line.first += ")";
     } else {
-      lines = view.format_text(e.content["body"].toString());
+      lines = view.format_text(state, e.content["body"].toString());
     }
   } else if(e.type == "m.room.member") {
     switch(matrix::parse_membership(e.content["membership"].toString()).value()) {
@@ -121,22 +134,22 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
       auto invitee = state.member_from_id(e.state_key);
       if(!invitee) {
         qDebug() << "got invite for non-member" << e.state_key << " probably because we're probably stepping backwards over a duplicated event from SYN-645";
-        lines = view.format_text(tr("SYN-645 related error"));
+        lines = view.format_text(state, tr("SYN-645 related error"));
       } else {
-        lines = view.format_text(tr("invited %1").arg(state.member_name(*invitee)));
+        lines = view.format_text(state, tr("invited %1").arg(state.member_name(*invitee)));
       }
       break;
     }
     case matrix::Membership::JOIN: {
       if(!e.unsigned_.prev_content) {
-        lines = view.format_text(tr("joined"));
+        lines = view.format_text(state, tr("joined"));
         break;
       }
       const auto &prev = *e.unsigned_.prev_content;
       auto prev_membership = matrix::parse_membership(prev["membership"].toString()).value();
       switch(prev_membership) {
       case matrix::Membership::INVITE:
-        lines = view.format_text(tr("accepted invite"));
+        lines = view.format_text(state, tr("accepted invite"));
         break;
       case matrix::Membership::JOIN: {
         const bool avatar_changed = QUrl(prev["avatar_url"].toString()) != QUrl(e.content["avatar_url"].toString());
@@ -145,47 +158,47 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
         const bool dn_changed = old_dn != new_dn;
         if(avatar_changed && dn_changed) {
           if(new_dn.isEmpty())
-            lines = view.format_text(tr("unset display name and changed avatar"));
+            lines = view.format_text(state, tr("unset display name and changed avatar"));
           else
-            lines = view.format_text(tr("changed display name to %1 and changed avatar").arg(new_dn));
+            lines = view.format_text(state, tr("changed display name to %1 and changed avatar").arg(new_dn));
         } else if(avatar_changed) {
-          lines = view.format_text(tr("changed avatar"));
+          lines = view.format_text(state, tr("changed avatar"));
         } else if(dn_changed) {
           if(new_dn.isEmpty()) {
-            lines = view.format_text(tr("unset display name"));
+            lines = view.format_text(state, tr("unset display name"));
           } else if(old_dn.isEmpty()) {
-            lines = view.format_text(tr("set display name to %1").arg(new_dn));
+            lines = view.format_text(state, tr("set display name to %1").arg(new_dn));
           } else {
-            lines = view.format_text(tr("changed display name from %1 to %2").arg(old_dn).arg(new_dn));
+            lines = view.format_text(state, tr("changed display name from %1 to %2").arg(old_dn).arg(new_dn));
           }
         } else {
-          lines = view.format_text(tr("sent a no-op join"));
+          lines = view.format_text(state, tr("sent a no-op join"));
         }
         break;
       }
       default:
-        lines = view.format_text(tr("joined"));
+        lines = view.format_text(state, tr("joined"));
         break;
       }
       break;
     }
     case matrix::Membership::LEAVE: {
-      lines = view.format_text(tr("left"));
+      lines = view.format_text(state, tr("left"));
       break;
     }
     case matrix::Membership::BAN: {
       auto banned = state.member_from_id(e.state_key);
       if(!banned) {
         qDebug() << "INTERNAL ERROR: displaying ban of unknown member" << e.state_key;
-        lines = view.format_text(tr("banned %1").arg(e.state_key));
+        lines = view.format_text(state, tr("banned %1").arg(e.state_key));
       } else {
-        lines = view.format_text(tr("banned %1").arg(state.member_name(*banned)));
+        lines = view.format_text(state, tr("banned %1").arg(state.member_name(*banned)));
       }
       break;
     }
     }
   } else {
-    lines = view.format_text(tr("unrecognized event type %1").arg(e.type));
+    lines = view.format_text(state, tr("unrecognized event type %1").arg(e.type));
   }
   layouts = std::vector<QTextLayout>(lines.size());
   QTextOption body_options;
@@ -262,9 +275,21 @@ void TimelineView::Block::update_header(TimelineView &view, const matrix::RoomSt
       }
     }
   }
-
   if(sender) {
-    name_layout_.setText(state.member_name(*sender));
+    auto name = sender->pretty_name();
+    auto disambig = state.member_disambiguation(*sender);
+    if(disambig.isEmpty()) {
+      name_layout_.setText(name);
+    } else {
+      name_layout_.setText(name % " (" % disambig % ")");
+      QTextLayout::FormatRange f;
+      f.start = name.length() + 1;
+      f.length = disambig.length() + 2;
+      QTextCharFormat format;
+      format.setFontWeight(QFont::Bold);
+      f.format = format;
+      name_layout_.setFormats({f});
+    }
   } else {
     name_layout_.setText(sender_id_);
   }
@@ -349,21 +374,23 @@ static optional<int> cursor_at(const QTextLayout &layout, const QPointF &p) {
   return {};
 }
 
-static optional<QTextLayout::FormatRange> format_at(const QTextLayout &layout, int cursor) {
+static std::vector<QTextLayout::FormatRange> formats_at(const QTextLayout &layout, int cursor) {
+  std::vector<QTextLayout::FormatRange> result;
   for(auto &format : layout.formats()) {
     if(format.start <= cursor && format.start + format.length > cursor) {
-      return format;
+      result.push_back(format);
     }
   }
-  return {};
+  return result;
 }
 
 optional<TimelineView::ClickTarget> TimelineView::Event::target_at(TimelineView &view, const QPointF &pos) {
   for(const auto &layout : layouts) {
     if(auto cursor = cursor_at(layout, pos)) {
-      auto format = format_at(layout, *cursor);
-      if(format && format->format.isAnchor()) {
-        return ClickTarget{ClickTarget::Type::CONTENT_LINK, format->format.anchorHref(), &layout, format->start, format->length};
+      auto formats = formats_at(layout, *cursor);
+      auto anchor = std::find_if(formats.begin(), formats.end(), [](const QTextLayout::FormatRange &f) { return f.format.isAnchor(); });
+      if(anchor != formats.end()) {
+        return ClickTarget{ClickTarget::Type::CONTENT_LINK, anchor->format.anchorHref(), &layout, anchor->start, anchor->length};
       }
       break;
     }
@@ -481,13 +508,7 @@ void TimelineView::Block::draw(const TimelineView &view, QPainter &p, QPointF of
 
   for(const auto event : events_) {
     p.save();
-    if(event->data.type == "m.room.message") {
-      if(event->highlight) {
-        p.setPen(view.palette().color(QPalette::BrightText));
-        p.setBackgroundMode(Qt::OpaqueMode);
-        p.setBackground(view.palette().dark());
-      }
-    } else {
+    if(event->data.type != "m.room.message") {
       p.setPen(view.palette().color(QPalette::Dark));
     }
     QRectF event_bounds;

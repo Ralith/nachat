@@ -41,6 +41,7 @@ public:
   const QString &display_name() const { return display_name_; }
   const QUrl &avatar_url() const { return avatar_url_; }
   Membership membership() const { return membership_; }
+  const QString &pretty_name() const { return display_name_.isEmpty() ? id_ : display_name_; }
 
   void update_membership(const QJsonObject &content);
 
