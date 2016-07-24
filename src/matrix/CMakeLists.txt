@@ -1,3 +1,6 @@
+include(FindLMDB)
+find_package(LMDB REQUIRED)
+
 add_library(matrix
   utils.cpp
   Matrix.cpp
@@ -10,11 +13,11 @@ add_library(matrix
   )
 
 target_include_directories(matrix
-  PUBLIC "${PROJECT_SOURCE_DIR}/deps/lmdbxx"
+  PUBLIC "${PROJECT_SOURCE_DIR}/deps/lmdbxx" "${LMDB_INCLUDE_DIR}"
   )
 
 
 target_link_libraries(matrix
   Qt5::Network
-  lmdb
+  ${LMDB_LIBRARY}
   )
