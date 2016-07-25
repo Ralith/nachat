@@ -31,7 +31,7 @@ using MemberID = QString;
 
 class Member {
 public:
-  Member(QString id) : id_(std::move(id)) {}
+  explicit Member(MemberID id) : id_(std::move(id)) {}
 
   Member(QString id, const QJsonObject &);
 

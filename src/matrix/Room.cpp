@@ -72,7 +72,7 @@ QString RoomState::pretty_name(const QString &own_id) const {
   }
   switch(ms.size()) {
   case 0: return QObject::tr("Empty room");
-  case 1: return member_name(ms[0]->pretty_name());
+  case 1: return ms[0]->pretty_name();
   case 2: return QObject::tr("%1 and %2").arg(member_name(*ms[0])).arg(member_name(*ms[1]));
   default: return QObject::tr("%1 and %2 others").arg(member_name(*ms[0])).arg(ms.size() - 1);
   }
