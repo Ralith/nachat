@@ -68,17 +68,13 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
       auto it = chat_windows_.find(room.id());
       if(it != chat_windows_.end()) {
         window = it->second;   // Focus in existing window
-        qDebug() << "chat window exists";
       } else if(last_focused_) {
         window = last_focused_; // Add to most recently used window
-        qDebug() << "adding to last focused" << last_focused_;
       } else {
         if(chat_windows_.empty()) {
-          qDebug() << "creating first window";
           // Create first window
           window = spawn_chat_window();
         } else {
-          qDebug() << "adding to arbitrary window";
           // Select arbitrary window
           window = chat_windows_.begin()->second;
         }

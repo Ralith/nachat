@@ -543,7 +543,6 @@ void Room::leave() {
 
 void Room::send(const QString &type, QJsonObject content) {
   auto txn = session_.get_transaction_id();
-  qDebug() << "sending message" << txn;
   auto reply = session_.put("client/r0/rooms/" % id_ % "/send/" % type % "/" % txn,
                             content);
   auto es = new EventSend(reply);
@@ -551,7 +550,6 @@ void Room::send(const QString &type, QJsonObject content) {
       reply->deleteLater();
       if(reply->error()) es->error(reply->errorString());
       else es->finished();
-      qDebug() << "message" << txn << "sent";
     });
   connect(es, &EventSend::error, this, &Room::error);
 }
