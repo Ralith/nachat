@@ -54,7 +54,7 @@ void MemberList::update_members() {
   size_hint_ = QSize(sizeHintForColumn(0) + verticalScrollBar()->sizeHint().width() + margins.left() + margins.right(),
                      fontMetrics().lineSpacing() + horizontalScrollBar()->sizeHint().height());
   updateGeometry();
-  update();
+  viewport()->update();
 }
 
 QSize MemberList::sizeHint() const {

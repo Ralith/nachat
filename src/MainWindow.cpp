@@ -90,7 +90,9 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
     });
 
   sync_progress(0, -1);
-  update_rooms();
+  for(auto room : session_->rooms()) {
+    joined(*room);
+  }
 }
 
 MainWindow::~MainWindow() { delete ui; }
@@ -139,7 +141,7 @@ void MainWindow::update_rooms() {
     item->setData(Qt::UserRole, QVariant::fromValue(reinterpret_cast<void*>(room)));
     ui->room_list->addItem(item);
   }
-  update();
+  ui->room_list->viewport()->update();
 }
 
 void MainWindow::sync_progress(qint64 received, qint64 total) {
