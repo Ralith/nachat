@@ -92,7 +92,7 @@ void RoomViewList::contextMenuEvent(QContextMenuEvent *e) {
 }
 
 QSize RoomViewList::sizeHint() const {
-  auto margins = contentsMargins();
+  auto margins = viewportMargins();
   return QSize(sizeHintForColumn(0) + verticalScrollBar()->sizeHint().width() + margins.left() + margins.right(),
                fontMetrics().lineSpacing() + horizontalScrollBar()->sizeHint().height());
 }
