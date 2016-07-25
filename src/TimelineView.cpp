@@ -109,7 +109,8 @@ TimelineView::Event::Event(const TimelineView &view, const matrix::RoomState &st
     if(msgtype == "m.file" || msgtype == "m.image" || msgtype == "m.video" || msgtype == "m.audio") {
       lines.emplace_back();
       auto &line = lines.front();
-      line.first = e.content["filename"].toString();
+      line.first = e.content["body"].toString();
+      if(line.first.isEmpty()) line.first = e.content["filename"].toString();
       {
         QTextLayout::FormatRange range;
         range.start = 0;
