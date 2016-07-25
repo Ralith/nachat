@@ -46,6 +46,7 @@ ChatWindow::ChatWindow(QWidget *parent)
       auto it = rooms_.find(room);
       auto view = it->second;
       rooms_.erase(it);
+      room_list_->release(room);
       pop_out(room, view);
     });
 }

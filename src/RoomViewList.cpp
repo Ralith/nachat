@@ -35,7 +35,6 @@ RoomViewList::RoomViewList(QWidget *parent) : QListWidget(parent), menu_(new QMe
   auto pop_out_action = menu_->addAction(QIcon::fromTheme("window-open"), tr("&Pop out"));
   connect(pop_out_action, &QAction::triggered, [this]() {
       pop_out(context_);
-      release(context_);
     });
   auto close = menu_->addAction(QIcon::fromTheme("window-close"), tr("&Close"));
   connect(close, &QAction::triggered, [this]() {
