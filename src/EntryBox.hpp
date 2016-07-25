@@ -26,7 +26,6 @@ private:
   std::deque<QString> true_history_, working_history_;
   size_t history_index_;
 
-  void document_size_changed(const QSizeF &size);
   void text_changed();
 };
 

@@ -7,8 +7,7 @@
 static constexpr size_t INPUT_HISTORY_SIZE = 127;
 
 EntryBox::EntryBox(QWidget *parent) : QTextEdit(parent), true_history_(INPUT_HISTORY_SIZE), working_history_(1), history_index_(0) {
-  connect(document()->documentLayout(), &QAbstractTextDocumentLayout::documentSizeChanged,
-          this, &EntryBox::document_size_changed);
+  connect(document()->documentLayout(), &QAbstractTextDocumentLayout::documentSizeChanged, this, &EntryBox::updateGeometry);
   QSizePolicy policy(QSizePolicy::Ignored, QSizePolicy::Maximum);
   policy.setHorizontalStretch(1);
   policy.setVerticalStretch(1);
@@ -20,7 +19,8 @@ EntryBox::EntryBox(QWidget *parent) : QTextEdit(parent), true_history_(INPUT_HIS
 }
 
 QSize EntryBox::sizeHint() const {
-  auto margins = contentsMargins();
+  auto margins = viewportMargins();
+  margins += document()->documentMargin();
   QSize size = document()->size().toSize();
   size.rwidth() += margins.left() + margins.right();
   size.rheight() += margins.top() + margins.bottom();
@@ -29,16 +29,9 @@ QSize EntryBox::sizeHint() const {
 }
 
 QSize EntryBox::minimumSizeHint() const {
-  auto margins = contentsMargins() + viewportMargins();
+  auto margins = viewportMargins();
   margins += document()->documentMargin();
   return QSize(fontMetrics().averageCharWidth() * 10, fontMetrics().lineSpacing() + margins.top() + margins.bottom());
-}
-
-void EntryBox::document_size_changed(const QSizeF &size) {
-  auto margins = contentsMargins();
-  // FIXME: Should be able to rely on sizeHint and QSizePolicy::Preferred
-  //setMaximumHeight(size.height() + margins.top() + margins.bottom());
-  updateGeometry();
 }
 
 void EntryBox::keyPressEvent(QKeyEvent *event) {
