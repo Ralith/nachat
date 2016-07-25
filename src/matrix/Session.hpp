@@ -83,6 +83,8 @@ public:
 
   ContentFetch *get_thumbnail(const Content &, const QSize &size, ThumbnailMethod method = ThumbnailMethod::SCALE);
 
+  QString get_transaction_id();
+
 signals:
   void logged_out();
   void error(QString message);

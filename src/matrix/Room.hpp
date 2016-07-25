@@ -197,7 +197,6 @@ private:
   RoomState state_;
 
   uint64_t highlight_count_ = 0, notification_count_ = 0;
-  uint64_t transaction_id_ = 0;
 };
 
 }
