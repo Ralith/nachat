@@ -262,26 +262,20 @@ ContentFetch *Session::get_thumbnail(const Content &content, const QSize &size, 
   return result;
 }
 
-static uint64_t from_little_endian(const uint8_t *x) {
-  return static_cast<uint64_t>(x[0])
-    | static_cast<uint64_t>(x[1]) << 8
-    | static_cast<uint64_t>(x[2]) << 16
-    | static_cast<uint64_t>(x[3]) << 24
-    | static_cast<uint64_t>(x[4]) << 32
-    | static_cast<uint64_t>(x[5]) << 40
-    | static_cast<uint64_t>(x[6]) << 48
-    | static_cast<uint64_t>(x[7]) << 56;
+template<typename T, typename = std::enable_if_t<std::is_integral<T>::value>>
+constexpr T from_little_endian(const uint8_t *x) {
+  T result{0};
+  for(size_t i = 0; i < sizeof(T); ++i) {
+    result |= static_cast<T>(x[i]) << (8*i);
+  }
+  return result;
 }
 
-static void to_little_endian(uint64_t v, unsigned char *x) {
-  x[0] = v & 0xFF;
-  x[1] = (v >> 8) & 0xFF;
-  x[2] = (v >> 16) & 0xFF;
-  x[3] = (v >> 24) & 0xFF;
-  x[4] = (v >> 32) & 0xFF;
-  x[5] = (v >> 40) & 0xFF;
-  x[6] = (v >> 48) & 0xFF;
-  x[7] = (v >> 56) & 0xFF;
+template<typename T, typename = std::enable_if_t<std::is_integral<T>::value>>
+constexpr void to_little_endian(T v, uint8_t *x) {
+  for(size_t i = 0; i < sizeof(T); ++i) {
+    x[i] = (v >> (8*i)) & 0xFF;
+  }
 }
 
 QString Session::get_transaction_id() {
@@ -290,7 +284,7 @@ QString Session::get_transaction_id() {
   uint64_t value;
   lmdb::val x;
   if(lmdb::dbi_get(txn, state_db_, transaction_id_key, x)) {
-    value = from_little_endian(x.data<const uint8_t>());
+    value = from_little_endian<uint64_t>(x.data<const uint8_t>());
   } else {
     value = 0;
   }
