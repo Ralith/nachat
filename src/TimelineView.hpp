@@ -227,6 +227,7 @@ private:
   void pop_front_block();
   QString selection_text() const;
   QUrl http_url(const QUrl &) const;
+  bool clicking() const;
 
   VisibleBlock *block_near(const QPoint &p);   // Point relative to view
 

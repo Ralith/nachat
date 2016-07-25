@@ -1002,7 +1002,7 @@ void TimelineView::mousePressEvent(QMouseEvent *event) {
     auto b = block_near(event->pos());
     auto rel_pos = event->pos() - b->bounds.topLeft();
     clicked_ = b->block->target_at(*this, rel_pos);
-    if(!clicked_ || clicked_->type != ClickTarget::Type::EVENT) {
+    if(!clicking()) {
       QApplication::setOverrideCursor(Qt::IBeamCursor);
       if(b) {
         selection_ = Selection{b->block, rel_pos, b->block, rel_pos};
@@ -1016,7 +1016,7 @@ void TimelineView::mousePressEvent(QMouseEvent *event) {
 
 void TimelineView::mouseMoveEvent(QMouseEvent *event) {
   // TODO: Explore using hover event instead
-  if(!clicked_ && event->buttons() & Qt::LeftButton) {
+  if(!clicking() && event->buttons() & Qt::LeftButton) {
     // Update selection
     // TODO: Start auto-scrolling if cursor out of viewport
     if(auto b = block_near(event->pos())) {
@@ -1171,4 +1171,8 @@ QUrl TimelineView::http_url(const QUrl &url) const {
     return matrix::Content(url).url_on(room_.session().homeserver());
   }
   return url;
+}
+
+bool TimelineView::clicking() const {
+  return clicked_ && clicked_->type != ClickTarget::Type::EVENT;
 }
