@@ -75,7 +75,7 @@ private:
     QRectF bounding_rect() const;
     void update_layout(const TimelineView &);
 
-    std::experimental::optional<ClickTarget> target_at(TimelineView &view, const QPointF &pos);
+    std::experimental::optional<ClickTarget> target_at(const QPointF &pos);
   };
 
   struct EventHit {

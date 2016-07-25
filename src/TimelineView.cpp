@@ -264,7 +264,7 @@ void TimelineView::Block::update_header(TimelineView &view, const matrix::RoomSt
     try {
       new_avatar = matrix::Content(sender->avatar_url());
     } catch(const std::invalid_argument &e) {
-      qDebug() << "invalid avatar URL:" << e.what() << ":" << sender->avatar_url();
+      qDebug() << sender_id_ << "in" << view.room_.pretty_name() << "has invalid avatar URL:" << e.what() << ":" << sender->avatar_url();
     }
     if(new_avatar != avatar_) {
       if(avatar_) view.unref_avatar(*avatar_);
@@ -392,7 +392,7 @@ static std::vector<QTextLayout::FormatRange> formats_at(const QTextLayout &layou
   return result;
 }
 
-optional<TimelineView::ClickTarget> TimelineView::Event::target_at(TimelineView &view, const QPointF &pos) {
+optional<TimelineView::ClickTarget> TimelineView::Event::target_at(const QPointF &pos) {
   for(const auto &layout : layouts) {
     if(auto cursor = cursor_at(layout, pos)) {
       auto formats = formats_at(layout, *cursor);
@@ -607,7 +607,7 @@ optional<TimelineView::ClickTarget> TimelineView::Block::target_at(TimelineView 
     return ClickTarget{ClickTarget::Type::AVATAR, nullptr, avatar_->url(), nullptr, 0, 0};
   }
   if(auto e = event_at(view.fontMetrics(), p)) {
-    return e.event->target_at(view, e.pos);
+    return e.event->target_at(e.pos);
   }
   return {};
 }
