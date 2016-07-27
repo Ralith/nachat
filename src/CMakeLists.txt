@@ -5,7 +5,6 @@ qt5_wrap_ui(UI_HEADERS
   LoginDialog.ui
   MainWindow.ui
   RoomView.ui
-  LabeledProgressBar.ui
   ChatWindow.ui
   RedactDialog.ui
   )
@@ -19,7 +18,6 @@ add_executable(native-chat WIN32
   MainWindow.cpp
   ChatWindow.cpp
   RoomView.cpp
-  LabeledProgressBar.cpp
   TimelineView.cpp
   EntryBox.cpp
   RoomMenu.cpp
