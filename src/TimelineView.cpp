@@ -852,7 +852,7 @@ void TimelineView::prepend_batch(QString start, QString end, gsl::span<const mat
     auto &internal = batch.events.front();
     if(!blocks_.empty()
        && blocks_.front().sender_id() == e.sender
-       && internal.time - blocks_.front().events().front()->time <= BLOCK_MERGE_INTERVAL) {
+       && blocks_.front().events().front()->time - internal.time <= BLOCK_MERGE_INTERVAL) {
       content_height_ -= blocks_.front().bounding_rect(*this).height();
       blocks_.front().events().emplace_front(&internal);
       blocks_.front().update_header(*this, initial_state_);  // Updates timestamp, disambig. display name, and avatar if necessary
