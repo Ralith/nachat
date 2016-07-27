@@ -577,7 +577,7 @@ void Room::send_file(const QString &path) {
     return;
   }
   QString type = QMimeDatabase().mimeTypeForFile(info).name();
-  auto reply = session_.post("media/r0/upload", f, type);
+  auto reply = session_.post("media/r0/upload", f, type, info.fileName());
   connect(reply, &QNetworkReply::finished, [this, reply, f, info, type]() {
       delete f;
       reply->deleteLater();

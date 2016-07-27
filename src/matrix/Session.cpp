@@ -206,8 +206,10 @@ QNetworkReply *Session::post(const QString &path, QJsonObject body, QUrlQuery qu
   return universe_.net.post(request(path, query), encode(body));
 }
 
-QNetworkReply *Session::post(const QString &path, QIODevice *data, const QString &content_type) {
-  return universe_.net.post(request(path, QUrlQuery(), content_type), data);
+QNetworkReply *Session::post(const QString &path, QIODevice *data, const QString &content_type, const QString &filename) {
+  QUrlQuery query;
+  query.addQueryItem("filename", filename);
+  return universe_.net.post(request(path, query, content_type), data);
 }
 
 QNetworkReply *Session::put(const QString &path, QJsonObject body) {
