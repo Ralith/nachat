@@ -5,8 +5,8 @@
 #include "Application.hpp"
 
 int main(int argc, char *argv[]) {
-  QCoreApplication::setOrganizationName("Native Chat");
-  QCoreApplication::setApplicationName("Native Chat");
+  QCoreApplication::setOrganizationName("nachat");
+  QCoreApplication::setApplicationName("nachat");
 
   Application a(argc, argv);
 
