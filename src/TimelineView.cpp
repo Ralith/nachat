@@ -1062,8 +1062,10 @@ void TimelineView::mouseReleaseEvent(QMouseEvent *event) {
 
 void TimelineView::copy() {
   QString t = selection_text();
-  if(!t.isEmpty())
+  if(!t.isEmpty()) {
     QApplication::clipboard()->setText(t);
+    QApplication::clipboard()->setText(t, QClipboard::Selection);
+  }
 }
 
 static float point_rect_dist(const QPointF &p, const QRectF &r) {
@@ -1134,11 +1136,16 @@ void TimelineView::contextMenuEvent(QContextMenuEvent *event) {
         if(url.scheme() == "mxc") {
           auto http_action = menu_->addAction(QIcon::fromTheme("edit-copy"), tr("&Copy link HTTP address"));
           connect(http_action, &QAction::triggered, [this, url]() {
-              auto data = new QMimeData;
               auto hurl = http_url(url);
+              auto data = new QMimeData;
               data->setText(hurl.toString(QUrl::FullyEncoded));
               data->setUrls({hurl});
               QApplication::clipboard()->setMimeData(data);
+
+              auto data2 = new QMimeData;
+              data2->setText(hurl.toString(QUrl::FullyEncoded));
+              data2->setUrls({hurl});
+              QApplication::clipboard()->setMimeData(data2, QClipboard::Selection);
             });
         }
         auto copy_action = menu_->addAction(QIcon::fromTheme("edit-copy"), url.scheme() == "mxc" ? tr("Copy link &MXC address") : tr("&Copy link address"));
@@ -1147,6 +1154,10 @@ void TimelineView::contextMenuEvent(QContextMenuEvent *event) {
             data->setText(url.toString(QUrl::FullyEncoded));
             data->setUrls({url});
             QApplication::clipboard()->setMimeData(data);
+            auto data2 = new QMimeData;
+            data2->setText(url.toString(QUrl::FullyEncoded));
+            data2->setUrls({url});
+            QApplication::clipboard()->setMimeData(data2, QClipboard::Selection);
           });
       }
       if(target->event) {
