@@ -490,9 +490,12 @@ void TimelineView::Block::draw(const TimelineView &view, QPainter &p, QPointF of
   } else {
     avatar_pixmap = view.avatar_unset_.pixmap(size, size);
   }
-  p.drawPixmap(QPointF(offset.x() + view.block_margin() + (size - avatar_pixmap.width()) / 2.,
-                       offset.y() + (size - avatar_pixmap.height()) / 2.),
-               avatar_pixmap);
+  {
+    const QSize logical_size = avatar_pixmap.size() / avatar_pixmap.devicePixelRatio();
+    p.drawPixmap(QPointF(offset.x() + view.block_margin() + (size - logical_size.width()) / 2.,
+                         offset.y() + (size - logical_size.height()) / 2.),
+                 avatar_pixmap);
+  }
 
   QVector<QTextLayout::FormatRange> selections;
   selections.push_back(QTextLayout::FormatRange());
