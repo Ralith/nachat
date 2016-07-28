@@ -1,0 +1,49 @@
+* High
+  - Buffer and retry failed sends inside lib
+  - Tab completion
+  - Redaction
+  - User feedback for connection/input/permissions errors
+  - Sort user list by activity, then power, then name
+    https://github.com/matrix-org/matrix-react-sdk/blob/507f5e2ca19156a2afd3470fc9b17fb5e65cdf9b/src/components/views/rooms/MemberList.js#L383
+  - Transmit read receipts
+  - Joining rooms
+  - Emote entry
+
+* Medium
+  - Desktop notifications
+  - Display room avatars
+  - Track member/room power levels
+  - Un-break room view header layout
+  - Clickable URLs in topics
+  - Emphasize display of rooms with unread messages
+  - Correct selection behavior on double and triple click
+  - Test on windows
+  - Outlines instead of bolding for highlight/disambig?
+  - Display read receipts?
+  - Package icon theme on non-linux
+  - Clickable users/user names
+  - Creating rooms
+  - User list in main window, separate from room list
+
+* Low
+  - Fix duplication of first message loaded from cache(?) by first message pulled from backlog
+    This is a serverside issue, see SYN-645
+  - Tearable tabs
+  - Display disambiguated name changes?
+  - Handle error 502 in content fetch as federation failure
+  - Factor application logic out of widget subclasses
+  - Room categories with drag&drop (QTreeView?)
+  - 'view source' for events
+  - Special-case block header/avatar for blocks whose first message is header/avatar change, using prev_content
+  - Factor event rendering and input response out of TimelineView
+  - WebRTC
+  - Drag-and-drop file sharing
+  - Persist arbitrary room state?
+  - Fix flickering sync status
+  - Save/restore open rooms
+  - Spellcheck in entry box
+  - Configuration dialog
+    - Timeline view font
+    - Maximum scrollback size
+    - Timeline cache size
+    - Timeline rendering parameters?

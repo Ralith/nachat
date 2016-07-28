@@ -1,0 +1,29 @@
+* Dependencies
+  - LMDB
+  - Qt >= 5.6
+
+  Qt 5.6 provides extended text layout support nachat relies on to implement clickable URLs in the custom timeline
+  widget, and provides superior support for high-DPI displays. Supporting earlier versions is unfortunately not trivial.
+
+* Build Requirements
+  - CMake >= 3.0
+  - A C++14 compiler and stdlib providing ~std::experimental::optional~ (OSX users need Xcode >= 8)
+
+* Building
+  1. Clone this repository and its submodules with ~git clone --recursive~, or with ~git clone~ followed by ~git
+     submodule update --init~.
+  2. Execute ~cmake -H. -Bbuild~ in the project root directory.
+  3. Execute ~make -C build~ in the project root directory.
+
+  The binary will be output at ~build/src/nachat~ and can be executed in-place.
+
+* Installation
+  An installation presently consists solely of the ~nachat~ binary, which can be copied anywhere once built.
+** Using Nix
+   ~nix-env -f . -i~ will add ~nachat~ to your path. Development takes place on the ~nixos-unstable~ channel, so
+   building on ~nixos-16.03~ may require some tweaking of ~default.nix~.
+
+* Run-time data
+** Linux
+   Username, homeserver, and access token are stored in Qt INI format ~$XDG_CONFIG_HOME/nachat/nachat.conf~. State is
+   cached in an LMDB database at ~$XDG_CACHE_HOME/nachat/nachat/<hexadecimal form of utf8 encoding of MXID>/state~.
