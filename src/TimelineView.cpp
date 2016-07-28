@@ -276,7 +276,7 @@ void TimelineView::Block::update_header(TimelineView &view, const matrix::RoomSt
                                             std::forward_as_tuple(*avatar_),
                                             std::forward_as_tuple());
         if(result.second) {
-          auto reply = view.room_.session().get_thumbnail(result.first->first, QSize(view.avatar_size(), view.avatar_size()));
+          auto reply = view.room_.session().get_thumbnail(result.first->first, view.devicePixelRatioF() * QSize(view.avatar_size(), view.avatar_size()));
           connect(reply, &matrix::ContentFetch::finished, &view, &TimelineView::set_avatar);
           connect(reply, &matrix::ContentFetch::error, &view.room_, &matrix::Room::error);
         }
@@ -970,9 +970,10 @@ void TimelineView::set_avatar(const matrix::Content &content, const QString &typ
   if(it == avatars_.end()) return;  // Avatar is no longer necessary
   QPixmap pixmap;
   pixmap.loadFromData(data);
-  const auto size = avatar_size();
+  const auto size = avatar_size() * devicePixelRatioF();
   if(pixmap.width() > size || pixmap.height() > size)
-    pixmap = pixmap.scaled(avatar_size(), avatar_size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    pixmap = pixmap.scaled(size, size, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+  pixmap.setDevicePixelRatio(devicePixelRatioF());
   avatars_.at(content).pixmap = pixmap;
   viewport()->update();
 }
