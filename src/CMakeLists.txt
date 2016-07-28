@@ -11,7 +11,7 @@ qt5_wrap_ui(UI_HEADERS
 
 add_subdirectory(matrix)
 
-add_executable(native-chat WIN32
+add_executable(nachat WIN32
   main.cpp
   Application.cpp
   LoginDialog.cpp
@@ -29,7 +29,7 @@ add_executable(native-chat WIN32
   ${UI_HEADERS}
   )
 
-target_link_libraries(native-chat
+target_link_libraries(nachat
   matrix
   Qt5::Widgets
   Qt5::Network
@@ -45,6 +45,6 @@ target_link_libraries(spinner-test
   )
 
 install(
-  TARGETS native-chat
+  TARGETS nachat
   DESTINATION bin
   )
