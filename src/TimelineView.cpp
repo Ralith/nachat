@@ -490,8 +490,8 @@ void TimelineView::Block::draw(const TimelineView &view, QPainter &p, QPointF of
   } else {
     avatar_pixmap = view.avatar_unset_.pixmap(size, size);
   }
-  p.drawPixmap(QPoint(offset.x() + view.block_margin() + (size - avatar_pixmap.width()) / 2,
-                      offset.y() + (size - avatar_pixmap.height()) / 2),
+  p.drawPixmap(QPointF(offset.x() + view.block_margin() + (size - avatar_pixmap.width()) / 2.,
+                       offset.y() + (size - avatar_pixmap.height()) / 2.),
                avatar_pixmap);
 
   QVector<QTextLayout::FormatRange> selections;
@@ -643,12 +643,13 @@ TimelineView::TimelineView(matrix::Room &room, QWidget *parent)
   connect(copy_, &QShortcut::activated, this, &TimelineView::copy);
 
   {
-    const int extent = scrollback_status_size() - block_spacing();
+    const int extent = devicePixelRatioF() * (scrollback_status_size() - block_spacing());
     spinner_ = QPixmap(extent, extent);
     spinner_.fill(Qt::transparent);
     QPainter painter(&spinner_);
     painter.setRenderHint(QPainter::Antialiasing);
     Spinner::paint(palette().color(QPalette::Shadow), palette().color(QPalette::Base), painter, extent);
+    spinner_.setDevicePixelRatio(devicePixelRatioF());
   }
 }
 
@@ -783,7 +784,7 @@ void TimelineView::paintEvent(QPaintEvent *) {
     const qreal rotation_seconds = 2;
     const qreal angle = 360. * static_cast<qreal>(t.time_since_epoch().count() % static_cast<uint64_t>(1000 * rotation_seconds)) / (1000 * rotation_seconds);
     painter.rotate(angle);
-    painter.drawPixmap(QPoint(-extent/2, -extent/2), spinner_);
+    painter.drawPixmap(QPointF(-extent/2, -extent/2), spinner_);
     painter.restore();
     QTimer::singleShot(30, viewport(), static_cast<void (QWidget::*)()>(&QWidget::update));
   }
