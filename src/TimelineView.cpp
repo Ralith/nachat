@@ -787,7 +787,7 @@ void TimelineView::paintEvent(QPaintEvent *) {
     const qreal rotation_seconds = 2;
     const qreal angle = 360. * static_cast<qreal>(t.time_since_epoch().count() % static_cast<uint64_t>(1000 * rotation_seconds)) / (1000 * rotation_seconds);
     painter.rotate(angle);
-    painter.drawPixmap(QPointF(-extent/2, -extent/2), spinner_);
+    painter.drawPixmap(QPointF(-extent/2., -extent/2.), spinner_);
     painter.restore();
     QTimer::singleShot(30, viewport(), static_cast<void (QWidget::*)()>(&QWidget::update));
   }
