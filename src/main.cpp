@@ -7,6 +7,7 @@
 int main(int argc, char *argv[]) {
   QCoreApplication::setOrganizationName("nachat");
   QCoreApplication::setApplicationName("nachat");
+  QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
 
   Application a(argc, argv);
 
