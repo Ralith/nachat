@@ -62,27 +62,29 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
   ui->action_quit->setShortcuts(QKeySequence::Quit);
   connect(ui->action_quit, &QAction::triggered, this, &MainWindow::quit);
 
-  connect(ui->room_list, &QListWidget::itemActivated, [this](QListWidgetItem *item){
-      auto &room = *reinterpret_cast<matrix::Room *>(item->data(Qt::UserRole).value<void*>());
-      ChatWindow *window;
-      auto it = chat_windows_.find(room.id());
-      if(it != chat_windows_.end()) {
-        window = it->second;   // Focus in existing window
-      } else if(last_focused_) {
-        window = last_focused_; // Add to most recently used window
-      } else {
-        if(chat_windows_.empty()) {
-          // Create first window
-          window = spawn_chat_window();
+  connect(ui->room_list, &QListWidget::itemActivated, [this](QListWidgetItem *){
+      for(auto item : ui->room_list->selectedItems()) {
+        auto &room = *reinterpret_cast<matrix::Room *>(item->data(Qt::UserRole).value<void*>());
+        ChatWindow *window;
+        auto it = chat_windows_.find(room.id());
+        if(it != chat_windows_.end()) {
+          window = it->second;   // Focus in existing window
+        } else if(last_focused_) {
+          window = last_focused_; // Add to most recently used window
         } else {
-          // Select arbitrary window
-          window = chat_windows_.begin()->second;
+          if(chat_windows_.empty()) {
+            // Create first window
+            window = spawn_chat_window();
+          } else {
+            // Select arbitrary window
+            window = chat_windows_.begin()->second;
+          }
         }
+        window->add_or_focus(room);
+        window->show();
+        window->raise();
+        window->activateWindow();
       }
-      window->add_or_focus(room);
-      window->show();
-      window->raise();
-      window->activateWindow();
     });
 
   sync_progress(0, -1);
