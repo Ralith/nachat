@@ -1,5 +1,5 @@
-find_package(Qt5Network)
-find_package(Qt5Widgets)
+find_package(Qt5Network 5.6.0 REQUIRED)
+find_package(Qt5Widgets 5.6.0 REQUIRED)
 
 qt5_wrap_ui(UI_HEADERS
   LoginDialog.ui
