@@ -1,3 +1,5 @@
+This project is in early development and is not yet suitable for regular use.
+
 * Dependencies
   - LMDB
   - Qt >= 5.6
@@ -6,16 +8,28 @@
   widget, and provides superior support for high-DPI displays. Supporting earlier versions is unfortunately not trivial.
 
 * Build Requirements
-  - CMake >= 3.0
+  - CMake >= 3.1
   - A C++14 compiler and stdlib providing ~std::experimental::optional~ (OSX users need Xcode >= 8)
 
 * Building
-  1. Clone this repository and its submodules with ~git clone --recursive~, or with ~git clone~ followed by ~git
-     submodule update --init~.
-  2. Execute ~cmake -H. -Bbuild~ in the project root directory.
-  3. Execute ~make -C build~ in the project root directory.
-
-  The binary will be output at ~build/src/nachat~ and can be executed in-place.
+  The binary will be output at ~build/src/nachat~ and can be executed in-place. Building on Windows and OSX should be
+  possible but is not yet documented.
+** Linux
+   1. Clone this repository and its submodules:
+      #+BEGIN_SRC sh
+git clone --recursive https://github.com/Ralith/nachat.git
+cd nachat
+#+END_SRC
+      or
+      #+BEGIN_SRC sh
+git clone https://github.com/Ralith/nachat.git
+cd nachat
+git submodule update --init
+#+END_SRC
+   2. ~cmake -H. -Bbuild~
+   3. ~make -C build~
+** Nix
+   A nix environment is provided. Execute ~nix-shell .~ before ~cmake~.
 
 * Installation
   An installation presently consists solely of the ~nachat~ binary, which can be copied anywhere once built.
@@ -25,5 +39,6 @@
 
 * Run-time data
 ** Linux
-   Username, homeserver, and access token are stored in Qt INI format ~$XDG_CONFIG_HOME/nachat/nachat.conf~. State is
-   cached in an LMDB database at ~$XDG_CACHE_HOME/nachat/nachat/<hexadecimal form of utf8 encoding of MXID>/state~.
+   Most recent Username, homeserver, and access token are stored in Qt INI format at
+   ~$XDG_CONFIG_HOME/nachat/nachat.conf~. Per-account data, including room state, is cached at
+   ~$XDG_CACHE_HOME/nachat/nachat/<hexadecimal form of utf8 encoding of MXID>~.
