@@ -2,6 +2,7 @@
 #include "ui_MainWindow.h"
 
 #include <algorithm>
+#include <unordered_set>
 
 #include <QSettings>
 #include <QProgressBar>
@@ -63,6 +64,7 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
   connect(ui->action_quit, &QAction::triggered, this, &MainWindow::quit);
 
   connect(ui->room_list, &QListWidget::itemActivated, [this](QListWidgetItem *){
+      std::unordered_set<ChatWindow *> windows;
       for(auto item : ui->room_list->selectedItems()) {
         auto &room = *reinterpret_cast<matrix::Room *>(item->data(Qt::UserRole).value<void*>());
         ChatWindow *window;
@@ -81,8 +83,10 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
           }
         }
         window->add_or_focus(room);
+        windows.insert(window);
+      }
+      for(auto window : windows) {
         window->show();
-        window->raise();
         window->activateWindow();
       }
     });
