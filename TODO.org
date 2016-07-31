@@ -8,6 +8,7 @@
   - Transmit read receipts
   - Joining rooms
   - Emote entry
+  - Fix streamed join events not rendering
 
 * Medium
   - Desktop notifications
@@ -18,12 +19,13 @@
   - Emphasize display of rooms with unread messages
   - Correct selection behavior on double and triple click
   - Test on windows
-  - Outlines instead of bolding for highlight/disambig?
+  - Outlines or tinted bg instead of bolding for highlight/disambig?
   - Display read receipts?
   - Package icon theme on non-linux
   - Clickable users/user names
   - Creating rooms
   - User list in main window, separate from room list
+  - Per-mxid storage of last transaction ID and open windows+rooms
 
 * Low
   - Fix duplication of first message loaded from cache(?) by first message pulled from backlog
