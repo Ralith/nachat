@@ -65,17 +65,44 @@ private:
     bool operator==(const ClickTarget &other) const { return type == other.type && layout == other.layout && start == other.start && end == other.end; }
   };
 
+  class BlockRenderInfo {
+  public:
+    BlockRenderInfo(const matrix::MemberID &self, const QPalette &p, const QFont &f, qreal w) : self_(self), palette_(p), font_(f), viewport_width_(w) {}
+
+    const matrix::MemberID &self() const { return self_; }
+    qreal width() const { return viewport_width_; }
+    qreal body_width() const { return width() - (body_start() + margin()); }
+    qreal body_start() const { return avatar_size() + 2*margin(); }
+    qreal avatar_size() const { return metrics().height() * 2 + metrics().leading(); }
+    qreal margin() const { return metrics().lineSpacing()/3.; }
+    qreal spacing() const { return metrics().lineSpacing() * 0.75; }
+    QFontMetrics metrics() const { return QFontMetrics(font_); }
+    const QFont &font() const { return font_; }
+    const QPalette &palette() const { return palette_; }
+
+    std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>>
+      format_text(const matrix::RoomState &state, const matrix::proto::Event &evt, const QString &str) const;
+
+  private:
+    matrix::MemberID self_;
+    QPalette palette_;
+    QFont font_;
+    qreal viewport_width_;
+  };
+
   class Event {
   public:
     matrix::proto::Event data;
     std::vector<QTextLayout> layouts;
     const std::chrono::time_point<std::chrono::system_clock, std::chrono::milliseconds> time;
 
-    Event(const TimelineView &, const matrix::RoomState &, const matrix::proto::Event &);
+    Event(const BlockRenderInfo &, const matrix::RoomState &, const matrix::proto::Event &);
     QRectF bounding_rect() const;
-    void update_layout(const TimelineView &);
+    void update_layout(const BlockRenderInfo &);
 
     std::experimental::optional<ClickTarget> target_at(const QPointF &pos);
+
+    void event(QEvent *e);
   };
 
   struct EventHit {
@@ -86,13 +113,16 @@ private:
 
   class Block {
   public:
-    Block(TimelineView &, const matrix::RoomState &, const matrix::proto::Event &, Event &);
-    void update_header(TimelineView &view, const matrix::RoomState &state);
-    void update_layout(const TimelineView &);
-    void draw(const TimelineView &view, QPainter &p, QPointF offset, bool select_all,
+    Block(const BlockRenderInfo &, const matrix::RoomState &, const matrix::proto::Event &, Event &);
+    void update_header(const BlockRenderInfo &, const matrix::RoomState &state);
+    void update_layout(const BlockRenderInfo &);
+    void draw(const BlockRenderInfo &, QPainter &p, QPointF offset,
+              const QPixmap &avatar,
+              bool focused,
+              bool select_all,
               std::experimental::optional<QPointF> select_start,
               std::experimental::optional<QPointF> select_end) const;
-    QRectF bounding_rect(const TimelineView &view) const;
+    QRectF bounding_rect(const BlockRenderInfo &) const;
     QString selection_text(const QFontMetrics &, bool select_all,
                            std::experimental::optional<QPointF> select_start,
                            std::experimental::optional<QPointF> select_end) const;
@@ -106,7 +136,9 @@ private:
     const std::deque<Event *> &events() const { return events_; }
 
     void hover(TimelineView &view, const QPointF &pos);
-    std::experimental::optional<ClickTarget> target_at(TimelineView &view, const QPointF &pos);
+    std::experimental::optional<ClickTarget> target_at(const BlockRenderInfo &, const QPointF &pos);
+
+    void event(const BlockRenderInfo &, QEvent *event);
 
   private:
     const QString event_id_;
@@ -208,13 +240,7 @@ private:
 
   void update_scrollbar(bool grew_upward);
 
-  int visible_width() const;
-  int block_spacing() const;
-  int block_margin() const;
-  int avatar_size() const;
-  int block_body_start() const;
-  int block_body_width() const;
-  QTextCharFormat header_format() const;
+  BlockRenderInfo block_info() const;
 
   void grow_backlog();
   void prepend_batch(QString start, QString end, gsl::span<const matrix::proto::Event> events);
@@ -235,7 +261,7 @@ private:
   // Removes enough blocks from the backlog that calling for each new event will cause backlog size to approach one
   // batch size greater than min_backlog_size_. Requires but does not perform scrollbar update!
 
-  std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> format_text(const matrix::RoomState &state, const matrix::proto::Event &, const QString &) const;
+  void ref_avatar(const matrix::Content &);
 };
 
 #endif
