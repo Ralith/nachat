@@ -28,7 +28,9 @@ build_script:
 after_build:
   - ps: md nachat
   - ps: Copy-Item "build/src/nachat.exe" -Destination "nachat/"
-  - C:\msys64\usr\bin\bash.exe -lc "cd $APPVEYOR_BUILD_FOLDER/nachat; windeployqt --no-libraries nachat.exe"
+  - C:\msys64\usr\bin\bash.exe -lc "cp `ldd $APPVEYOR_BUILD_FOLDER/nachat/nachat.exe |cut -d' ' -f3 |grep /mingw64/bin/` $APPVEYOR_BUILD_FOLDER/nachat/"
+  - ps: md nachat/platforms
+  - C:\msys64\usr\bin\bash.exe -lc "cp /mingw64/share/qt5/plugins/platforms/qwindows.dll $APPVEYOR_BUILD_FOLDER/nachat/platforms/"
   - 7z a nachat.zip nachat/
 
 artifacts:
