@@ -51,7 +51,7 @@ public:
   Session &operator=(const Session &) = delete;
 
   const QString &access_token() const { return access_token_; }
-  const QString &user_id() const { return user_id_; }
+  const UserID &user_id() const { return user_id_; }
   const QUrl &homeserver() { return homeserver_; }
 
   void log_out();

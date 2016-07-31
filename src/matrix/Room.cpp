@@ -99,10 +99,10 @@ QString RoomState::member_name(const Member &member) const {
   return result % " (" % disambig % ")";
 }
 
-std::vector<MemberID> &RoomState::members_named(QString displayname) {
+std::vector<UserID> &RoomState::members_named(QString displayname) {
   return members_by_displayname_.at(displayname.normalized(QString::NormalizationForm_C));
 }
-const std::vector<MemberID> &RoomState::members_named(QString displayname) const {
+const std::vector<UserID> &RoomState::members_named(QString displayname) const {
   return members_by_displayname_.at(displayname.normalized(QString::NormalizationForm_C));
 }
 
@@ -114,7 +114,7 @@ std::vector<const Member *> RoomState::members() const {
   return result;
 }
 
-void RoomState::forget_displayname(const MemberID &id, const QString &old_name_in, Room *room) {
+void RoomState::forget_displayname(const UserID &id, const QString &old_name_in, Room *room) {
   if(old_name_in.isEmpty()) return;
 
   const QString old_name = old_name_in.normalized(QString::NormalizationForm_C);
@@ -141,7 +141,7 @@ void RoomState::forget_displayname(const MemberID &id, const QString &old_name_i
   }
 }
 
-void RoomState::record_displayname(const MemberID &id, const QString &name, Room *room) {
+void RoomState::record_displayname(const UserID &id, const QString &name, Room *room) {
   if(name.isEmpty()) return;
 
   const auto normalized = name.normalized(QString::NormalizationForm_C);

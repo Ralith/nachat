@@ -27,17 +27,17 @@ constexpr inline bool membership_displayable(Membership m) {
   return m == Membership::JOIN || m == Membership::INVITE;
 }
 
-using MemberID = QString;
+using UserID = QString;
 
 class Member {
 public:
-  explicit Member(MemberID id) : id_(std::move(id)) {}
+  explicit Member(UserID id) : id_(std::move(id)) {}
 
   Member(QString id, const QJsonObject &);
 
   QJsonObject to_json() const;
 
-  const MemberID &id() const { return id_; }
+  const UserID &id() const { return id_; }
   const QString &display_name() const { return display_name_; }
   const QUrl &avatar_url() const { return avatar_url_; }
   Membership membership() const { return membership_; }
@@ -46,7 +46,7 @@ public:
   void update_membership(const QJsonObject &content);
 
 private:
-  MemberID id_;
+  UserID id_;
   QString display_name_;  // Optional
   QUrl avatar_url_;       // Optional
   Membership membership_ = Membership::LEAVE;

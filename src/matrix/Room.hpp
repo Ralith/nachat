@@ -56,7 +56,7 @@ public:
   const QUrl &avatar() const { return avatar_; }
 
   std::vector<const Member *> members() const;
-  const Member *member_from_id(const MemberID &id) const;
+  const Member *member_from_id(const UserID &id) const;
 
   QString pretty_name(const QString &own_id) const;
   // Matrix r0.1.0 11.2.2.5 ish (like vector-web)
@@ -76,14 +76,14 @@ private:
   std::vector<QString> aliases_;
   QString topic_;
   QUrl avatar_;
-  std::unordered_map<MemberID, Member, QStringHash> members_by_id_;
-  std::unordered_map<QString, std::vector<MemberID>, QStringHash> members_by_displayname_;
-  MemberID departed_;
+  std::unordered_map<UserID, Member, QStringHash> members_by_id_;
+  std::unordered_map<QString, std::vector<UserID>, QStringHash> members_by_displayname_;
+  UserID departed_;
 
-  void forget_displayname(const MemberID &member, const QString &old_name, Room *room);
-  void record_displayname(const MemberID &member, const QString &name, Room *room);
-  std::vector<MemberID> &members_named(QString displayname);
-  const std::vector<MemberID> &members_named(QString displayname) const;
+  void forget_displayname(const UserID &member, const QString &old_name, Room *room);
+  void record_displayname(const UserID &member, const QString &name, Room *room);
+  std::vector<UserID> &members_named(QString displayname);
+  const std::vector<UserID> &members_named(QString displayname) const;
 
   bool update_membership(const QString &user_id, const QJsonObject &content, Room *room, lmdb::dbi *member_db, lmdb::txn *txn);
 };

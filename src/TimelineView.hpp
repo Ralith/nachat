@@ -67,9 +67,9 @@ private:
 
   class BlockRenderInfo {
   public:
-    BlockRenderInfo(const matrix::MemberID &self, const QPalette &p, const QFont &f, qreal w) : self_(self), palette_(p), font_(f), viewport_width_(w) {}
+    BlockRenderInfo(const matrix::UserID &self, const QPalette &p, const QFont &f, qreal w) : self_(self), palette_(p), font_(f), viewport_width_(w) {}
 
-    const matrix::MemberID &self() const { return self_; }
+    const matrix::UserID &self() const { return self_; }
     qreal width() const { return viewport_width_; }
     qreal body_width() const { return width() - (body_start() + margin()); }
     qreal body_start() const { return avatar_size() + 2*margin(); }
@@ -84,7 +84,7 @@ private:
       format_text(const matrix::RoomState &state, const matrix::proto::Event &evt, const QString &str) const;
 
   private:
-    matrix::MemberID self_;
+    matrix::UserID self_;
     QPalette palette_;
     QFont font_;
     qreal viewport_width_;
