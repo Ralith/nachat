@@ -812,8 +812,8 @@ void TimelineView::paintEvent(QPaintEvent *) {
   if(backlog_growing_ && offset.y() > view_rect.top()) {
     painter.save();
     painter.setRenderHint(QPainter::SmoothPixmapTransform);
-    const int extent = spinner_.width();
-    painter.translate(view_rect.width() / 2, offset.y() - view_rect.top() - (extent/2 + half_spacing));
+    const qreal extent = spinner_.width() / spinner_.devicePixelRatio();
+    painter.translate(view_rect.width() / 2., offset.y() - view_rect.top() - (extent/2. + half_spacing));
     auto t = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now());
     const qreal rotation_seconds = 2;
     const qreal angle = 360. * static_cast<qreal>(t.time_since_epoch().count() % static_cast<uint64_t>(1000 * rotation_seconds)) / (1000 * rotation_seconds);
