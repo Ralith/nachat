@@ -1,3 +1,5 @@
+include(AddVersion)
+
 find_package(Qt5Network 5.6.0 REQUIRED)
 find_package(Qt5Widgets 5.6.0 REQUIRED)
 
@@ -11,6 +13,8 @@ qt5_wrap_ui(UI_HEADERS
   )
 
 add_subdirectory(matrix)
+
+add_version(version.cpp)
 
 add_executable(nachat WIN32
   main.cpp
@@ -29,6 +33,8 @@ add_executable(nachat WIN32
   RedactDialog.cpp
   EventView.cpp
   JoinDialog.cpp
+  version.cpp
+  version_string.cpp
   ${UI_HEADERS}
   )
 
