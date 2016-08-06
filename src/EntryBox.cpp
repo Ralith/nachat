@@ -87,3 +87,20 @@ void EntryBox::keyPressEvent(QKeyEvent *event) {
 void EntryBox::text_changed() {
   working_history_[history_index_] = toPlainText();
 }
+
+void EntryBox::send() {
+  const QString text = toPlainText();
+  if(text.startsWith('/')) {
+    int command_end = text.indexOf(' ');
+    if(command_end == -1) command_end = text.size();
+    const auto &name = text.mid(1, command_end - 1);
+    const auto &args = text.mid(command_end + 1);
+    if(name.isEmpty()) {
+      message(args);
+    } else {
+      command(name, args);
+    }
+  } else {
+    message(text);
+  }
+}

@@ -15,7 +15,8 @@ public:
   QSize minimumSizeHint() const override;
 
 signals:
-  void send();
+  void message(const QString &);
+  void command(const QString &name, const QString &args);
   void pageUp();
   void pageDown();
 
@@ -27,6 +28,7 @@ private:
   size_t history_index_;
 
   void text_changed();
+  void send();
 };
 
 #endif

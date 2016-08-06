@@ -34,7 +34,8 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
 
   ui->layout->insertWidget(2, entry_);
   setFocusProxy(entry_);
-  connect(entry_, &EntryBox::send, this, &RoomView::send);
+  connect(entry_, &EntryBox::message, &room_, &matrix::Room::send_message);
+  connect(entry_, &EntryBox::command, this, &RoomView::command);
   connect(entry_, &EntryBox::pageUp, [this]() {
       timeline_view_->verticalScrollBar()->triggerAction(QAbstractSlider::SliderPageStepSub);
     });
@@ -99,24 +100,13 @@ void RoomView::topic_changed(const QString &old) {
   }
 }
 
-void RoomView::send() {
-  const QString &message = entry_->toPlainText();
-  if(message.startsWith('/')) {
-    const int command_end = message.indexOf(' ');
-    const auto &command = message.mid(1, command_end - 1);
-    const auto &args = message.mid(command_end + 1);
-    if(command.isEmpty()) {
-      room_.send_message(args);
-    } else if(command == "me") {
-      room_.send_emote(args);
-    } else if(command == "join") {
-      auto req = room_.session().join(args);
-      connect(req, &matrix::JoinRequest::error, timeline_view_, &TimelineView::push_error);
-    } else {
-      // TODO: Real error feedback
-      qDebug() << "unrecognized command:" << command;
-    }
+void RoomView::command(const QString &name, const QString &args) {
+  if(name == "me") {
+    room_.send_emote(args);
+  } else if(name == "join") {
+    auto req = room_.session().join(args);
+    connect(req, &matrix::JoinRequest::error, timeline_view_, &TimelineView::push_error);
   } else {
-    room_.send_message(message);
+    timeline_view_->push_error(tr("Unrecognized command: %1").arg(name));
   }
 }
