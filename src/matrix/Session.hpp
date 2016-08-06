@@ -52,7 +52,7 @@ public:
 
   const QString &access_token() const { return access_token_; }
   const UserID &user_id() const { return user_id_; }
-  const QUrl &homeserver() { return homeserver_; }
+  const QUrl &homeserver() const { return homeserver_; }
 
   void log_out();
 
