@@ -549,6 +549,8 @@ QSize TimelineView::minimumSizeHint() const {
 }
 
 void TimelineView::focusOutEvent(QFocusEvent *e) {
+  grabbed_focus_ = nullptr;
+
   // Taken from QWidgetTextControl
   if(e->reason() != Qt::ActiveWindowFocusReason
      && e->reason() != Qt::PopupFocusReason) {
@@ -558,7 +560,6 @@ void TimelineView::focusOutEvent(QFocusEvent *e) {
 }
 
 void TimelineView::contextMenuEvent(QContextMenuEvent *event) {
-  grabbed_focus_ = nullptr;
   auto b = block_near(event->pos());
   if(b && b->bounds.contains(event->pos())) {
     b->block->event(room_, *this, block_info(), event->pos() - b->bounds.topLeft(), event);
