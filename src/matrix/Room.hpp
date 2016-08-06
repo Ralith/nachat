@@ -37,7 +37,6 @@ public:
 
   void apply(const proto::Event &e) {
     dispatch(e, nullptr, nullptr, nullptr);
-    prune_departed();
   }
   void revert(const proto::Event &e);  // Reverts an event that, if a state event, has prev_content
 

@@ -61,6 +61,7 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
     for(const auto &event : batch.events) {
       replay_state.apply(event);
       append_message(replay_state, event);
+      replay_state.prune_departed();
     }
   }
 

@@ -291,6 +291,7 @@ void Block::update_header(const BlockRenderInfo &info, const matrix::RoomState &
       name_layout_.setFormats({f});
     }
   } else {
+    qDebug() << "block sender" << sender_id_ << "is not a member";
     name_layout_.setText(sender_id_);
   }
 

@@ -278,6 +278,7 @@ bool Room::dispatch(lmdb::txn &txn, const proto::JoinedRoom &joined) {
   while(!buffer_.empty() && (buffer_size() - batch.events.size()) >= session_.buffer_size()) {
     for(auto &evt : buffer_.front().events) {
       initial_state_.apply(evt);
+      initial_state_.prune_departed();
     }
     buffer_.pop_front();
   }
