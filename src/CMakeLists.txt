@@ -26,6 +26,7 @@ add_executable(nachat WIN32
   MemberList.cpp
   Spinner.cpp
   RedactDialog.cpp
+  EventView.cpp
   ${UI_HEADERS}
   )
 

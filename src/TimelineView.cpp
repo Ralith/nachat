@@ -1,8 +1,6 @@
 #include "TimelineView.hpp"
 
-#include <sstream>
-#include <iomanip>
-#include <ctime>
+#include <chrono>
 
 #include <QDebug>
 #include <QScrollBar>
@@ -10,642 +8,18 @@
 #include <QShortcut>
 #include <QApplication>
 #include <QClipboard>
-#include <QDesktopServices>
 #include <QMenu>
 #include <QRegularExpression>
 #include <QTimer>
+#include <QToolTip>
 
 #include "matrix/Session.hpp"
 #include "Spinner.hpp"
-#include "RedactDialog.hpp"
 
 using std::experimental::optional;
 
 constexpr static int BACKLOG_BATCH_SIZE = 50;
 constexpr static std::chrono::minutes BLOCK_MERGE_INTERVAL(2);
-constexpr static std::chrono::minutes TIMESTAMP_RANGE_THRESHOLD(2);
-
-static auto to_time_point(uint64_t ts) {
-  return std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::from_time_t(0))
-      + std::chrono::duration<uint64_t, std::milli>(ts);
-}
-
-static QString pretty_size(double n) {
-  constexpr const static char *const units[9] = {"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"}; // should be enough for anyone!
-  uint64_t idx = std::min<size_t>(8, std::log(n)/std::log(1024.));
-  return QString::number(n / std::pow<double>(1024, idx), 'g', 4) + " " + units[idx];
-}
-
-std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>>
-  TimelineView::BlockRenderInfo::format_text(const matrix::RoomState &state, const matrix::proto::Event &evt, const QString &str) const {
-
-  std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> result;
-  const static QRegularExpression line_re("\\R", QRegularExpression::UseUnicodePropertiesOption | QRegularExpression::OptimizeOnFirstUsageOption);
-  auto lines = str.split(line_re);
-  result.reserve(lines.size());
-  std::transform(lines.begin(), lines.end(), std::back_inserter(result),
-                 [](const QString &s){ return std::pair<QString, QVector<QTextLayout::FormatRange>>(s, {}); });
-
-  if(evt.type == "m.room.message") {
-    const auto msgtype = evt.content["msgtype"].toString();
-    if(msgtype == "m.emote" && !result.empty()) {
-      auto &member = *state.member_from_id(evt.sender);
-      result.front().first = "* " % member.pretty_name() % " " % result.front().first;
-    }
-  }
-
-  // Detect highlights
-  auto self_member = state.member_from_id(self());
-  const bool highlight = self_member && str.toCaseFolded().contains(self_member->display_name().toCaseFolded());
-  if(highlight) {
-    QTextCharFormat highlight_format;
-    highlight_format.setFontWeight(QFont::Bold);
-    for(auto &line : result) {
-      QTextLayout::FormatRange range;
-      range.start = 0;
-      range.length = line.first.length();
-      range.format = highlight_format;
-      line.second.push_back(range);
-    }
-  }
-
-  // Detect URLs
-  const static QRegularExpression maybe_url_re(
-    "("
-    R"([a-z][a-z0-9+-.]*://[^\s]+)"
-    R"(|[^\s]+\.(com|net|org)(/[^\s]*)?)"
-    R"(|www\.[^\s]+\.[^\s]+)"
-    ")",
-    QRegularExpression::UseUnicodePropertiesOption | QRegularExpression::OptimizeOnFirstUsageOption | QRegularExpression::CaseInsensitiveOption);
-  for(auto &line : result) {
-    auto urls = maybe_url_re.globalMatch(line.first);
-    while(urls.hasNext()) {
-      auto candidate = urls.next();
-      // QUrl doesn't handle some things consistently (e.g. emoticons in .la) so we round-trip it
-      QUrl url(QUrl(candidate.captured(), QUrl::StrictMode).toString(QUrl::FullyEncoded), QUrl::StrictMode);
-      if(!url.isValid()) continue;
-      if(url.scheme().isEmpty()) url = QUrl("https://" + url.toString(QUrl::FullyEncoded), QUrl::StrictMode);
-
-      QTextLayout::FormatRange range;
-      range.start = candidate.capturedStart();
-      range.length = candidate.capturedLength();
-      QTextCharFormat format;
-      format.setAnchor(true);
-      format.setAnchorHref(url.toString(QUrl::FullyEncoded));
-      format.setForeground(palette().link());
-      format.setFontUnderline(true);
-      range.format = format;
-      line.second.push_back(range);
-    }
-  }
-  return result;
-}
-
-TimelineView::Event::Event(const BlockRenderInfo &info, const matrix::RoomState &state, const matrix::proto::Event &e)
-  : data(e), time(to_time_point(e.origin_server_ts)) {
-  std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> lines;
-  if(e.type == "m.room.message") {
-    const auto msgtype = e.content["msgtype"].toString();
-    if(msgtype == "m.file" || msgtype == "m.image" || msgtype == "m.video" || msgtype == "m.audio") {
-      lines.emplace_back();
-      auto &line = lines.front();
-      line.first = e.content["body"].toString();
-      if(line.first.isEmpty()) line.first = e.content["filename"].toString();
-      {
-        QTextLayout::FormatRange range;
-        range.start = 0;
-        range.length = line.first.length();
-        QTextCharFormat format;
-        format.setAnchor(true);
-        format.setAnchorHref(e.content["url"].toString());
-        format.setForeground(info.palette().link());
-        format.setFontUnderline(true);
-        range.format = format;
-        line.second.push_back(range);
-      }
-      auto info = e.content["info"].toObject();
-      auto type = info["mimetype"];
-      auto size = info["size"];
-      if(type.isString() || size.isDouble())
-        line.first += " (";
-      if(size.isDouble())
-        line.first += pretty_size(size.toDouble());
-      if(type.isString())
-        line.first += " " % type.toString();
-      if(type.isString() || size.isDouble())
-        line.first += ")";
-    } else {
-      lines = info.format_text(state, e, e.content["body"].toString());
-    }
-  } else if(e.type == "m.room.member") {
-    switch(matrix::parse_membership(e.content["membership"].toString()).value()) {
-    case matrix::Membership::INVITE: {
-      auto invitee = state.member_from_id(e.state_key);
-      if(!invitee) {
-        qDebug() << "got invite for non-member" << e.state_key << " probably because we're probably stepping backwards over a duplicated event from SYN-645";
-        lines = info.format_text(state, e, tr("SYN-645 related error"));
-      } else {
-        lines = info.format_text(state, e, tr("invited %1").arg(state.member_name(*invitee)));
-      }
-      break;
-    }
-    case matrix::Membership::JOIN: {
-      if(!e.unsigned_.prev_content) {
-        lines = info.format_text(state, e, tr("joined"));
-        break;
-      }
-      const auto &prev = *e.unsigned_.prev_content;
-      auto prev_membership = matrix::parse_membership(prev["membership"].toString()).value();
-      switch(prev_membership) {
-      case matrix::Membership::INVITE:
-        lines = info.format_text(state, e, tr("accepted invite"));
-        break;
-      case matrix::Membership::JOIN: {
-        const bool avatar_changed = QUrl(prev["avatar_url"].toString()) != QUrl(e.content["avatar_url"].toString());
-        const auto new_dn = e.content["displayname"].toString();
-        const auto old_dn = prev["displayname"].toString();
-        const bool dn_changed = old_dn != new_dn;
-        if(avatar_changed && dn_changed) {
-          if(new_dn.isEmpty())
-            lines = info.format_text(state, e, tr("unset display name and changed avatar"));
-          else
-            lines = info.format_text(state, e, tr("changed display name to %1 and changed avatar").arg(new_dn));
-        } else if(avatar_changed) {
-          lines = info.format_text(state, e, tr("changed avatar"));
-        } else if(dn_changed) {
-          if(new_dn.isEmpty()) {
-            lines = info.format_text(state, e, tr("unset display name"));
-          } else if(old_dn.isEmpty()) {
-            lines = info.format_text(state, e, tr("set display name to %1").arg(new_dn));
-          } else {
-            lines = info.format_text(state, e, tr("changed display name from %1 to %2").arg(old_dn).arg(new_dn));
-          }
-        } else {
-          lines = info.format_text(state, e, tr("sent a no-op join"));
-        }
-        break;
-      }
-      default:
-        lines = info.format_text(state, e, tr("joined"));
-        break;
-      }
-      break;
-    }
-    case matrix::Membership::LEAVE: {
-      lines = info.format_text(state, e, tr("left"));
-      break;
-    }
-    case matrix::Membership::BAN: {
-      auto banned = state.member_from_id(e.state_key);
-      if(!banned) {
-        qDebug() << "INTERNAL ERROR: displaying ban of unknown member" << e.state_key;
-        lines = info.format_text(state, e, tr("banned %1").arg(e.state_key));
-      } else {
-        lines = info.format_text(state, e, tr("banned %1").arg(state.member_name(*banned)));
-      }
-      break;
-    }
-    }
-  } else {
-    lines = info.format_text(state, e, tr("unrecognized event type %1").arg(e.type));
-  }
-  layouts = std::vector<QTextLayout>(lines.size());
-  QTextOption body_options;
-  body_options.setAlignment(Qt::AlignLeft | Qt::AlignTop);
-  body_options.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
-  for(size_t i = 0; i < lines.size(); ++i) {
-    layouts[i].setFont(info.font());
-    layouts[i].setTextOption(body_options);
-    layouts[i].setCacheEnabled(true);
-    layouts[i].setText(lines[i].first);
-    layouts[i].setFormats(lines[i].second);
-  }
-
-  update_layout(info);
-}
-
-static QString to_timestamp(std::chrono::system_clock::time_point p) {
-  auto time = std::chrono::system_clock::to_time_t(p);
-  auto tm = std::localtime(&time);
-  std::ostringstream s;
-  s << std::put_time(tm, "%H:%M");
-  return QString::fromStdString(s.str());
-}
-
-TimelineView::Block::Block(const BlockRenderInfo &info, const matrix::RoomState &state, const matrix::proto::Event &e,
-                           Event &e_internal)
-    : sender_id_(e.sender) {
-  events_.emplace_back(&e_internal);
-
-  {
-    QTextOption options;
-    options.setAlignment(Qt::AlignLeft | Qt::AlignTop);
-    options.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
-    name_layout_.setFont(info.font());
-    name_layout_.setTextOption(options);
-    name_layout_.setCacheEnabled(true);
-  }
-
-  {
-    QTextOption options;
-    options.setAlignment(Qt::AlignRight | Qt::AlignTop);
-    options.setWrapMode(QTextOption::NoWrap);
-    timestamp_layout_.setFont(info.font());
-    timestamp_layout_.setTextOption(options);
-    timestamp_layout_.setCacheEnabled(true);
-  }
-
-  update_header(info, state);
-}
-
-void TimelineView::Block::update_header(const BlockRenderInfo &info, const matrix::RoomState &state) {
-  auto sender = state.member_from_id(sender_id_);
-  if(sender && !sender->avatar_url().isEmpty()) {
-    std::experimental::optional<matrix::Content> new_avatar;
-    try {
-      avatar_ = matrix::Content(sender->avatar_url());
-    } catch(const std::invalid_argument &e) {
-      qDebug() << sender_id_ << "has invalid avatar URL:" << e.what() << ":" << sender->avatar_url();
-    }
-  }
-  if(sender) {
-    auto name = sender->pretty_name();
-    auto disambig = state.member_disambiguation(*sender);
-    if(disambig.isEmpty()) {
-      name_layout_.setText(name);
-    } else {
-      name_layout_.setText(name % " (" % disambig % ")");
-      QTextLayout::FormatRange f;
-      f.start = name.length() + 1;
-      f.length = disambig.length() + 2;
-      QTextCharFormat format;
-      format.setFontWeight(QFont::Bold);
-      f.format = format;
-      name_layout_.setFormats({f});
-    }
-  } else {
-    name_layout_.setText(sender_id_);
-  }
-
-  update_layout(info);
-}
-
-void TimelineView::Block::update_layout(const BlockRenderInfo &info) {
-  auto metrics = info.metrics();
-
-  {
-    qreal height = 0;
-    name_layout_.beginLayout();
-    while(true) {
-      auto line = name_layout_.createLine();
-      if(!line.isValid()) break;
-      line.setLineWidth(info.body_width());
-      line.setPosition(QPointF(info.body_start(), height));
-      height += metrics.lineSpacing();
-    }
-    name_layout_.endLayout();
-  }
-
-  {  // Lay out as a single or range timestamp as appropriate, degrading to single or nothing of space is unavailable
-    auto layout_ts = [&](){
-      timestamp_layout_.beginLayout();
-      auto line = timestamp_layout_.createLine();
-      line.setLineWidth(info.body_width());
-      line.setPosition(QPointF(info.body_start(), 0));
-      timestamp_layout_.endLayout();
-      if(name_layout_.lineAt(0).naturalTextWidth() > info.body_width() - line.naturalTextWidth()) {
-        timestamp_layout_.clearLayout();
-        return false;
-      }
-      return true;
-    };
-    auto start_ts = to_timestamp(events_.front()->time);
-    bool done = false;
-    if(events_.size() > 1 && events_.back()->time - events_.front()->time > TIMESTAMP_RANGE_THRESHOLD) {
-      auto end_ts = to_timestamp(events_.back()->time);
-      timestamp_layout_.setText(start_ts % "–" % end_ts);
-      done = layout_ts();
-    }
-    if(!done) {
-      timestamp_layout_.setText(start_ts);
-      layout_ts();
-    }
-  }
-}
-
-void TimelineView::Event::update_layout(const BlockRenderInfo &g) {
-  qreal height = 0;
-  for(auto &layout : layouts) {
-    layout.beginLayout();
-    while(true) {
-      auto line = layout.createLine();
-      if(!line.isValid()) break;
-      line.setLineWidth(g.body_width());
-      line.setPosition(QPointF(g.body_start(), height));
-      height += g.metrics().lineSpacing();
-    }
-    layout.endLayout();
-  }
-}
-
-QRectF TimelineView::Event::bounding_rect() const {
-  QRectF rect;
-  for(const auto &layout : layouts) {
-    rect |= layout.boundingRect();
-  }
-  return rect;
-}
-
-static optional<int> cursor_at(const QTextLayout &layout, const QPointF &p) {
-  for(int i = 0; i < layout.lineCount(); ++i) {
-    const auto line = layout.lineAt(i);
-    if(line.naturalTextRect().contains(p)) {
-      return line.xToCursor(p.x());
-    }
-  }
-  return {};
-}
-
-static std::vector<QTextLayout::FormatRange> formats_at(const QTextLayout &layout, int cursor) {
-  std::vector<QTextLayout::FormatRange> result;
-  for(auto &format : layout.formats()) {
-    if(format.start <= cursor && format.start + format.length > cursor) {
-      result.push_back(format);
-    }
-  }
-  return result;
-}
-
-optional<TimelineView::ClickTarget> TimelineView::Event::target_at(const QPointF &pos) {
-  for(const auto &layout : layouts) {
-    if(auto cursor = cursor_at(layout, pos)) {
-      auto formats = formats_at(layout, *cursor);
-      auto anchor = std::find_if(formats.begin(), formats.end(), [](const QTextLayout::FormatRange &f) { return f.format.isAnchor(); });
-      if(anchor != formats.end()) {
-        return ClickTarget{ClickTarget::Type::CONTENT_LINK, this, anchor->format.anchorHref(), &layout, anchor->start, anchor->length};
-      }
-      break;
-    }
-  }
-  return ClickTarget{ClickTarget::Type::EVENT, this, QUrl(), nullptr, 0, 0};
-}
-
-void TimelineView::Event::event(QEvent *) {
-  
-}
-
-QRectF TimelineView::Block::bounding_rect(const BlockRenderInfo &info) const {
-  const auto metrics = info.metrics();
-  QRectF rect(0, 0, info.width() - 2*info.margin(), info.avatar_size());
-  rect |= name_layout_.boundingRect();
-  QPointF offset(0, name_layout_.boundingRect().height() + metrics.leading());
-  for(const auto event : events_) {
-    auto event_bounds = event->bounding_rect();
-    rect |= event_bounds.translated(offset);
-    offset.ry() += event_bounds.height() + metrics.leading();
-  }
-  return rect;
-}
-
-enum class Accuracy { EXACT, NEAR };
-
-static int cursor_near(const QTextLayout &layout, const QPointF &p) {
-  int cursor;
-  for(int i = 0; i < layout.lineCount(); ++i) {
-    const auto line = layout.lineAt(i);
-    const auto rect = line.rect();
-    if(p.y() < rect.top()) {
-      return line.xToCursor(rect.left());
-    }
-    if(p.y() > rect.top() && p.y() < rect.bottom()) {
-      return line.xToCursor(p.x());
-    }
-    if(p.y() > rect.bottom()) {
-      cursor = line.xToCursor(rect.right());
-    }
-    // TODO: Special handling for right-to-left text?
-  }
-  return cursor;
-}
-
-struct TextRange {
-  int start, length;
-};
-
-static TextRange selection_for(const QTextLayout &layout, QPointF layout_origin, 
-                               bool select_all, optional<QPointF> select_start, optional<QPointF> select_end) {
-  TextRange f;
-  if(select_all) {
-    f.start = 0;
-    f.length = layout.text().length();
-  } else if(select_start && select_end) {
-    auto start_cursor = cursor_near(layout, *select_start - layout_origin);
-    auto end_cursor = cursor_near(layout, *select_end - layout_origin);
-    if(start_cursor == end_cursor) {
-      f.start = 0;
-      f.length = 0;
-    } else {
-      f.start = std::min(start_cursor, end_cursor);
-      f.length = std::max(start_cursor, end_cursor) - f.start;
-    }
-  } else if(select_start) {
-    f.start = 0;
-    f.length = cursor_near(layout, *select_start - layout_origin);
-  } else if(select_end) {
-    f.start = cursor_near(layout, *select_end - layout_origin);
-    f.length = layout.text().length() - f.start;
-  } else {
-    f.start = 0;
-    f.length = 0;
-  }
-  return f;
-}
-
-void TimelineView::Block::draw(const BlockRenderInfo &info, QPainter &p, QPointF offset, const QPixmap &avatar_pixmap,
-                               bool focused, bool select_all, optional<QPointF> select_start, optional<QPointF> select_end) const {
-  auto metrics = info.metrics();
-
-  {
-    const auto av_size = info.avatar_size();
-    const QSize logical_size = avatar_pixmap.size() / avatar_pixmap.devicePixelRatio();
-    p.drawPixmap(QPointF(offset.x() + info.margin() + (av_size - logical_size.width()) / 2.,
-                         offset.y() + (av_size - logical_size.height()) / 2.),
-                 avatar_pixmap);
-  }
-
-  QVector<QTextLayout::FormatRange> selections;
-  selections.push_back(QTextLayout::FormatRange());
-  const auto cg = focused ? QPalette::Active : QPalette::Inactive;
-  selections.front().format.setBackground(info.palette().brush(cg, QPalette::Highlight));
-  selections.front().format.setForeground(info.palette().brush(cg, QPalette::HighlightedText));
-  auto &&sel = [&](const QTextLayout &l, QPointF o) {
-    auto range = selection_for(l, o, select_all, select_start, select_end);
-    selections.front().start = range.start;
-    selections.front().length = range.length;
-  };
-
-  p.save();
-  p.setPen(info.palette().color(QPalette::Dark));
-  sel(name_layout_, QPointF(0, 0));
-  name_layout_.draw(&p, offset, selections);
-  sel(timestamp_layout_, QPointF(0, 0));
-  timestamp_layout_.draw(&p, offset, selections);
-  p.restore();
-
-  QPointF local_offset(0, name_layout_.boundingRect().height() + metrics.leading());
-
-  for(const auto event : events_) {
-    p.save();
-    if(event->data.type != "m.room.message") {
-      p.setPen(info.palette().color(QPalette::Dark));
-    }
-    QRectF event_bounds;
-    for(const auto &layout : event->layouts) {
-      sel(layout, local_offset);
-      layout.draw(&p, offset + local_offset, selections);
-      event_bounds |= layout.boundingRect();
-    }
-    local_offset.ry() += event_bounds.height() + metrics.leading();
-    p.restore();
-  }
-}
-
-QString TimelineView::Block::selection_text(const QFontMetrics &metrics, bool select_all,
-                                            optional<QPointF> select_start, optional<QPointF> select_end) const {
-  QString result;
-  auto &&get = [&](const QTextLayout &l, const QPointF &o) {
-    const auto range = selection_for(l, o, select_all, select_start, select_end);
-    return l.text().mid(range.start, range.length);
-  };
-  auto name_str = get(name_layout_, QPointF(0, 0));
-  auto timestamp_str = get(timestamp_layout_, QPointF(0, 0));
-  if(!name_str.isEmpty() && !timestamp_str.isEmpty()) {
-    result = name_str % " - " % timestamp_str;
-  } else {
-    result = name_str + timestamp_str;
-  }
-  QPointF offset(0, name_layout_.boundingRect().height() + metrics.leading());
-  for(const auto event : events_) {
-    QRectF event_bounds;
-    bool empty = true;
-    for(const auto &layout : event->layouts) {
-      auto str = get(layout, offset);
-      if(!str.isEmpty()) {
-        if(!result.isEmpty()) result += "\n  ";
-        result += str;
-      }
-      empty &= str.isEmpty();
-      event_bounds |= layout.boundingRect();
-    }
-    offset.ry() += event_bounds.height() + metrics.leading();
-  }
-  return result;
-}
-
-size_t TimelineView::Block::size() const {
-  return events_.size();
-}
-
-TimelineView::EventHit TimelineView::Block::event_at(const QFontMetrics &metrics, const QPointF &p) {
-  QPointF offset(0, name_layout_.boundingRect().height() + metrics.leading());
-  for(const auto event : events_) {
-    const auto rel_pos = p - offset;
-    QRectF event_bounds;
-    bool hit = false;
-    for(const auto &layout : event->layouts) {
-      hit |= layout.boundingRect().contains(rel_pos);
-      event_bounds |= layout.boundingRect();
-    }
-    if(hit) {
-      return EventHit{rel_pos, event};
-    }
-    offset.ry() += event_bounds.height() + metrics.leading();
-  }
-  return EventHit{QPointF(), nullptr};
-}
-
-void TimelineView::Block::hover(TimelineView &view, const QPointF &p) {
-  auto target = target_at(view.block_info(), p);
-  if(target && target->type != ClickTarget::Type::EVENT) {
-    view.viewport()->setCursor(Qt::PointingHandCursor);
-  } else {
-    const auto metrics = view.fontMetrics();
-    if(p.x() > view.block_info().avatar_size() + 2*view.block_info().margin()) {
-      if(p.y() < name_layout_.boundingRect().height() + metrics.leading() || event_at(metrics, p)) {
-        view.viewport()->setCursor(Qt::IBeamCursor);
-      } else {
-        view.viewport()->setCursor(Qt::ArrowCursor);
-      }
-    } else {
-      view.viewport()->setCursor(Qt::ArrowCursor);
-    }
-  }
-}
-
-optional<TimelineView::ClickTarget> TimelineView::Block::target_at(const BlockRenderInfo &info, const QPointF &p) {
-  if(avatar_ && QRectF(info.margin(), 0, info.avatar_size(), info.avatar_size()).contains(p)) {
-    return ClickTarget{ClickTarget::Type::AVATAR, nullptr, avatar_->url(), nullptr, 0, 0};
-  }
-  if(auto e = event_at(info.metrics(), p)) {
-    return e.event->target_at(e.pos);
-  }
-  return {};
-}
-
-void TimelineView::Block::event(const BlockRenderInfo &info, QEvent *e) {
-  QPointF pos;
-  switch(e->type()) {
-  case QEvent::MouseMove:
-  case QEvent::MouseButtonPress:
-  case QEvent::MouseButtonRelease:
-    pos = static_cast<QMouseEvent *>(e)->localPos();
-    break;
-  case QEvent::ContextMenu:
-    pos = static_cast<QContextMenuEvent *>(e)->pos();
-  case QEvent::ToolTip:
-    pos = static_cast<QHelpEvent *>(e)->pos();
-
-  default:
-    return;
-  }
-
-  if(auto mxe = event_at(info.metrics(), pos)) {
-    switch(e->type()) {
-    case QEvent::MouseMove:
-    case QEvent::MouseButtonPress:
-    case QEvent::MouseButtonRelease: {
-      auto &me = *static_cast<QMouseEvent *>(e);
-      QMouseEvent m(me.type(), mxe.pos, me.windowPos(), me.screenPos(), me.button(), me.buttons(), me.modifiers());
-      mxe.event->event(&m);
-      e->setAccepted(m.isAccepted());
-    }
-    case QEvent::ContextMenu: {
-      auto &ce = *static_cast<QContextMenuEvent *>(e);
-      QContextMenuEvent c(ce.reason(), QPoint(mxe.pos.x(), mxe.pos.y()), ce.globalPos(), ce.modifiers());
-      mxe.event->event(&c);
-      e->setAccepted(c.isAccepted());
-    }
-    case QEvent::ToolTip: {
-      auto &he = *static_cast<QHelpEvent *>(e);
-      QHelpEvent h(he.type(), QPoint(mxe.pos.x(), mxe.pos.y()), he.globalPos());
-      mxe.event->event(&h);
-      e->setAccepted(h.isAccepted());
-    }
-    default: break;
-    }
-    mxe.event->event(e);
-  }
-  if(e->isAccepted()) return;
-
-  switch(e->type()) {
-  case QEvent::MouseMove:
-  case QEvent::MouseButtonPress:
-  case QEvent::MouseButtonRelease:
-  case QEvent::ContextMenu:
-  case QEvent::ToolTip:
-  default: break;
-  }
-}
 
 size_t TimelineView::Batch::size() const {
   return events.size();
@@ -658,7 +32,7 @@ TimelineView::TimelineView(matrix::Room &room, QWidget *parent)
       avatar_unset_(QIcon::fromTheme("unknown")),
       avatar_loading_(QIcon::fromTheme("image-loading", avatar_unset_)),
       copy_(new QShortcut(QKeySequence::Copy, this)),
-      menu_(new QMenu(this)) {
+      grabbed_focus_(nullptr) {
   setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
   verticalScrollBar()->setSingleStep(20);  // Taken from QScrollArea
@@ -739,7 +113,7 @@ int TimelineView::scrollback_status_size() const {
   auto metrics = fontMetrics();
   return metrics.height() * 4;
 }
-TimelineView::BlockRenderInfo TimelineView::block_info() const {
+BlockRenderInfo TimelineView::block_info() const {
   return BlockRenderInfo(room_.session().user_id(), palette(), font(), viewport()->contentsRect().width());
 }
 
@@ -784,7 +158,7 @@ void TimelineView::paintEvent(QPaintEvent *) {
       visible_blocks_.push_back(VisibleBlock{&*it, bounds.translated(offset)});
       {
         const QRectF outline(offset.x(), offset.y() - half_spacing,
-                             view_rect.width(), bounds.height() + block_info().spacing());
+                             view_rect.width(), bounds.height() + block_info().spacing() + 0.5 / devicePixelRatioF());
         painter.save();
         painter.setRenderHint(QPainter::Antialiasing);
         QPainterPath path;
@@ -1046,65 +420,75 @@ void TimelineView::reset() {
 }
 
 void TimelineView::mousePressEvent(QMouseEvent *event) {
-  // TODO: Clickable files, images; context menus
+  auto b = block_near(event->localPos());
+  QPointF rel_pos;
+  if(b) {
+    rel_pos = event->localPos() - b->bounds.topLeft();
+  }
+  if(b && b->bounds.contains(event->pos())) {
+    b->block->event(room_, *viewport(), block_info(), rel_pos, event);
+    grabbed_focus_ = b->block;
+  } else {
+    grabbed_focus_ = nullptr;
+  }
   if(event->button() == Qt::LeftButton) {
-    auto b = block_near(event->pos());
-    auto rel_pos = event->pos() - b->bounds.topLeft();
-    clicked_ = b->block->target_at(block_info(), rel_pos);
-    if(!clicking()) {
-      QApplication::setOverrideCursor(Qt::IBeamCursor);
-      if(b) {
-        selection_ = Selection{b->block, rel_pos, b->block, rel_pos};
-      } else {
-        selection_ = {};
-      }
-      viewport()->update();
+    QApplication::setOverrideCursor(Qt::IBeamCursor);
+    if(b) {
+      selection_ = Selection{b->block, rel_pos, b->block, rel_pos};
+    } else {
+      selection_ = {};
     }
+    viewport()->update();
   }
 }
 
 void TimelineView::mouseMoveEvent(QMouseEvent *event) {
-  // TODO: Explore using hover event instead
-  if(!clicking() && event->buttons() & Qt::LeftButton) {
+  auto b = block_near(event->localPos());
+  if(grabbed_focus_) {
+    grabbed_focus_->event(room_, *viewport(), block_info(),
+                          b->block == grabbed_focus_ ? event->localPos() - b->bounds.topLeft() : optional<QPointF>{},
+                          event);
+  } else if(b) {
+    if(b->bounds.contains(event->localPos())) {
+      const auto rel_pos = event->localPos() - b->bounds.topLeft();
+      b->block->event(room_, *viewport(), block_info(), rel_pos, event);
+    } else {
+      viewport()->setCursor(Qt::ArrowCursor);
+    }
+  }
+  if(event->buttons() & Qt::LeftButton) {
     // Update selection
     // TODO: Start auto-scrolling if cursor out of viewport
-    if(auto b = block_near(event->pos())) {
+    if(b) {
       if(!selection_) {
         selection_ = Selection{};
         selection_->end = b->block;
-        selection_->end_pos = event->pos() - b->bounds.topLeft();
+        selection_->end_pos = event->localPos() - b->bounds.topLeft();
       }
       selection_->end = b->block;
-      selection_->end_pos = event->pos() - b->bounds.topLeft();
+      selection_->end_pos = event->localPos() - b->bounds.topLeft();
       QString t = selection_text();
       if(!t.isEmpty())
         QApplication::clipboard()->setText(selection_text(), QClipboard::Selection);
 
       viewport()->update();
     }
-  } else {
-    // Draw hover cursor
-    if(auto b = block_near(event->pos())) {
-      if(b->bounds.contains(event->pos())) {
-        const auto rel_pos = event->pos() - b->bounds.topLeft();
-        b->block->hover(*this, rel_pos);
-      } else {
-        viewport()->setCursor(Qt::ArrowCursor);
-      }
-    }
   }
 }
 
 void TimelineView::mouseReleaseEvent(QMouseEvent *event) {
+  grabbed_focus_ = nullptr;
+  auto b = block_near(event->localPos());
+  if(grabbed_focus_) {
+    grabbed_focus_->event(room_, *viewport(), block_info(),
+                          b->block == grabbed_focus_ ? event->localPos() - b->bounds.topLeft() : optional<QPointF>{},
+                          event);
+  } else if(b && b->bounds.contains(event->localPos())) {
+    const auto rel_pos = event->localPos() - b->bounds.topLeft();
+    b->block->event(room_, *viewport(), block_info(), rel_pos, event);
+  }
   if(event->button() == Qt::LeftButton) {
-    auto b = block_near(event->pos());
-    if(b && clicked_ && clicked_ == b->block->target_at(block_info(), event->pos() - b->bounds.topLeft()) && clicked_->type != ClickTarget::Type::EVENT) {
-      if(!QDesktopServices::openUrl(http_url(clicked_->url))) {
-        qDebug() << "failed to open URL" << http_url(clicked_->url).toString(QUrl::FullyEncoded);
-      }
-    } else {
-      QApplication::restoreOverrideCursor();
-    }
+    QApplication::restoreOverrideCursor();
   }
 }
 
@@ -1124,7 +508,7 @@ static float point_rect_dist(const QPointF &p, const QRectF &r) {
   return std::sqrt(dx*dx + dy*dy);
 }
 
-TimelineView::VisibleBlock *TimelineView::block_near(const QPoint &p) {
+TimelineView::VisibleBlock *TimelineView::block_near(const QPointF &p) {
   float minimum_distance = std::numeric_limits<float>::max();
   VisibleBlock *closest = nullptr;
   for(auto &x : visible_blocks_) {
@@ -1174,67 +558,27 @@ void TimelineView::focusOutEvent(QFocusEvent *e) {
 }
 
 void TimelineView::contextMenuEvent(QContextMenuEvent *event) {
-  if(auto b = block_near(event->pos())) {
-    const auto rel_pos = event->pos() - b->bounds.topLeft();
-    if(auto target = b->block->target_at(block_info(), rel_pos)) {
-      menu_->clear();
-      if(target->type != ClickTarget::Type::EVENT) {
-        menu_->addSection("Link");
-        const QUrl &url = target->url;
-        if(url.scheme() == "mxc") {
-          auto http_action = menu_->addAction(QIcon::fromTheme("edit-copy"), tr("&Copy link HTTP address"));
-          connect(http_action, &QAction::triggered, [this, url]() {
-              auto hurl = http_url(url);
-              auto data = new QMimeData;
-              data->setText(hurl.toString(QUrl::FullyEncoded));
-              data->setUrls({hurl});
-              QApplication::clipboard()->setMimeData(data);
+  grabbed_focus_ = nullptr;
+  auto b = block_near(event->pos());
+  if(b && b->bounds.contains(event->pos())) {
+    b->block->event(room_, *this, block_info(), event->pos() - b->bounds.topLeft(), event);
+  }
+}
 
-              auto data2 = new QMimeData;
-              data2->setText(hurl.toString(QUrl::FullyEncoded));
-              data2->setUrls({hurl});
-              QApplication::clipboard()->setMimeData(data2, QClipboard::Selection);
-            });
-        }
-        auto copy_action = menu_->addAction(QIcon::fromTheme("edit-copy"), url.scheme() == "mxc" ? tr("Copy link &MXC address") : tr("&Copy link address"));
-        connect(copy_action, &QAction::triggered, [url]() {
-            auto data = new QMimeData;
-            data->setText(url.toString(QUrl::FullyEncoded));
-            data->setUrls({url});
-            QApplication::clipboard()->setMimeData(data);
-            auto data2 = new QMimeData;
-            data2->setText(url.toString(QUrl::FullyEncoded));
-            data2->setUrls({url});
-            QApplication::clipboard()->setMimeData(data2, QClipboard::Selection);
-          });
-      }
-      if(target->event) {
-        menu_->addSection("Event");
-        const QString &id = target->event->data.event_id;
-        auto redact_action = menu_->addAction(QIcon::fromTheme("edit-delete"), tr("&Redact..."));
-        connect(redact_action, &QAction::triggered, [this, id]() {
-            auto dialog = new RedactDialog(this);
-            dialog->setAttribute(Qt::WA_DeleteOnClose);
-            connect(dialog, &QDialog::accepted, [this, id, dialog]() {
-                room_.redact(id, dialog->reason());
-              });
-            dialog->open();
-          });
-      }
-      menu_->popup(event->globalPos());
+bool TimelineView::viewportEvent(QEvent *e) {
+  if(e->type() == QEvent::ToolTip) {
+    auto help = static_cast<QHelpEvent*>(e);
+    auto b = block_near(help->pos());
+    if(b && b->bounds.contains(help->pos())) {
+      b->block->event(room_, *this, block_info(), help->pos() - b->bounds.topLeft(), help);
+    } else {
+      QToolTip::hideText();
+      e->ignore();
     }
-  }
-}
 
-QUrl TimelineView::http_url(const QUrl &url) const {
-  if(url.scheme() == "mxc") {
-    return matrix::Content(url).url_on(room_.session().homeserver());
+    return true;
   }
-  return url;
-}
-
-bool TimelineView::clicking() const {
-  return clicked_ && clicked_->type != ClickTarget::Type::EVENT;
+  return QAbstractScrollArea::viewportEvent(e);
 }
 
 void TimelineView::ref_avatar(const matrix::Content &content) {

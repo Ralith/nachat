@@ -2,7 +2,6 @@
 #define NATIVE_CHAT_TIMELINE_VIEW_HPP_
 
 #include <deque>
-#include <chrono>
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
@@ -19,9 +18,7 @@
 #include "matrix/Content.hpp"
 
 #include "QStringHash.hpp"
-
-class QShortcut;
-class QMenu;
+#include "EventView.hpp"
 
 class TimelineView : public QAbstractScrollArea {
   Q_OBJECT
@@ -40,6 +37,8 @@ public:
   QSize sizeHint() const override;
   QSize minimumSizeHint() const override;
 
+  BlockRenderInfo block_info() const;
+
 protected:
   void paintEvent(QPaintEvent *event) override;
   void resizeEvent(QResizeEvent *event) override;
@@ -49,107 +48,9 @@ protected:
   void mouseMoveEvent(QMouseEvent *event) override;
   void focusOutEvent(QFocusEvent *event) override;
   void contextMenuEvent(QContextMenuEvent *event) override;
+  bool viewportEvent(QEvent *event) override;
 
 private:
-  class Event;
-
-  struct ClickTarget {
-    enum class Type {
-      LINK, CONTENT_LINK, AVATAR, EVENT
-    };
-    Type type;
-    Event *event;
-    QUrl url;
-    const QTextLayout *layout;
-    int start, end;
-    bool operator==(const ClickTarget &other) const { return type == other.type && layout == other.layout && start == other.start && end == other.end; }
-  };
-
-  class BlockRenderInfo {
-  public:
-    BlockRenderInfo(const matrix::UserID &self, const QPalette &p, const QFont &f, qreal w) : self_(self), palette_(p), font_(f), viewport_width_(w) {}
-
-    const matrix::UserID &self() const { return self_; }
-    qreal width() const { return viewport_width_; }
-    qreal body_width() const { return width() - (body_start() + margin()); }
-    qreal body_start() const { return avatar_size() + 2*margin(); }
-    qreal avatar_size() const { return metrics().height() * 2 + metrics().leading(); }
-    qreal margin() const { return metrics().lineSpacing()/3.; }
-    qreal spacing() const { return metrics().lineSpacing() * 0.75; }
-    QFontMetrics metrics() const { return QFontMetrics(font_); }
-    const QFont &font() const { return font_; }
-    const QPalette &palette() const { return palette_; }
-
-    std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>>
-      format_text(const matrix::RoomState &state, const matrix::proto::Event &evt, const QString &str) const;
-
-  private:
-    matrix::UserID self_;
-    QPalette palette_;
-    QFont font_;
-    qreal viewport_width_;
-  };
-
-  class Event {
-  public:
-    matrix::proto::Event data;
-    std::vector<QTextLayout> layouts;
-    const std::chrono::time_point<std::chrono::system_clock, std::chrono::milliseconds> time;
-
-    Event(const BlockRenderInfo &, const matrix::RoomState &, const matrix::proto::Event &);
-    QRectF bounding_rect() const;
-    void update_layout(const BlockRenderInfo &);
-
-    std::experimental::optional<ClickTarget> target_at(const QPointF &pos);
-
-    void event(QEvent *e);
-  };
-
-  struct EventHit {
-    QPointF pos;
-    Event *event;
-    explicit operator bool(){ return event; }
-  };
-
-  class Block {
-  public:
-    Block(const BlockRenderInfo &, const matrix::RoomState &, const matrix::proto::Event &, Event &);
-    void update_header(const BlockRenderInfo &, const matrix::RoomState &state);
-    void update_layout(const BlockRenderInfo &);
-    void draw(const BlockRenderInfo &, QPainter &p, QPointF offset,
-              const QPixmap &avatar,
-              bool focused,
-              bool select_all,
-              std::experimental::optional<QPointF> select_start,
-              std::experimental::optional<QPointF> select_end) const;
-    QRectF bounding_rect(const BlockRenderInfo &) const;
-    QString selection_text(const QFontMetrics &, bool select_all,
-                           std::experimental::optional<QPointF> select_start,
-                           std::experimental::optional<QPointF> select_end) const;
-
-    const QString &sender_id() const { return sender_id_; }
-    size_t size() const;
-    const std::experimental::optional<matrix::Content> &avatar() const { return avatar_; }
-    EventHit event_at(const QFontMetrics &, const QPointF &);
-
-    std::deque<Event *> &events() { return events_; }
-    const std::deque<Event *> &events() const { return events_; }
-
-    void hover(TimelineView &view, const QPointF &pos);
-    std::experimental::optional<ClickTarget> target_at(const BlockRenderInfo &, const QPointF &pos);
-
-    void event(const BlockRenderInfo &, QEvent *event);
-
-  private:
-    const QString event_id_;
-    const QString sender_id_;
-    std::experimental::optional<matrix::Content> avatar_;
-
-    QTextLayout name_layout_, timestamp_layout_;
-
-    std::deque<Event *> events_;  // deque so we can add events to either end
-  };
-
   struct Batch {
     std::deque<Event> events;  // deque purely so we don't try to copy/move QTextLayout
     QString token;
@@ -234,13 +135,10 @@ private:
   std::experimental::optional<Selection> selection_;
   QShortcut *copy_;
   std::vector<VisibleBlock> visible_blocks_;
-  std::experimental::optional<ClickTarget> clicked_;
-  QMenu *menu_;
   QPixmap spinner_;
+  Block *grabbed_focus_;
 
   void update_scrollbar(bool grew_upward);
-
-  BlockRenderInfo block_info() const;
 
   void grow_backlog();
   void prepend_batch(QString start, QString end, gsl::span<const matrix::proto::Event> events);
@@ -252,10 +150,8 @@ private:
   void copy();
   void pop_front_block();
   QString selection_text() const;
-  QUrl http_url(const QUrl &) const;
-  bool clicking() const;
 
-  VisibleBlock *block_near(const QPoint &p);   // Point relative to view
+  VisibleBlock *block_near(const QPointF &p);   // Point relative to view
 
   void prune_backlog();
   // Removes enough blocks from the backlog that calling for each new event will cause backlog size to approach one
