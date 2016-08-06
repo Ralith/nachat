@@ -58,7 +58,7 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
                                            QMessageBox::Close,
                                            dialog);
               error->open();
-              connect(error, &QDialog::finished, dialog, &QWidget::close);
+              connect(error, &QDialog::finished, dialog, [dialog]() { if(dialog) dialog->setEnabled(true); });
             });
           connect(reply, &matrix::JoinRequest::success, dialog, &QWidget::close);
         });
