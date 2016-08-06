@@ -13,6 +13,7 @@ class QProgressBar;
 class QSettings;
 class QLabel;
 class ChatWindow;
+class QListWidgetItem;
 
 namespace Ui {
 class MainWindow;
@@ -33,6 +34,14 @@ signals:
   void quit();
 
 private:
+  struct RoomInfo {
+    ChatWindow *window = nullptr;
+    QListWidgetItem *item = nullptr;
+    bool has_unread = false;
+    QString display_name;
+    size_t highlight_count = 0;
+  };
+
   Ui::MainWindow *ui;
   QSettings &settings_;
   std::unique_ptr<matrix::Session> session_;
@@ -40,11 +49,12 @@ private:
   QLabel *sync_label_;
   QPointer<ChatWindow> last_focused_;
 
-  std::unordered_map<matrix::RoomID, ChatWindow *, QStringHash> chat_windows_;
+  std::unordered_map<matrix::RoomID, RoomInfo, QStringHash> rooms_;
 
   void joined(matrix::Room &room);
-  void highlighted(matrix::Room &room, uint64_t old);
-  void update_rooms();
+  void highlight(const matrix::RoomID &room);
+  void update_room(RoomInfo &info);
+  void update_room(matrix::Room &room);
   void sync_progress(qint64 received, qint64 total);
   ChatWindow *spawn_chat_window();
 };

@@ -34,8 +34,10 @@ public:
 
   RoomView *take(const matrix::RoomID &); // Releases ownership
 
+  const matrix::RoomID &focused_room() const;
+
 signals:
-  void focused();
+  void focused(const matrix::RoomID &);
   void released(const matrix::RoomID &);
   void claimed(const matrix::RoomID &);
   void pop_out(const matrix::RoomID &, RoomView *);

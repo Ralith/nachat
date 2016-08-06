@@ -109,7 +109,7 @@ void ChatWindow::current_changed(int i) {
 void ChatWindow::changeEvent(QEvent *e) {   
   QWidget::changeEvent(e);
   if(e->type() == QEvent::ActivationChange && isActiveWindow()) {
-    focused();
+    focused(focused_room());
   }
 }
 
@@ -122,4 +122,8 @@ void ChatWindow::closeEvent(QCloseEvent *evt) {
 
 void ChatWindow::dirty(const matrix::RoomID &room) {
   room_list_->dirty(room);
+}
+
+const matrix::RoomID &ChatWindow::focused_room() const {
+  return static_cast<RoomView*>(ui->room_stack->currentWidget())->room().id();
 }
