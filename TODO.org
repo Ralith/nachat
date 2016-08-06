@@ -20,10 +20,10 @@
   - Outlines or tinted bg instead of bolding for highlight/disambig?
   - Display read receipts?
   - Package icon theme on non-linux
-  - Clickable users/user names
+  - Clickable MXIDs/room IDs/aliases
   - Creating rooms
   - User list in main window, separate from room list
-  - Per-mxid storage of last transaction ID and open windows+rooms
+  - Per-mxid storage of last transaction ID and open windows+rooms in lmdb
   - Large avatars in user profile views
 
 * Low
@@ -44,7 +44,8 @@
   - Save/restore open rooms
   - Spellcheck in entry box
   - Configuration dialog
-    - Timeline view font
+    - Event font
     - Maximum scrollback size
     - Timeline cache size
     - Timeline rendering parameters?
+  - Clickable email addresses
