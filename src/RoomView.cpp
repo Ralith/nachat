@@ -72,9 +72,7 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
 RoomView::~RoomView() { delete ui; }
 
 void RoomView::message(const matrix::proto::Event &evt) {
-  if(evt.type == "m.room.message") {
-    append_message(room_.state(), evt);
-  }
+  append_message(room_.state(), evt);
 }
 
 void RoomView::member_name_changed(const matrix::Member &member, QString old) {
