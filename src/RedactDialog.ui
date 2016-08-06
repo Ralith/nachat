@@ -7,22 +7,22 @@
     <x>0</x>
     <y>0</y>
     <width>268</width>
-    <height>238</height>
+    <height>224</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>Redact Event</string>
   </property>
+  <property name="sizeGripEnabled">
+   <bool>true</bool>
+  </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
-    <widget class="QLabel" name="label">
-     <property name="text">
-      <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Reason for redaction:&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    <widget class="QPlainTextEdit" name="reason">
+     <property name="placeholderText">
+      <string>Redacted because...</string>
      </property>
     </widget>
-   </item>
-   <item>
-    <widget class="QPlainTextEdit" name="reason"/>
    </item>
    <item>
     <widget class="QDialogButtonBox" name="buttonBox">
