@@ -208,6 +208,7 @@ QString Room::pretty_name() const {
 void Room::load_state(lmdb::txn &txn, gsl::span<const proto::Event> events) {
   for(auto &state : events) {
     initial_state_.apply(state);
+    initial_state_.prune_departed();
     state_.dispatch(state, this, &member_db_, &txn);
     state_.prune_departed();
   }
