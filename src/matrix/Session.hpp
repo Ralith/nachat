@@ -24,6 +24,17 @@ struct Sync;
 
 class Matrix;
 
+class JoinRequest : public QObject {
+  Q_OBJECT
+
+public:
+  explicit JoinRequest(QObject *parent) : QObject(parent) {}
+
+signals:
+  void success(const RoomID &id);
+  void error(const QString &msg);
+};
+
 class ContentFetch : public QObject {
   Q_OBJECT
 
@@ -84,6 +95,8 @@ public:
   ContentFetch *get_thumbnail(const Content &, const QSize &size, ThumbnailMethod method = ThumbnailMethod::SCALE);
 
   QString get_transaction_id();
+
+  JoinRequest *join(const QString &id_or_alias);
 
 signals:
   void logged_out();

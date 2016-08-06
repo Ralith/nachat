@@ -1,6 +1,7 @@
 #include "Room.hpp"
 
 #include <unordered_set>
+#include <memory>
 
 #include <QJsonObject>
 #include <QJsonArray>
@@ -498,7 +499,6 @@ MessageFetch *Room::get_messages(Direction dir, QString from, uint64_t limit, QS
   auto result = new MessageFetch(reply);
   connect(reply, &QNetworkReply::finished, [this, reply, result]() {
       auto r = decode(reply);
-      reply->deleteLater();
       if(r.error) {
         result->error(*r.error);
         error(*r.error);
@@ -533,7 +533,6 @@ MessageFetch *Room::get_messages(Direction dir, QString from, uint64_t limit, QS
 void Room::leave() {
   auto reply = session_.post("client/r0/rooms/" % id_ % "/leave");
   connect(reply, &QNetworkReply::finished, [this, reply]() {
-      reply->deleteLater();
       auto r = decode(reply);
       if(r.error) {
         error(*r.error);
@@ -547,7 +546,6 @@ void Room::send(const QString &type, QJsonObject content) {
                             content);
   auto es = new EventSend(reply);
   connect(reply, &QNetworkReply::finished, [reply, es, txn]() {
-      reply->deleteLater();
       if(reply->error()) es->error(reply->errorString());
       else es->finished();
     });
@@ -561,7 +559,6 @@ void Room::redact(const EventID &event, const QString &reason) {
     );
   auto es = new EventSend(reply);
   connect(reply, &QNetworkReply::finished, [reply, es]() {
-      reply->deleteLater();
       if(reply->error()) es->error(reply->errorString());
       else es->finished();
     });
@@ -569,18 +566,15 @@ void Room::redact(const EventID &event, const QString &reason) {
 }
 
 void Room::send_file(const QString &path) {
-  auto f = new QFile(path, this);
+  auto f = std::make_shared<QFile>(path, this);
   QFileInfo info(*f);
   if(!f->open(QIODevice::ReadOnly)) {
     error(f->errorString());
-    delete f;
     return;
   }
   QString type = QMimeDatabase().mimeTypeForFile(info).name();
-  auto reply = session_.post("media/r0/upload", f, type, info.fileName());
+  auto reply = session_.post("media/r0/upload", f.get(), type, info.fileName());
   connect(reply, &QNetworkReply::finished, [this, reply, f, info, type]() {
-      delete f;
-      reply->deleteLater();
       auto r = decode(reply);
       if(r.error) {
         error(*r.error);

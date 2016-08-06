@@ -39,6 +39,8 @@ public:
 
   BlockRenderInfo block_info() const;
 
+  void push_error(const QString &message);
+
 protected:
   void paintEvent(QPaintEvent *event) override;
   void resizeEvent(QResizeEvent *event) override;

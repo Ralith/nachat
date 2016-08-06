@@ -582,3 +582,7 @@ TimelineView::VisibleBlock *TimelineView::dispatch_event(const optional<QPointF>
 
   return nullptr;
 }
+
+void TimelineView::push_error(const QString &msg) {
+  qDebug() << "ERROR:" << msg;
+}

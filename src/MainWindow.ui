@@ -55,6 +55,8 @@
     <property name="title">
      <string>&amp;Matrix</string>
     </property>
+    <addaction name="action_join"/>
+    <addaction name="separator"/>
     <addaction name="action_log_out"/>
     <addaction name="separator"/>
     <addaction name="action_quit"/>
@@ -68,7 +70,7 @@
      <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
-    <string>&amp;Log Out</string>
+    <string>&amp;Log out</string>
    </property>
   </action>
   <action name="action_quit">
@@ -78,6 +80,14 @@
    </property>
    <property name="text">
     <string>&amp;Quit</string>
+   </property>
+  </action>
+  <action name="action_join">
+   <property name="icon">
+    <iconset theme="window-new"/>
+   </property>
+   <property name="text">
+    <string>&amp;Join room...</string>
    </property>
   </action>
  </widget>

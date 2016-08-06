@@ -8,6 +8,7 @@
 #include <QProgressBar>
 #include <QLabel>
 #include <QSystemTrayIcon>
+#include <QMessageBox>
 
 #include "matrix/Room.hpp"
 #include "matrix/Session.hpp"
@@ -15,6 +16,7 @@
 #include "sort.hpp"
 #include "RoomView.hpp"
 #include "ChatWindow.hpp"
+#include "JoinDialog.hpp"
 
 MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> session)
     : ui(new Ui::MainWindow), settings_(settings), session_(std::move(session)),
@@ -38,6 +40,29 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
       settings_.remove("session/access_token");
       settings_.remove("session/user_id");
       ui->action_quit->trigger();
+    });
+
+  connect(ui->action_join, &QAction::triggered, [this]() {
+      QPointer<JoinDialog> dialog(new JoinDialog);
+      dialog->setAttribute(Qt::WA_DeleteOnClose);
+      connect(dialog, &QDialog::accepted, [this, dialog]() {
+          const QString room = dialog->room();
+          auto reply = session_->join(room);
+          connect(reply, &matrix::JoinRequest::error, [room, dialog](const QString &msg) {
+              if(!dialog) return;
+              auto error = new QMessageBox(QMessageBox::Critical,
+                                           tr("Failed to join room"),
+                                           tr("Couldn't join %1: %2")
+                                           .arg(room)
+                                           .arg(msg),
+                                           QMessageBox::Close,
+                                           dialog);
+              error->open();
+              connect(error, &QDialog::finished, dialog, &QWidget::close);
+            });
+          connect(reply, &matrix::JoinRequest::success, dialog, &QWidget::close);
+        });
+      dialog->open();
     });
 
   connect(session_.get(), &matrix::Session::error, [this](QString msg) {

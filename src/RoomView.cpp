@@ -10,6 +10,8 @@
 
 #include "matrix/Room.hpp"
 #include "matrix/Member.hpp"
+#include "matrix/Session.hpp"
+
 #include "TimelineView.hpp"
 #include "EntryBox.hpp"
 #include "RoomMenu.hpp"
@@ -107,6 +109,9 @@ void RoomView::send() {
       room_.send_message(args);
     } else if(command == "me") {
       room_.send_emote(args);
+    } else if(command == "join") {
+      auto req = room_.session().join(args);
+      connect(req, &matrix::JoinRequest::error, timeline_view_, &TimelineView::push_error);
     } else {
       // TODO: Real error feedback
       qDebug() << "unrecognized command:" << command;

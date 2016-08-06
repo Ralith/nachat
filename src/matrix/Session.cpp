@@ -88,7 +88,6 @@ void Session::sync(QUrlQuery query) {
   }
   auto reply = get("client/r0/sync", query);
   connect(reply, &QNetworkReply::finished, [this, reply](){
-      reply->deleteLater();
       sync_progress(0, 0);
       handle_sync_reply(reply);
     });
@@ -169,7 +168,6 @@ void Session::dispatch(lmdb::txn &txn, proto::Sync sync) {
 void Session::log_out() {
   auto reply = post("client/r0/logout", {});
   connect(reply, &QNetworkReply::finished, [this, reply](){
-      reply->deleteLater();
       auto r = decode(reply);
       if(!r.error || r.code == 404) {  // 404 = already logged out
         logged_out();
@@ -189,43 +187,44 @@ std::vector<Room *> Session::rooms() {
 
 QNetworkRequest Session::request(const QString &path, QUrlQuery query, const QString &content_type) {
   QUrl url(homeserver_);
-  url.setPath("/_matrix/" % path);
+  url.setPath("/_matrix/" + path);
   query.addQueryItem("access_token", access_token_);
   url.setQuery(query);
   QNetworkRequest req(url);
   req.setHeader(QNetworkRequest::ContentTypeHeader, content_type);
-  req.setRawHeader("Accept", "application/json");
   return req;
 }
 
 QNetworkReply *Session::get(const QString &path, QUrlQuery query) {
-  return universe_.net.get(request(path, query));
+  auto reply = universe_.net.get(request(path, query));
+  connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
+  return reply;
 }
 
 QNetworkReply *Session::post(const QString &path, QJsonObject body, QUrlQuery query) {
-  return universe_.net.post(request(path, query), encode(body));
+  auto reply = universe_.net.post(request(path, query), encode(body));
+  connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
+  return reply;
 }
 
 QNetworkReply *Session::post(const QString &path, QIODevice *data, const QString &content_type, const QString &filename) {
   QUrlQuery query;
   query.addQueryItem("filename", filename);
-  return universe_.net.post(request(path, query, content_type), data);
+  auto reply = universe_.net.post(request(path, query, content_type), data);
+  connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
+  return reply;
 }
 
 QNetworkReply *Session::put(const QString &path, QJsonObject body) {
-  return universe_.net.put(request(path), encode(body));
+  auto reply = universe_.net.put(request(path), encode(body));
+  connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
+  return reply;
 }
 
 ContentFetch *Session::get(const Content &content) {
-  auto url = content.url_on(homeserver_);
-  QUrlQuery query;
-  query.addQueryItem("access_token", access_token_);
-  url.setQuery(query);
-  QNetworkRequest req(url);
-  auto reply = universe_.net.get(req);
+  auto reply = get("media/r0/download/" % content.host() % "/" % content.id());
   auto result = new ContentFetch(reply);
   connect(reply, &QNetworkReply::finished, [content, reply, result]() {
-      reply->deleteLater();
       if(reply->error()) {
         result->error(reply->errorString());
       } else {
@@ -239,19 +238,14 @@ ContentFetch *Session::get(const Content &content) {
 }
 
 ContentFetch *Session::get_thumbnail(const Content &content, const QSize &size, ThumbnailMethod method) {
-  QUrl url(homeserver_);
-  url.setPath("/_matrix/media/r0/thumbnail/" % content.host() % "/" % content.id());
   QUrlQuery query;
   query.addQueryItem("access_token", access_token_);
   query.addQueryItem("width", QString::number(size.width()));
   query.addQueryItem("height", QString::number(size.height()));
   query.addQueryItem("method", method == ThumbnailMethod::SCALE ? "scale" : "crop");
-  url.setQuery(query);
-  QNetworkRequest req(url);
-  auto reply = universe_.net.get(req);
+  auto reply = get("media/r0/thumbnail/" % content.host() % "/" % content.id(), query);
   auto result = new ContentFetch(reply);
   connect(reply, &QNetworkReply::finished, [content, reply, result]() {
-      reply->deleteLater();
       if(reply->error()) {
         result->error(reply->errorString());
       } else {
@@ -299,6 +293,20 @@ QString Session::get_transaction_id() {
   txn.commit();
 
   return QString::number(value, 36);
+}
+
+JoinRequest *Session::join(const QString &id_or_alias) {
+  auto reply = post("client/r0/join/" + id_or_alias, {});
+  auto req = new JoinRequest(reply);
+  connect(reply, &QNetworkReply::finished, [reply, req]() {
+      auto r = decode(reply);
+      if(r.error) {
+        req->error(*r.error);
+      } else {
+        req->success(r.object["room_id"].toString());
+      }
+    });
+  return req;
 }
 
 }
