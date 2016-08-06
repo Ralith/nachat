@@ -7,7 +7,6 @@
     https://github.com/matrix-org/matrix-react-sdk/blob/507f5e2ca19156a2afd3470fc9b17fb5e65cdf9b/src/components/views/rooms/MemberList.js#L383
   - Transmit read receipts
   - Joining rooms
-  - Emote entry
   - Fix streamed join events not rendering
 
 * Medium
@@ -26,6 +25,7 @@
   - Creating rooms
   - User list in main window, separate from room list
   - Per-mxid storage of last transaction ID and open windows+rooms
+  - Large avatars in user profile views
 
 * Low
   - Fix duplication of first message loaded from cache(?) by first message pulled from backlog

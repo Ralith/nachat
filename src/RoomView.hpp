@@ -48,6 +48,7 @@ private:
   void member_name_changed(const matrix::Member &, QString);
   void topic_changed(const QString &);
   void append_message(const matrix::RoomState &, const matrix::proto::Event &);
+  void send();
 };
 
 #endif // ROOMVIEW_H
