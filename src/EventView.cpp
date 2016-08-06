@@ -69,12 +69,12 @@ std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>>
 
   // Detect URLs
   const static QRegularExpression maybe_url_re(
-    "("
+    R"(\b()"
     R"([a-z][a-z0-9+-.]*://[^\s]+)"
     R"(|[^\s]+\.(com|net|org)(/[^\s]*)?)"
     R"(|www\.[^\s]+\.[^\s]+)"
     R"(|data:[^\s]+)"
-    ")",
+    R"())",
     QRegularExpression::UseUnicodePropertiesOption | QRegularExpression::OptimizeOnFirstUsageOption | QRegularExpression::CaseInsensitiveOption);
   for(auto &line : result) {
     auto urls = maybe_url_re.globalMatch(line.first);
