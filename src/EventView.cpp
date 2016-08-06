@@ -73,6 +73,7 @@ std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>>
     R"([a-z][a-z0-9+-.]*://[^\s]+)"
     R"(|[^\s]+\.(com|net|org)(/[^\s]*)?)"
     R"(|www\.[^\s]+\.[^\s]+)"
+    R"(|data:[^\s]+)"
     ")",
     QRegularExpression::UseUnicodePropertiesOption | QRegularExpression::OptimizeOnFirstUsageOption | QRegularExpression::CaseInsensitiveOption);
   for(auto &line : result) {
