@@ -187,7 +187,7 @@ std::vector<Room *> Session::rooms() {
 
 QNetworkRequest Session::request(const QString &path, QUrlQuery query, const QString &content_type) {
   QUrl url(homeserver_);
-  url.setPath("/_matrix/" + path);
+  url.setPath("/_matrix/" + path, QUrl::StrictMode);
   query.addQueryItem("access_token", access_token_);
   url.setQuery(query);
   QNetworkRequest req(url);
@@ -296,7 +296,7 @@ QString Session::get_transaction_id() {
 }
 
 JoinRequest *Session::join(const QString &id_or_alias) {
-  auto reply = post("client/r0/join/" + id_or_alias, {});
+  auto reply = post("client/r0/join/" + QUrl::toPercentEncoding(id_or_alias), {});
   auto req = new JoinRequest(reply);
   connect(reply, &QNetworkReply::finished, [reply, req]() {
       auto r = decode(reply);

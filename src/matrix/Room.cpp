@@ -495,7 +495,7 @@ MessageFetch *Room::get_messages(Direction dir, QString from, uint64_t limit, QS
   query.addQueryItem("dir", dir == Direction::FORWARD ? "f" : "b");
   if(limit != 0) query.addQueryItem("limit", QString::number(limit));
   if(!to.isEmpty()) query.addQueryItem("to", to);
-  auto reply = session_.get("client/r0/rooms/" % id_ % "/messages", query);
+  auto reply = session_.get(QString("client/r0/rooms/" % QUrl::toPercentEncoding(id_) % "/messages"), query);
   auto result = new MessageFetch(reply);
   connect(reply, &QNetworkReply::finished, [this, reply, result]() {
       auto r = decode(reply);
@@ -531,7 +531,7 @@ MessageFetch *Room::get_messages(Direction dir, QString from, uint64_t limit, QS
 }
 
 void Room::leave() {
-  auto reply = session_.post("client/r0/rooms/" % id_ % "/leave");
+  auto reply = session_.post(QString("client/r0/rooms/" % QUrl::toPercentEncoding(id_) % "/leave"));
   connect(reply, &QNetworkReply::finished, [this, reply]() {
       auto r = decode(reply);
       if(r.error) {
@@ -542,7 +542,7 @@ void Room::leave() {
 
 void Room::send(const QString &type, QJsonObject content) {
   auto txn = session_.get_transaction_id();
-  auto reply = session_.put("client/r0/rooms/" % id_ % "/send/" % type % "/" % txn,
+  auto reply = session_.put("client/r0/rooms/" % QUrl::toPercentEncoding(id_) % "/send/" % QUrl::toPercentEncoding(type) % "/" % txn,
                             content);
   auto es = new EventSend(reply);
   connect(reply, &QNetworkReply::finished, [reply, es, txn]() {
@@ -554,7 +554,7 @@ void Room::send(const QString &type, QJsonObject content) {
 
 void Room::redact(const EventID &event, const QString &reason) {
   auto txn = session_.get_transaction_id();
-  auto reply = session_.put("client/r0/rooms/" % id_ % "/redact/" % event % "/" % txn,
+  auto reply = session_.put("client/r0/rooms/" % QUrl::toPercentEncoding(id_) % "/redact/" % QUrl::toPercentEncoding(event) % "/" % txn,
                             reason.isEmpty() ? QJsonObject() : QJsonObject{{"reason", reason}}
     );
   auto es = new EventSend(reply);
