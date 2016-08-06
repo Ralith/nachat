@@ -41,13 +41,7 @@ void EntryBox::keyPressEvent(QKeyEvent *event) {
   case Qt::Key_Return:
   case Qt::Key_Enter:
     if(!(modifiers & Qt::ShiftModifier)) {
-      if(true_history_.size() == INPUT_HISTORY_SIZE) true_history_.pop_back();
-      true_history_.push_front(toPlainText());
-      working_history_ = true_history_;
-      working_history_.push_front("");
-      history_index_ = 0;
       send();
-      clear();
     } else {
       QTextEdit::keyPressEvent(event);
     }
@@ -89,6 +83,12 @@ void EntryBox::text_changed() {
 }
 
 void EntryBox::send() {
+  if(true_history_.size() == INPUT_HISTORY_SIZE) true_history_.pop_back();
+  true_history_.push_front(toPlainText());
+  working_history_ = true_history_;
+  working_history_.push_front("");
+  history_index_ = 0;
+
   const QString text = toPlainText();
   if(text.startsWith('/')) {
     int command_end = text.indexOf(' ');
@@ -103,4 +103,6 @@ void EntryBox::send() {
   } else {
     message(text);
   }
+
+  clear();
 }

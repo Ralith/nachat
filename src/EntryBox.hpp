@@ -14,6 +14,8 @@ public:
   QSize sizeHint() const override;
   QSize minimumSizeHint() const override;
 
+  void send();
+
 signals:
   void message(const QString &);
   void command(const QString &name, const QString &args);
@@ -28,7 +30,6 @@ private:
   size_t history_index_;
 
   void text_changed();
-  void send();
 };
 
 #endif
