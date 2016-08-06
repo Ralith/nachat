@@ -420,20 +420,15 @@ void TimelineView::reset() {
 }
 
 void TimelineView::mousePressEvent(QMouseEvent *event) {
-  auto b = block_near(event->localPos());
-  QPointF rel_pos;
-  if(b) {
-    rel_pos = event->localPos() - b->bounds.topLeft();
-  }
-  if(b && b->bounds.contains(event->pos())) {
-    b->block->event(room_, *viewport(), block_info(), rel_pos, event);
-    grabbed_focus_ = b->block;
-  } else {
-    grabbed_focus_ = nullptr;
-  }
+  auto b = dispatch_event(event->localPos(), event);
   if(event->button() == Qt::LeftButton) {
+    if(event->button() == Qt::LeftButton) {
+      grabbed_focus_ = b->block;
+    }
+
     QApplication::setOverrideCursor(Qt::IBeamCursor);
     if(b) {
+      const auto rel_pos = event->localPos() - b->bounds.topLeft();
       selection_ = Selection{b->block, rel_pos, b->block, rel_pos};
     } else {
       selection_ = {};
@@ -443,30 +438,20 @@ void TimelineView::mousePressEvent(QMouseEvent *event) {
 }
 
 void TimelineView::mouseMoveEvent(QMouseEvent *event) {
-  auto b = block_near(event->localPos());
-  if(grabbed_focus_) {
-    grabbed_focus_->event(room_, *viewport(), block_info(),
-                          b->block == grabbed_focus_ ? event->localPos() - b->bounds.topLeft() : optional<QPointF>{},
-                          event);
-  } else if(b) {
-    if(b->bounds.contains(event->localPos())) {
-      const auto rel_pos = event->localPos() - b->bounds.topLeft();
-      b->block->event(room_, *viewport(), block_info(), rel_pos, event);
-    } else {
-      viewport()->setCursor(Qt::ArrowCursor);
-    }
-  }
+  viewport()->setCursor(Qt::ArrowCursor);
+  auto b = dispatch_event(event->localPos(), event);
   if(event->buttons() & Qt::LeftButton) {
     // Update selection
     // TODO: Start auto-scrolling if cursor out of viewport
     if(b) {
+      const auto rel_pos = event->localPos() - b->bounds.topLeft();
       if(!selection_) {
         selection_ = Selection{};
         selection_->end = b->block;
-        selection_->end_pos = event->localPos() - b->bounds.topLeft();
+        selection_->end_pos = rel_pos;
       }
       selection_->end = b->block;
-      selection_->end_pos = event->localPos() - b->bounds.topLeft();
+      selection_->end_pos = rel_pos;
       QString t = selection_text();
       if(!t.isEmpty())
         QApplication::clipboard()->setText(selection_text(), QClipboard::Selection);
@@ -477,16 +462,8 @@ void TimelineView::mouseMoveEvent(QMouseEvent *event) {
 }
 
 void TimelineView::mouseReleaseEvent(QMouseEvent *event) {
+  dispatch_event(event->localPos(), event);
   grabbed_focus_ = nullptr;
-  auto b = block_near(event->localPos());
-  if(grabbed_focus_) {
-    grabbed_focus_->event(room_, *viewport(), block_info(),
-                          b->block == grabbed_focus_ ? event->localPos() - b->bounds.topLeft() : optional<QPointF>{},
-                          event);
-  } else if(b && b->bounds.contains(event->localPos())) {
-    const auto rel_pos = event->localPos() - b->bounds.topLeft();
-    b->block->event(room_, *viewport(), block_info(), rel_pos, event);
-  }
   if(event->button() == Qt::LeftButton) {
     QApplication::restoreOverrideCursor();
   }
@@ -549,6 +526,7 @@ QSize TimelineView::minimumSizeHint() const {
 }
 
 void TimelineView::focusOutEvent(QFocusEvent *e) {
+  dispatch_event({}, e);
   grabbed_focus_ = nullptr;
 
   // Taken from QWidgetTextControl
@@ -560,21 +538,15 @@ void TimelineView::focusOutEvent(QFocusEvent *e) {
 }
 
 void TimelineView::contextMenuEvent(QContextMenuEvent *event) {
-  auto b = block_near(event->pos());
-  if(b && b->bounds.contains(event->pos())) {
-    b->block->event(room_, *this, block_info(), event->pos() - b->bounds.topLeft(), event);
-  }
+  dispatch_event(QPointF(event->pos()), event);
 }
 
 bool TimelineView::viewportEvent(QEvent *e) {
   if(e->type() == QEvent::ToolTip) {
     auto help = static_cast<QHelpEvent*>(e);
-    auto b = block_near(help->pos());
-    if(b && b->bounds.contains(help->pos())) {
-      b->block->event(room_, *this, block_info(), help->pos() - b->bounds.topLeft(), help);
-    } else {
+    dispatch_event(QPointF(help->pos()), help);
+    if(!help->isAccepted()) {
       QToolTip::hideText();
-      e->ignore();
     }
 
     return true;
@@ -594,4 +566,19 @@ void TimelineView::ref_avatar(const matrix::Content &content) {
     connect(reply, &matrix::ContentFetch::error, &room_, &matrix::Room::error);
   }
   ++result.first->second.references;
+}
+
+TimelineView::VisibleBlock *TimelineView::dispatch_event(const optional<QPointF> &p, QEvent *e) {
+  VisibleBlock *b = p ? block_near(*p) : nullptr;
+  if(grabbed_focus_) {
+    grabbed_focus_->event(room_, *viewport(), block_info(),
+                          (p && b->block == grabbed_focus_) ? *p - b->bounds.topLeft() : optional<QPointF>{},
+                          e);
+    return nullptr;
+  } else if(b && b->bounds.contains(*p)) {
+    b->block->event(room_, *viewport(), block_info(), *p - b->bounds.topLeft(), e);
+    return b;
+  }
+
+  return nullptr;
 }

@@ -150,6 +150,7 @@ private:
   void copy();
   void pop_front_block();
   QString selection_text() const;
+  VisibleBlock *dispatch_event(const std::experimental::optional<QPointF> &p, QEvent *e);
 
   VisibleBlock *block_near(const QPointF &p);   // Point relative to view
 
