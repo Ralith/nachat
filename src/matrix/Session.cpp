@@ -309,4 +309,11 @@ JoinRequest *Session::join(const QString &id_or_alias) {
   return req;
 }
 
+QUrl Session::ensure_http(const QUrl &url) const {
+  if(url.scheme() == "mxc") {
+    return matrix::Content(url).url_on(homeserver());
+  }
+  return url;
+}
+
 }

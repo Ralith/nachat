@@ -389,16 +389,9 @@ static std::vector<QTextLayout::FormatRange> formats_at(const QTextLayout &layou
   return result;
 }
 
-static QUrl http_url(const matrix::Room &room, const QUrl &url) {
-  if(url.scheme() == "mxc") {
-    return matrix::Content(url).url_on(room.session().homeserver());
-  }
-  return url;
-}
-
-static void open_url(const matrix::Room &room, const QUrl &url) {
-  if(!QDesktopServices::openUrl(http_url(room, url))) {
-    qDebug() << "failed to open URL" << http_url(room, url).toString(QUrl::FullyEncoded);
+static void open_url(const matrix::Session &session, const QUrl &url) {
+  if(!QDesktopServices::openUrl(session.ensure_http(url))) {
+    qDebug() << "failed to open URL" << session.ensure_http(url).toString(QUrl::FullyEncoded);
   }
 }
 
@@ -453,7 +446,7 @@ void Event::event(matrix::Room &room, QWidget &container, const optional<QPointF
     break;
   case QEvent::MouseButtonRelease: {
     if(target) {
-      open_url(room, *target);
+      open_url(room.session(), *target);
     }
     break;
   }
@@ -475,7 +468,7 @@ static void populate_menu_link(const matrix::Room &room, QMenu &menu, const QUrl
   menu.addSection(QObject::tr("Link"));
   if(url.scheme() == "mxc") {
     auto http_action = menu.addAction(QIcon::fromTheme("edit-copy"), QObject::tr("&Copy link HTTP address"));
-    auto hurl = http_url(room, url);
+    auto hurl = room.session().ensure_http(url);
     QObject::connect(http_action, &QAction::triggered, [=]() {
         auto data = new QMimeData;
         data->setText(hurl.toString(QUrl::FullyEncoded));
@@ -730,7 +723,7 @@ void Block::event(matrix::Room &room, QWidget &container, const BlockRenderInfo 
     break;
   case QEvent::MouseButtonRelease:
     if(pos && avatar_ && avatar_rect.contains(*pos)) {
-      open_url(room, avatar_->url());
+      open_url(room.session(), avatar_->url());
     }
     break;
   case QEvent::ContextMenu: {

@@ -98,6 +98,9 @@ public:
 
   JoinRequest *join(const QString &id_or_alias);
 
+  QUrl ensure_http(const QUrl &) const;
+  // Converts mxc URLs to http URLs on this homeserver, otherwise passes through
+
 signals:
   void logged_out();
   void error(QString message);
