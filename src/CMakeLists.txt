@@ -47,6 +47,11 @@ target_link_libraries(spinner-test
   Qt5::Widgets
   )
 
+if(WIN32)
+  target_link_libraries(nachat Qt5::WinMain)
+  target_link_libraries(spinner-test Qt5::WinMain)
+endif(WIN32)
+
 install(
   TARGETS nachat
   DESTINATION bin
