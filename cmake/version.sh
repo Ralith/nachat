@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-set -euo pipefail
+set -eu
 
 COMMIT=$(git rev-parse HEAD)
 COMMIT_STR="0x${COMMIT:0:2}"
