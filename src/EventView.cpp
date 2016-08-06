@@ -471,36 +471,40 @@ void Event::event(matrix::Room &room, QWidget &container, const optional<QPointF
   }
 }
 
+static void populate_menu_link(const matrix::Room &room, QMenu &menu, const QUrl &url) {
+  menu.addSection(QObject::tr("Link"));
+  if(url.scheme() == "mxc") {
+    auto http_action = menu.addAction(QIcon::fromTheme("edit-copy"), QObject::tr("&Copy link HTTP address"));
+    auto hurl = http_url(room, url);
+    QObject::connect(http_action, &QAction::triggered, [=]() {
+        auto data = new QMimeData;
+        data->setText(hurl.toString(QUrl::FullyEncoded));
+        data->setUrls({hurl});
+        QApplication::clipboard()->setMimeData(data);
+
+        auto data2 = new QMimeData;
+        data2->setText(hurl.toString(QUrl::FullyEncoded));
+        data2->setUrls({hurl});
+        QApplication::clipboard()->setMimeData(data2, QClipboard::Selection);
+      });
+  }
+  auto copy_action = menu.addAction(QIcon::fromTheme("edit-copy"), url.scheme() == "mxc" ? QObject::tr("Copy link &MXC address") : QObject::tr("&Copy link address"));
+  QObject::connect(copy_action, &QAction::triggered, [=]() {
+      auto data = new QMimeData;
+      data->setText(url.toString(QUrl::FullyEncoded));
+      data->setUrls({url});
+      QApplication::clipboard()->setMimeData(data);
+      auto data2 = new QMimeData;
+      data2->setText(url.toString(QUrl::FullyEncoded));
+      data2->setUrls({url});
+      QApplication::clipboard()->setMimeData(data2, QClipboard::Selection);
+    });
+}
+
 void Event::populate_menu(matrix::Room &room, QMenu &menu, const QPointF &pos) const {
   auto target = link_at(pos);
   if(target) {
-    menu.addSection(QObject::tr("Link"));
-    if(target->scheme() == "mxc") {
-      auto http_action = menu.addAction(QIcon::fromTheme("edit-copy"), QObject::tr("&Copy link HTTP address"));
-      auto hurl = http_url(room, *target);
-      QObject::connect(http_action, &QAction::triggered, [this, hurl]() {
-          auto data = new QMimeData;
-          data->setText(hurl.toString(QUrl::FullyEncoded));
-          data->setUrls({hurl});
-          QApplication::clipboard()->setMimeData(data);
-
-          auto data2 = new QMimeData;
-          data2->setText(hurl.toString(QUrl::FullyEncoded));
-          data2->setUrls({hurl});
-          QApplication::clipboard()->setMimeData(data2, QClipboard::Selection);
-        });
-    }
-    auto copy_action = menu.addAction(QIcon::fromTheme("edit-copy"), target->scheme() == "mxc" ? QObject::tr("Copy link &MXC address") : QObject::tr("&Copy link address"));
-    QObject::connect(copy_action, &QAction::triggered, [target]() {
-        auto data = new QMimeData;
-        data->setText(target->toString(QUrl::FullyEncoded));
-        data->setUrls({*target});
-        QApplication::clipboard()->setMimeData(data);
-        auto data2 = new QMimeData;
-        data2->setText(target->toString(QUrl::FullyEncoded));
-        data2->setUrls({*target});
-        QApplication::clipboard()->setMimeData(data2, QClipboard::Selection);
-      });
+    populate_menu_link(room, menu, *target);
   }
   menu.addSection(QObject::tr("Event"));
   const matrix::EventID &event_id = data.event_id;
@@ -734,6 +738,9 @@ void Block::event(matrix::Room &room, QWidget &container, const BlockRenderInfo 
     menu->setAttribute(Qt::WA_DeleteOnClose);
     if(event_hit) {
       event_hit.event->populate_menu(room, *menu, event_hit.pos);
+    }
+    if(pos && avatar_ && avatar_rect.contains(*pos)) {
+      populate_menu_link(room, *menu, avatar_->url());
     }
     menu->addSection(QObject::tr("User"));
     auto profile_action = menu->addAction(QIcon::fromTheme("user-available"), QObject::tr("View &profile..."));
