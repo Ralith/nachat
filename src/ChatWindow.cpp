@@ -119,3 +119,7 @@ void ChatWindow::closeEvent(QCloseEvent *evt) {
   }
   evt->accept();
 }
+
+void ChatWindow::dirty(const matrix::RoomID &room) {
+  room_list_->dirty(room);
+}

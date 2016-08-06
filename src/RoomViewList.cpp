@@ -14,19 +14,22 @@ RoomViewList::RoomViewList(QWidget *parent) : QListWidget(parent), menu_(new QMe
       if(item != nullptr) {
         auto room = item->data(Qt::UserRole).toString();
         activated(room);
+        auto &i = items_.at(room);
+        i.has_unread = false;
+        update_item(i);
       }
     });
 
   auto move_up = menu_->addAction(tr("Move up"));
   connect(move_up, &QAction::triggered, [this]() {
-      auto r = row(items_.at(context_));
+      auto r = row(items_.at(context_).item);
       auto item = takeItem(r);
       insertItem(r > 0 ? r - 1 : 0, item);
       setCurrentItem(item);
     });
   auto move_down = menu_->addAction(tr("Move down"));
   connect(move_down, &QAction::triggered, [this]() {
-      auto r = row(items_.at(context_));
+      auto r = row(items_.at(context_).item);
       auto item = takeItem(r);
       insertItem(r+1, item);
       setCurrentItem(item);
@@ -45,12 +48,16 @@ RoomViewList::RoomViewList(QWidget *parent) : QListWidget(parent), menu_(new QMe
   setSizePolicy(policy);
 }
 
+RoomViewList::RoomInfo::RoomInfo(QListWidgetItem *i, const matrix::Room &r)
+  : item{i}, has_unread{false}, name{r.pretty_name_highlights()}, highlight_count{r.highlight_count() + r.notification_count()}
+    {}
+
 void RoomViewList::add(matrix::Room &room) {
   auto item = new QListWidgetItem;
   item->setToolTip(room.id());
   item->setData(Qt::UserRole, room.id());
   addItem(item);
-  auto r = items_.emplace(room.id(), item);
+  auto r = items_.emplace(room.id(), RoomInfo{item, room});
   assert(r.second);
   claimed(room.id());
   update_display(room);
@@ -61,7 +68,7 @@ void RoomViewList::add(matrix::Room &room) {
 void RoomViewList::release(const matrix::RoomID &room) {
   auto it = items_.find(room);
   assert(it != items_.end());
-  delete it->second;
+  delete it->second.item;
   items_.erase(it);
   released(room);
   updateGeometry();
@@ -69,18 +76,17 @@ void RoomViewList::release(const matrix::RoomID &room) {
 }
 
 void RoomViewList::activate(const matrix::RoomID &room) {
-  auto &item = *items_.at(room);
+  auto &item = *items_.at(room).item;
   scrollToItem(&item);
   setCurrentItem(&item);
   activated(room);
 }
 
 void RoomViewList::update_display(matrix::Room &room) {
-  auto &i = *items_.at(room.id());
-  i.setText(room.pretty_name_highlights());
-  auto font = i.font();
-  font.setBold(room.highlight_count() != 0 || room.notification_count() != 0);
-  i.setFont(font);
+  auto &i = items_.at(room.id());
+  i.name = room.pretty_name_highlights();
+  i.highlight_count = room.highlight_count() + room.notification_count();
+  update_item(i);
 }
 
 void RoomViewList::contextMenuEvent(QContextMenuEvent *e) {
@@ -94,4 +100,18 @@ QSize RoomViewList::sizeHint() const {
   auto margins = viewportMargins();
   return QSize(sizeHintForColumn(0) + verticalScrollBar()->sizeHint().width() + margins.left() + margins.right(),
                fontMetrics().lineSpacing() + horizontalScrollBar()->sizeHint().height());
+}
+
+void RoomViewList::dirty(const matrix::RoomID &room) {
+  auto &i = items_.at(room);
+  if(currentItem() == i.item) return;
+  i.has_unread = true;
+  update_item(i);
+}
+
+void RoomViewList::update_item(const RoomInfo &i) {
+  i.item->setText(i.name);
+  auto font = i.item->font();
+  font.setBold(i.has_unread || i.highlight_count != 0);
+  i.item->setFont(font);
 }

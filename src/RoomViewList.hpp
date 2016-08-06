@@ -21,6 +21,7 @@ public:
   void release(const matrix::RoomID &room);
   void activate(const matrix::RoomID &room);
   void update_display(matrix::Room &room);
+  void dirty(const matrix::RoomID &room);
 
   QSize sizeHint() const override;
 
@@ -34,9 +35,20 @@ protected:
   void contextMenuEvent(QContextMenuEvent *) override;
 
 private:
-  std::unordered_map<matrix::RoomID, QListWidgetItem *, QStringHash> items_;
+  struct RoomInfo {
+    RoomInfo(QListWidgetItem *i, const matrix::Room &r);
+
+    QListWidgetItem *item;
+    bool has_unread;
+    QString name;
+    size_t highlight_count;
+  };
+
+  std::unordered_map<matrix::RoomID, RoomInfo, QStringHash> items_;
   QMenu *menu_;
   matrix::RoomID context_;
+
+  void update_item(const RoomInfo &i);
 };
 
 #endif
