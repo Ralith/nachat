@@ -390,8 +390,11 @@ void TimelineView::set_avatar(const matrix::Content &content, const QString &typ
   (void)disposition;
   auto it = avatars_.find(content);
   if(it == avatars_.end()) return;  // Avatar is no longer necessary
+
   QPixmap pixmap;
-  pixmap.loadFromData(data);
+  pixmap.loadFromData(data, QMimeDatabase().mimeTypeForName(type.toUtf8()).preferredSuffix().toUtf8().constData());
+  if(pixmap.isNull()) pixmap.loadFromData(data);
+
   const auto size = block_info().avatar_size() * devicePixelRatioF();
   if(pixmap.width() > size || pixmap.height() > size)
     pixmap = pixmap.scaled(size, size, Qt::KeepAspectRatio, Qt::SmoothTransformation);
