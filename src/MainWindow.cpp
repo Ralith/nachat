@@ -139,6 +139,7 @@ void MainWindow::joined(matrix::Room &room) {
   ui->room_list->addItem(i.item);
   i.display_name = room.pretty_name_highlights();
   i.highlight_count = room.highlight_count() + room.notification_count();
+  i.has_unread = room.has_unread();
   update_room(i);
 
   connect(&room, &matrix::Room::highlight_count_changed, [this, &room](uint64_t old) {
@@ -159,9 +160,11 @@ void MainWindow::joined(matrix::Room &room) {
   connect(&room, &matrix::Room::aliases_changed, just_update);
   connect(&room, &matrix::Room::membership_changed, just_update);
   connect(&room, &matrix::Room::message, [&room, this](const matrix::proto::Event &e) {
-      if(e.type == "m.room.message" && e.sender != session_->user_id()) {
+      if(room.has_unread()) {
         auto &i = rooms_.at(room.id());
-        if(!i.window || !i.window->isActiveWindow() || i.window->focused_room() != room.id()) {
+        if(i.window && !i.window->isActiveWindow() && i.window->focused_room() == room.id()) {
+          room.mark_read();
+        } else {
           if(i.window) i.window->dirty(room.id());
           i.has_unread = true;
           update_room(i);
@@ -226,6 +229,7 @@ void RoomWindowBridge::check_release(const matrix::RoomID &room) {
 ChatWindow *MainWindow::spawn_chat_window() {
   auto window = new ChatWindow;
   connect(window, &ChatWindow::focused, [this, window](const matrix::RoomID &r){
+      session_->room_from_id(r)->mark_read();
       last_focused_ = window;
       auto &i = rooms_.at(r);
       i.has_unread = false;

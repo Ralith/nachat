@@ -101,6 +101,8 @@ public:
   QUrl ensure_http(const QUrl &) const;
   // Converts mxc URLs to http URLs on this homeserver, otherwise passes through
 
+  void cache_state(const Room &room);
+
 signals:
   void logged_out();
   void error(QString message);
@@ -120,6 +122,7 @@ private:
   std::unordered_map<RoomID, Room, QStringHash> rooms_;
   bool synced_;
   QString next_batch_;
+  lmdb::txn *active_txn_ = nullptr;
 
   std::chrono::steady_clock::time_point last_sync_error_;
   // Last time a sync failed. Used to ensure we don't spin if errors happen quickly.
@@ -129,6 +132,7 @@ private:
   void sync(QUrlQuery query = QUrlQuery());
   void handle_sync_reply(QNetworkReply *);
   void dispatch(lmdb::txn &txn, proto::Sync sync);
+  void cache_state(lmdb::txn &txn, const Room &room);
 };
 
 }

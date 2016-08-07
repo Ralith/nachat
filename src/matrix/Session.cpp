@@ -151,11 +151,18 @@ void Session::handle_sync_reply(QNetworkReply *reply) {
     try {
       auto s = parse_sync(r.object);
       auto txn = lmdb::txn::begin(env_);
-      auto batch_utf8 = s.next_batch.toUtf8();
-      lmdb::dbi_put(txn, state_db_, next_batch_key, lmdb::val(batch_utf8.data(), batch_utf8.size()));
-      next_batch_ = s.next_batch;
-      dispatch(txn, std::move(s));
-      txn.commit();
+      active_txn_ = &txn;
+      try {
+        auto batch_utf8 = s.next_batch.toUtf8();
+        lmdb::dbi_put(txn, state_db_, next_batch_key, lmdb::val(batch_utf8.data(), batch_utf8.size()));
+        next_batch_ = s.next_batch;
+        dispatch(txn, std::move(s));
+        txn.commit();
+      } catch(...) {
+        active_txn_ = nullptr;
+        throw;
+      }
+      active_txn_ = nullptr;
       synced_ = true;
     } catch(lmdb::runtime_error &e) {
       synced_ = false;
@@ -199,14 +206,17 @@ void Session::dispatch(lmdb::txn &txn, proto::Sync sync) {
     auto &room = it->second;
     room.load_state(txn, joined_room.state.events);
     room.dispatch(txn, joined_room);
-    {  // Mandatory write, since either the buffer or state has almost certainly changed
-      auto data = QJsonDocument(room.to_json()).toBinaryData();
-      auto utf8 = room.id().toUtf8();
-      lmdb::dbi_put(txn, room_db_, lmdb::val(utf8.data(), utf8.size()), lmdb::val(data.data(), data.size()));
-    }
+    // Mandatory write, since either the buffer or state has almost certainly changed
+    cache_state(txn, room);
     if(new_room) joined(room);
   }
   sync_complete();
+}
+
+void Session::cache_state(lmdb::txn &txn, const Room &room) {
+  auto data = QJsonDocument(room.to_json()).toBinaryData();
+  auto utf8 = room.id().toUtf8();
+  lmdb::dbi_put(txn, room_db_, lmdb::val(utf8.data(), utf8.size()), lmdb::val(data.data(), data.size()));
 }
 
 void Session::log_out() {
@@ -342,6 +352,13 @@ QUrl Session::ensure_http(const QUrl &url) const {
     return matrix::Content(url).url_on(homeserver());
   }
   return url;
+}
+
+void Session::cache_state(const Room &room) {
+  if(active_txn_) return;       // State will be cached after sync processing completes
+  auto txn = lmdb::txn::begin(env_);
+  cache_state(txn, room);
+  txn.commit();
 }
 
 }

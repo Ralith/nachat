@@ -164,6 +164,10 @@ public:
   void send_message(const QString &body);
   void send_emote(const QString &body);
 
+  void mark_read();
+
+  bool has_unread() const { return has_unread_; }
+
 signals:
   void membership_changed(const Member &, Membership old);
   void member_disambiguation_changed(const Member &, const QString &old);
@@ -196,6 +200,7 @@ private:
   RoomState state_;
 
   uint64_t highlight_count_ = 0, notification_count_ = 0;
+  bool has_unread_ = true;
 };
 
 }

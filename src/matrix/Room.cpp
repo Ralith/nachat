@@ -193,14 +193,9 @@ Room::Room(Matrix &universe, Session &session, QString id, const QJsonObject &in
         state_.prune_departed();
       }
     }
-    auto highlights = initial["highlight_count"];
-    if(highlights.isDouble()) {
-      highlight_count_ = highlights.toDouble();
-    }
-    auto notifications = initial["notification_count"];
-    if(notifications.isDouble()) {
-      notification_count_ = notifications.toDouble();
-    }
+    highlight_count_ = initial["highlight_count"].toDouble(0);
+    notification_count_ = initial["notification_count"].toDouble(0);
+    has_unread_ = initial["has_unread"].toBool(has_unread_);
   }
 }
 
@@ -238,7 +233,8 @@ QJsonObject Room::to_json() const {
     {"initial_state", initial_state_.to_json()},
     {"buffer", std::move(o)},
     {"highlight_count", static_cast<double>(highlight_count_)},
-    {"notification_count", static_cast<double>(notification_count_)}
+    {"notification_count", static_cast<double>(notification_count_)},
+    {"has_unread", has_unread()}
   };
 }
 
@@ -270,6 +266,7 @@ bool Room::dispatch(lmdb::txn &txn, const proto::JoinedRoom &joined) {
   batch.events.reserve(joined.timeline.events.size());
   for(auto &evt : joined.timeline.events) {
     state_touched |= state_.dispatch(evt, this, &member_db_, &txn);
+    has_unread_ |= evt.type == "m.room.message";
     message(evt);
 
     // Must happen after we dispatch the previous event but before we process the next one, to ensure display names are
@@ -608,6 +605,11 @@ void Room::send_emote(const QString &body) {
   send("m.room.message",
        {{"msgtype", "m.emote"},
          {"body", body}});
+}
+
+void Room::mark_read() {
+  has_unread_ = false;
+  session().cache_state(*this);
 }
 
 }
