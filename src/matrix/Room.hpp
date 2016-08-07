@@ -87,11 +87,6 @@ private:
   bool update_membership(const QString &user_id, const QJsonObject &content, Room *room, lmdb::dbi *member_db, lmdb::txn *txn);
 };
 
-struct Batch {
-  std::vector<matrix::proto::Event> events;
-  QString next, prev;
-};
-
 class MessageFetch : public QObject {
   Q_OBJECT
 
