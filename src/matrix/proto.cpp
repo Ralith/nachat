@@ -19,6 +19,7 @@ QJsonObject to_json(const Event &e) {
   o["type"] = e.type;
   o["unsigned"] = to_json(e.unsigned_);
   o["state_key"] = e.state_key;
+  o["event_id"] = e.event_id;
   return o;
 }
 
