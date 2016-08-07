@@ -162,7 +162,7 @@ void MainWindow::joined(matrix::Room &room) {
       if(e.type == "m.room.message" && e.sender != session_->user_id()) {
         auto &i = rooms_.at(room.id());
         if(!i.window || !i.window->isActiveWindow() || i.window->focused_room() != room.id()) {
-          i.window->dirty(room.id());
+          if(i.window) i.window->dirty(room.id());
           i.has_unread = true;
           update_room(i);
         }
