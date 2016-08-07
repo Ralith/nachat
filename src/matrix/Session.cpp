@@ -12,12 +12,38 @@
 
 namespace matrix {
 
+constexpr uint64_t CACHE_FORMAT_VERSION = 0;
+// Bumped every time a backwards-incompatible format change is made or a corruption bug is fixed
+
+static constexpr char POLL_TIMEOUT_MS[] = "50000";
+
+static const lmdb::val next_batch_key("next_batch");
+static const lmdb::val transaction_id_key("transaction_id");
+static const lmdb::val cache_format_version_key("cache_format_version");
+
+template<typename T, typename = std::enable_if_t<std::is_integral<T>::value>>
+constexpr T from_little_endian(const uint8_t *x) {
+  T result{0};
+  for(size_t i = 0; i < sizeof(T); ++i) {
+    result |= static_cast<T>(x[i]) << (8*i);
+  }
+  return result;
+}
+
+template<typename T, typename = std::enable_if_t<std::is_integral<T>::value>>
+constexpr void to_little_endian(T v, uint8_t *x) {
+  for(size_t i = 0; i < sizeof(T); ++i) {
+    x[i] = (v >> (8*i)) & 0xFF;
+  }
+}
+
 Session *Session::create(Matrix& universe, QUrl homeserver, QString user_id, QString access_token) {
   auto env = lmdb::env::create();
   env.set_mapsize(128UL * 1024UL * 1024UL);  // 128MB should be enough for anyone!
   env.set_max_dbs(1024UL);                   // maximum rooms plus two
 
   QString state_path = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) % "/" % QString::fromUtf8(user_id.toUtf8().toHex() % "/state");
+  bool fresh = !QFile::exists(state_path);
   if(!QDir().mkpath(state_path)) {
     throw std::runtime_error(("unable to create state directory at " + state_path).toStdString().c_str());
   }
@@ -27,15 +53,33 @@ Session *Session::create(Matrix& universe, QUrl homeserver, QString user_id, QSt
   auto txn = lmdb::txn::begin(env);
   auto state_db = lmdb::dbi::open(txn, "state", MDB_CREATE);
   auto room_db = lmdb::dbi::open(txn, "rooms", MDB_CREATE);
+
+  if(!fresh) {
+    bool compatible = false;
+    lmdb::val x;
+    if(lmdb::dbi_get(txn, state_db, cache_format_version_key, x)) {
+      compatible = CACHE_FORMAT_VERSION == from_little_endian<uint64_t>(x.data<const uint8_t>());
+    }
+    if(!compatible) {
+      qDebug() << "incompatible cache, resetting it";
+      lmdb::dbi_drop(txn, state_db, false);
+      lmdb::dbi_drop(txn, room_db, false);
+      fresh = true;
+    }
+  }
+
+  if(fresh) {
+    uint8_t data[8];
+    to_little_endian(CACHE_FORMAT_VERSION, data);
+    lmdb::val val(data, sizeof(data));
+    lmdb::dbi_put(txn, state_db, cache_format_version_key, val);
+  }
+
   txn.commit();
 
   return new Session(universe, std::move(homeserver), std::move(user_id), std::move(access_token),
                      std::move(env), std::move(state_db), std::move(room_db));
 }
-
-static constexpr char POLL_TIMEOUT_MS[] = "50000";
-static const lmdb::val next_batch_key("next_batch");
-static const lmdb::val transaction_id_key("transaction_id");
 
 static std::string room_dbname(const QString &room_id) { return ("r." + room_id).toStdString(); }
 
@@ -256,22 +300,6 @@ ContentFetch *Session::get_thumbnail(const Content &content, const QSize &size, 
       }
     });
   return result;
-}
-
-template<typename T, typename = std::enable_if_t<std::is_integral<T>::value>>
-constexpr T from_little_endian(const uint8_t *x) {
-  T result{0};
-  for(size_t i = 0; i < sizeof(T); ++i) {
-    result |= static_cast<T>(x[i]) << (8*i);
-  }
-  return result;
-}
-
-template<typename T, typename = std::enable_if_t<std::is_integral<T>::value>>
-constexpr void to_little_endian(T v, uint8_t *x) {
-  for(size_t i = 0; i < sizeof(T); ++i) {
-    x[i] = (v >> (8*i)) & 0xFF;
-  }
 }
 
 QString Session::get_transaction_id() {
