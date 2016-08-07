@@ -159,9 +159,10 @@ void MainWindow::joined(matrix::Room &room) {
   connect(&room, &matrix::Room::aliases_changed, just_update);
   connect(&room, &matrix::Room::membership_changed, just_update);
   connect(&room, &matrix::Room::message, [&room, this](const matrix::proto::Event &e) {
-      if(e.type == "m.room.message") {
+      if(e.type == "m.room.message" && e.sender != session_->user_id()) {
         auto &i = rooms_.at(room.id());
         if(!i.window || !i.window->isActiveWindow() || i.window->focused_room() != room.id()) {
+          i.window->dirty(room.id());
           i.has_unread = true;
           update_room(i);
         }
@@ -211,7 +212,6 @@ RoomWindowBridge::RoomWindowBridge(matrix::Room &room, ChatWindow &parent) : QOb
   connect(&room, &matrix::Room::canonical_alias_changed, this, &RoomWindowBridge::display_changed);
   connect(&room, &matrix::Room::aliases_changed, this, &RoomWindowBridge::display_changed);
   connect(&room, &matrix::Room::membership_changed, this, &RoomWindowBridge::display_changed);
-  connect(&room, &matrix::Room::message, this, &RoomWindowBridge::message);
   connect(&parent, &ChatWindow::released, this, &RoomWindowBridge::check_release);
 }
 
@@ -221,12 +221,6 @@ void RoomWindowBridge::display_changed() {
 
 void RoomWindowBridge::check_release(const matrix::RoomID &room) {
   if(room_.id() == room) deleteLater();
-}
-
-void RoomWindowBridge::message(const matrix::proto::Event &e) {
-  if(e.type == "m.room.message") {
-    window_.dirty(room_.id());
-  }
 }
 
 ChatWindow *MainWindow::spawn_chat_window() {
