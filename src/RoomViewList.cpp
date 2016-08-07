@@ -14,9 +14,6 @@ RoomViewList::RoomViewList(QWidget *parent) : QListWidget(parent), menu_(new QMe
       if(item != nullptr) {
         auto room = item->data(Qt::UserRole).toString();
         activated(room);
-        auto &i = items_.at(room);
-        i.has_unread = false;
-        update_item(i);
       }
     });
 
@@ -86,6 +83,7 @@ void RoomViewList::update_display(matrix::Room &room) {
   auto &i = items_.at(room.id());
   i.name = room.pretty_name_highlights();
   i.highlight_count = room.highlight_count() + room.notification_count();
+  i.has_unread = room.has_unread();
   update_item(i);
 }
 
@@ -100,13 +98,6 @@ QSize RoomViewList::sizeHint() const {
   auto margins = viewportMargins();
   return QSize(sizeHintForColumn(0) + verticalScrollBar()->sizeHint().width() + margins.left() + margins.right(),
                fontMetrics().lineSpacing() + horizontalScrollBar()->sizeHint().height());
-}
-
-void RoomViewList::dirty(const matrix::RoomID &room) {
-  auto &i = items_.at(room);
-  if(currentItem() == i.item) return;
-  i.has_unread = true;
-  update_item(i);
 }
 
 void RoomViewList::update_item(const RoomInfo &i) {

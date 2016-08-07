@@ -159,16 +159,12 @@ void MainWindow::joined(matrix::Room &room) {
   connect(&room, &matrix::Room::canonical_alias_changed, just_update);
   connect(&room, &matrix::Room::aliases_changed, just_update);
   connect(&room, &matrix::Room::membership_changed, just_update);
-  connect(&room, &matrix::Room::message, [&room, this](const matrix::proto::Event &e) {
+  connect(&room, &matrix::Room::receipts_changed, just_update);
+  connect(&room, &matrix::Room::message, [this, &room](const matrix::proto::Event &e) {
       if(room.has_unread()) {
         auto &i = rooms_.at(room.id());
-        if(i.window && !i.window->isActiveWindow() && i.window->focused_room() == room.id()) {
-          room.mark_read();
-        } else {
-          if(i.window) i.window->dirty(room.id());
-          i.has_unread = true;
-          update_room(i);
-        }
+        i.has_unread = true;
+        update_room(i);
       }
     });
 }
@@ -186,6 +182,7 @@ void MainWindow::update_room(matrix::Room &room) {
   auto &i = rooms_.at(room.id());
   i.display_name = room.pretty_name_highlights();
   i.highlight_count = room.highlight_count() + room.notification_count();
+  i.has_unread = room.has_unread();
   update_room(i);
 }
 
@@ -215,6 +212,8 @@ RoomWindowBridge::RoomWindowBridge(matrix::Room &room, ChatWindow &parent) : QOb
   connect(&room, &matrix::Room::canonical_alias_changed, this, &RoomWindowBridge::display_changed);
   connect(&room, &matrix::Room::aliases_changed, this, &RoomWindowBridge::display_changed);
   connect(&room, &matrix::Room::membership_changed, this, &RoomWindowBridge::display_changed);
+  connect(&room, &matrix::Room::receipts_changed, this, &RoomWindowBridge::display_changed);
+  connect(&room, &matrix::Room::message, this, &RoomWindowBridge::display_changed);
   connect(&parent, &ChatWindow::released, this, &RoomWindowBridge::check_release);
 }
 
@@ -228,12 +227,8 @@ void RoomWindowBridge::check_release(const matrix::RoomID &room) {
 
 ChatWindow *MainWindow::spawn_chat_window() {
   auto window = new ChatWindow;
-  connect(window, &ChatWindow::focused, [this, window](const matrix::RoomID &r){
-      session_->room_from_id(r)->mark_read();
+  connect(window, &ChatWindow::focused, [this, window](const matrix::RoomID &r) {
       last_focused_ = window;
-      auto &i = rooms_.at(r);
-      i.has_unread = false;
-      update_room(i);
     });
   connect(window, &ChatWindow::claimed, [this, window](const matrix::RoomID &r) {
       rooms_.at(r).window = window;

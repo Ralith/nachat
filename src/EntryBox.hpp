@@ -21,6 +21,7 @@ signals:
   void command(const QString &name, const QString &args);
   void pageUp();
   void pageDown();
+  void activity();
 
 protected:
   void keyPressEvent(QKeyEvent *event) override;

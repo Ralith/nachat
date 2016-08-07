@@ -121,10 +121,6 @@ void ChatWindow::closeEvent(QCloseEvent *evt) {
   evt->accept();
 }
 
-void ChatWindow::dirty(const matrix::RoomID &room) {
-  room_list_->dirty(room);
-}
-
 const matrix::RoomID &ChatWindow::focused_room() const {
   return static_cast<RoomView*>(ui->room_stack->currentWidget())->room().id();
 }

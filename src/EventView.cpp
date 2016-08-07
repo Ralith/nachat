@@ -617,7 +617,7 @@ void Block::draw(const BlockRenderInfo &info, QPainter &p, QPointF offset, const
   timestamp_layout_.draw(&p, offset, selections);
   p.restore();
 
-  QPointF local_offset(0, name_layout_.boundingRect().height() + metrics.leading());
+  QPointF local_offset(0, name_layout_.boundingRect().height() + info.event_spacing());
 
   for(const auto event : events_) {
     p.save();
@@ -630,7 +630,7 @@ void Block::draw(const BlockRenderInfo &info, QPainter &p, QPointF offset, const
       layout.draw(&p, offset + local_offset, selections);
       event_bounds |= layout.boundingRect();
     }
-    local_offset.ry() += event_bounds.height() + metrics.leading();
+    local_offset.ry() += event_bounds.height() + info.event_spacing();
     p.restore();
   }
 }

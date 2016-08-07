@@ -195,7 +195,10 @@ Room::Room(Matrix &universe, Session &session, QString id, const QJsonObject &in
     }
     highlight_count_ = initial["highlight_count"].toDouble(0);
     notification_count_ = initial["notification_count"].toDouble(0);
-    has_unread_ = initial["has_unread"].toBool(has_unread_);
+    auto receipts = initial["receipts"].toObject();
+    for(auto it = receipts.begin(); it != receipts.end(); ++it) {
+      update_receipt(it.key(), it.value().toObject()["event_id"].toString(), it.value().toObject()["ts"].toDouble());
+    }
   }
 }
 
@@ -229,12 +232,16 @@ QJsonObject Room::to_json() const {
     }
     o["events"] = std::move(es);
   }
+  QJsonObject receipts;
+  for(const auto &receipt : receipts_by_user_) {
+    receipts[receipt.first] = QJsonObject{{"event_id", receipt.second.event}, {"ts", static_cast<qint64>(receipt.second.ts)}};
+  }
   return QJsonObject{
     {"initial_state", initial_state_.to_json()},
     {"buffer", std::move(o)},
     {"highlight_count", static_cast<double>(highlight_count_)},
     {"notification_count", static_cast<double>(notification_count_)},
-    {"has_unread", has_unread()}
+    {"receipts", receipts}
   };
 }
 
@@ -261,29 +268,54 @@ bool Room::dispatch(lmdb::txn &txn, const proto::JoinedRoom &joined) {
   prev_batch(joined.timeline.prev_batch);
   // Must be called *after* discontinuity so that users can easily discard existing timeline events
 
-  Batch batch;
-  batch.prev_batch = joined.timeline.prev_batch;
-  batch.events.reserve(joined.timeline.events.size());
-  for(auto &evt : joined.timeline.events) {
-    state_touched |= state_.dispatch(evt, this, &member_db_, &txn);
-    has_unread_ |= evt.type == "m.room.message";
-    message(evt);
+  // Ensure that only the first batch in the buffer can ever be empty
+  if(joined.timeline.events.empty() && !buffer_.empty()) {
+    buffer_.back().prev_batch = joined.timeline.prev_batch;
+  } else {
+    Batch batch;
+    batch.prev_batch = joined.timeline.prev_batch;
+    batch.events.reserve(joined.timeline.events.size());
+    for(auto &evt : joined.timeline.events) {
+      state_touched |= state_.dispatch(evt, this, &member_db_, &txn);
+      message(evt);
 
-    // Must happen after we dispatch the previous event but before we process the next one, to ensure display names are
-    // correct for leave/ban events as well as whatever follows
-    state_.prune_departed(this);
+      // Must happen after we dispatch the previous event but before we process the next one, to ensure display names are
+      // correct for leave/ban events as well as whatever follows
+      state_.prune_departed(this);
 
-    batch.events.emplace_back(evt);
-  }
-
-  while(!buffer_.empty() && (buffer_size() - batch.events.size()) >= session_.buffer_size()) {
-    for(auto &evt : buffer_.front().events) {
-      initial_state_.apply(evt);
-      initial_state_.prune_departed();
+      batch.events.emplace_back(evt);
     }
-    buffer_.pop_front();
+
+    while(!buffer_.empty() && (buffer_size() - batch.events.size()) >= session_.buffer_size()) {
+      for(auto &evt : buffer_.front().events) {
+        initial_state_.apply(evt);
+        initial_state_.prune_departed();
+      }
+      buffer_.pop_front();
+    }
+    buffer_.emplace_back(std::move(batch));
   }
-  buffer_.emplace_back(std::move(batch));
+
+  for(const auto &evt : joined.ephemeral.events) {
+    if(evt.type == "m.receipt") {
+      for(auto read_evt = evt.content.begin(); read_evt != evt.content.end(); ++read_evt) {
+        const auto &obj = read_evt.value().toObject()["m.read"].toObject();
+        for(auto user = obj.begin(); user != obj.end(); ++user) {
+          update_receipt(user.key(), read_evt.key(), user.value().toObject()["ts"].toDouble());
+        }
+      }
+      receipts_changed();
+    } else if(evt.type == "m.typing") {
+      typing_.clear();
+      const auto ids = evt.content["user_ids"].toArray();
+      for(const auto &x : ids) {
+        typing_.push_back(x.toString());
+      }
+      typing_changed();
+    } else {
+      qDebug() << "Unrecognized ephemeral event type:" << evt.type;
+    }
+  }
 
   if(state_touched) {
     state_changed();
@@ -607,9 +639,58 @@ void Room::send_emote(const QString &body) {
          {"body", body}});
 }
 
-void Room::mark_read() {
-  has_unread_ = false;
-  session().cache_state(*this);
+void Room::send_read_receipt(const EventID &event) {
+  auto reply = session_.post(QString("client/r0/rooms/" % QUrl::toPercentEncoding(id_) % "/receipt/m.read/" % QUrl::toPercentEncoding(event)));
+  auto es = new EventSend(reply);
+  connect(reply, &QNetworkReply::finished, [reply, es, event]() {
+      if(reply->error()) {
+        es->error(reply->errorString());
+      } else {
+        es->finished();
+      }
+    });
+  connect(es, &EventSend::error, this, &Room::error);
+}
+
+gsl::span<const Room::ReadEvent * const> Room::receipts_for(const EventID &id) const {
+  auto it = receipts_by_event_.find(id);
+  if(it == receipts_by_event_.end()) return {};
+  return gsl::span<const Room::ReadEvent * const>(static_cast<const Room::ReadEvent * const *>(it->second.data()),
+                                                  it->second.size());
+}
+
+const Room::ReadEvent *Room::receipt_from(const UserID &id) const {
+  auto it = receipts_by_user_.find(id);
+  if(it == receipts_by_user_.end()) return nullptr;
+  return &it->second;
+}
+
+bool Room::has_unread() const {
+  if(buffer().empty() || buffer().back().events.empty()) return true;
+  auto r = receipt_from(session().user_id());
+  if(!r) return true;
+  for(auto batch = buffer().crbegin(); batch != buffer().crend(); ++batch) {
+    for(auto event = batch->events.crbegin(); event != batch->events.crend(); ++event) {
+      if(r->event == event->event_id) return false;
+      if(event->type == "m.room.message" && event->sender != session().user_id()) return true;
+    }
+  }
+  return true;
+}
+
+void Room::update_receipt(const UserID &user, const EventID &event, uint64_t ts) {
+  const ReadEvent new_value{event, ts};
+  auto emplaced = receipts_by_user_.emplace(user, new_value);
+  if(!emplaced.second) {
+    auto it = receipts_by_event_.find(emplaced.first->second.event);
+    if(it != receipts_by_event_.end()) {
+      auto &vec = it->second;
+      // Remove from index
+      vec.erase(std::remove(vec.begin(), vec.end(), &emplaced.first->second), vec.end());
+    }
+    emplaced.first->second = new_value;
+  }
+  receipts_by_event_[event].push_back(&emplaced.first->second);
 }
 
 }

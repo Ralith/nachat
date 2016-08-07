@@ -35,6 +35,8 @@ QSize EntryBox::minimumSizeHint() const {
 }
 
 void EntryBox::keyPressEvent(QKeyEvent *event) {
+  activity();
+
   auto modifiers = QGuiApplication::keyboardModifiers();
   // TODO: Autocomplete
   switch(event->key()) {

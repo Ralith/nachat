@@ -31,6 +31,7 @@ public:
   qreal avatar_size() const { return metrics().height() * 2 + metrics().leading(); }
   qreal margin() const { return metrics().lineSpacing() * 0.33; }
   qreal spacing() const { return metrics().lineSpacing() * 0.75; }
+  qreal event_spacing() const { return metrics().leading(); }
   QFontMetrics metrics() const { return QFontMetrics(font_); }
   const QFont &font() const { return font_; }
   const QPalette &palette() const { return palette_; }
@@ -94,6 +95,7 @@ public:
   const std::deque<Event *> &events() const { return events_; }
 
   void event(matrix::Room &room, QWidget &container, const BlockRenderInfo &, const std::experimental::optional<QPointF> &pos, QEvent *event);
+  qreal header_height() const { return name_layout_.boundingRect().height(); }
 
 private:
   const QString event_id_;

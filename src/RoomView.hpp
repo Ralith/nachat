@@ -1,8 +1,6 @@
 #ifndef ROOMVIEW_H
 #define ROOMVIEW_H
 
-#include <map>
-
 #include <QWidget>
 
 #include "QStringHash.hpp"

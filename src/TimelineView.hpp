@@ -41,6 +41,9 @@ public:
 
   void push_error(const QString &message);
 
+  void read_events();
+  // Send read receipt for the most recent visible event
+
 protected:
   void paintEvent(QPaintEvent *event) override;
   void resizeEvent(QResizeEvent *event) override;
@@ -139,6 +142,7 @@ private:
   std::vector<VisibleBlock> visible_blocks_;
   QPixmap spinner_;
   Block *grabbed_focus_;
+  size_t unread_events_;
 
   void update_scrollbar(bool grew_upward);
 

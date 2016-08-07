@@ -12,8 +12,10 @@
 
 namespace matrix {
 
-constexpr uint64_t CACHE_FORMAT_VERSION = 0;
-// Bumped every time a backwards-incompatible format change is made or a corruption bug is fixed
+constexpr uint64_t CACHE_FORMAT_VERSION = 1;
+// Bumped every time a backwards-incompatible format change is made, a
+// corruption bug is fixed, or a previously ignored class of state is
+// persisted
 
 static constexpr char POLL_TIMEOUT_MS[] = "50000";
 
@@ -133,6 +135,9 @@ void Session::sync(QUrlQuery query) {
   auto reply = get("client/r0/sync", query);
   connect(reply, &QNetworkReply::finished, [this, reply](){
       sync_progress(0, 0);
+      if(reply->size() > (1 << 12)) {
+        qDebug() << "sync is" << reply->size() << "bytes";
+      }
       handle_sync_reply(reply);
     });
   connect(reply, &QNetworkReply::downloadProgress, this, &Session::sync_progress);

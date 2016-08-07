@@ -123,6 +123,11 @@ public:
     QString prev_batch;
   };
 
+  struct ReadEvent {
+    EventID event;
+    uint64_t ts;
+  };
+
   Room(Matrix &universe, Session &session, QString id, const QJsonObject &initial,
        lmdb::env &env, lmdb::txn &init_txn, lmdb::dbi &&member_db);
 
@@ -146,7 +151,7 @@ public:
   void load_state(lmdb::txn &txn, gsl::span<const proto::Event>);
   bool dispatch(lmdb::txn &txn, const proto::JoinedRoom &);
 
-  const std::deque<Batch> &buffer() { return buffer_; }
+  const std::deque<Batch> &buffer() const { return buffer_; }
   size_t buffer_size() const;
 
   QJsonObject to_json() const;
@@ -164,9 +169,13 @@ public:
   void send_message(const QString &body);
   void send_emote(const QString &body);
 
-  void mark_read();
+  void send_read_receipt(const EventID &event);
 
-  bool has_unread() const { return has_unread_; }
+  bool has_unread() const;
+
+  gsl::span<const UserID> typing() const { return typing_; }
+  gsl::span<const ReadEvent * const> receipts_for(const EventID &id) const;
+  const ReadEvent *receipt_from(const UserID &id) const;
 
 signals:
   void membership_changed(const Member &, Membership old);
@@ -181,6 +190,8 @@ signals:
   void topic_changed(const QString &old);
   void avatar_changed();
   void discontinuity();
+  void typing_changed();
+  void receipts_changed();
 
   void prev_batch(const QString &);
   void message(const proto::Event &);
@@ -200,7 +211,13 @@ private:
   RoomState state_;
 
   uint64_t highlight_count_ = 0, notification_count_ = 0;
-  bool has_unread_ = true;
+
+  std::unordered_map<EventID, std::vector<ReadEvent *>, QStringHash> receipts_by_event_;
+  std::unordered_map<UserID, ReadEvent, QStringHash> receipts_by_user_;
+
+  std::vector<UserID> typing_;
+
+  void update_receipt(const UserID &user, const EventID &event, uint64_t ts);
 };
 
 }

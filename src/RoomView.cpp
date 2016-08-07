@@ -42,6 +42,7 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
   connect(entry_, &EntryBox::pageDown, [this]() {
       timeline_view_->verticalScrollBar()->triggerAction(QAbstractSlider::SliderPageStepAdd);
     });
+  connect(entry_, &EntryBox::activity, timeline_view_, &TimelineView::read_events);
 
   connect(&room_, &matrix::Room::message, this, &RoomView::message);
   connect(&room_, &matrix::Room::error, [this](const QString &message) {

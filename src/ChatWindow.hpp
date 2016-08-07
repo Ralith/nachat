@@ -30,7 +30,6 @@ public:
   void add(matrix::Room &r, RoomView *); // Takes ownership
   void add_or_focus(matrix::Room &);
   void room_display_changed(matrix::Room &);
-  void dirty(const matrix::RoomID &room);
 
   RoomView *take(const matrix::RoomID &); // Releases ownership
 

@@ -21,7 +21,6 @@ public:
   void release(const matrix::RoomID &room);
   void activate(const matrix::RoomID &room);
   void update_display(matrix::Room &room);
-  void dirty(const matrix::RoomID &room);
 
   QSize sizeHint() const override;
 
