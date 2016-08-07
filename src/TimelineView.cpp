@@ -251,6 +251,7 @@ void TimelineView::prepend_batch(QString start, QString end, gsl::span<const mat
     grow_backlog();
     return;
   }
+
   prev_batch_ = end;
   batches_.emplace_front();
   auto &batch = batches_.front();

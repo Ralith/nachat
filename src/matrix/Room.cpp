@@ -177,7 +177,7 @@ Room::Room(Matrix &universe, Session &session, QString id, const QJsonObject &in
       db_env_(env), member_db_(std::move(member_db))
 {
   if(!initial.isEmpty()) {
-    initial_state_ = RoomState(initial["state"].toObject(), txn, member_db_);
+    initial_state_ = RoomState(initial["initial_state"].toObject(), txn, member_db_);
     state_ = initial_state_;
 
     QJsonObject b = initial["buffer"].toObject();
@@ -187,7 +187,10 @@ Room::Room(Matrix &universe, Session &session, QString id, const QJsonObject &in
       buffer_.back().events.reserve(b.size());
       auto es = b["events"].toArray();
       for(const auto &e : es) {
-        buffer_.back().events.emplace_back(parse_event(e));
+        const auto &evt = parse_event(e);
+        buffer_.back().events.emplace_back(evt);
+        state_.apply(evt);
+        state_.prune_departed();
       }
     }
     auto highlights = initial["highlight_count"];
@@ -232,7 +235,7 @@ QJsonObject Room::to_json() const {
     o["events"] = std::move(es);
   }
   return QJsonObject{
-    {"state", state_.to_json()},
+    {"initial_state", initial_state_.to_json()},
     {"buffer", std::move(o)},
     {"highlight_count", static_cast<double>(highlight_count_)},
     {"notification_count", static_cast<double>(notification_count_)}
