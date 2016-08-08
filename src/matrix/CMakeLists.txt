@@ -21,3 +21,7 @@ target_link_libraries(matrix
   Qt5::Network
   ${LMDB_LIBRARY}
   )
+
+if (WIN32)
+  target_link_libraries(matrix ntdll)
+endif(WIN32)
