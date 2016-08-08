@@ -35,3 +35,4 @@ after_build:
 
 artifacts:
   - path: nachat.zip
+  - path: nachat/nachat.exe
