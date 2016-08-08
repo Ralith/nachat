@@ -172,11 +172,17 @@ void TimelineView::paintEvent(QPaintEvent *) {
       QPixmap avatar_pixmap;
       const auto av_size = block_info().avatar_size();
       if(it->avatar()) {
-        auto a = avatars_.at(*it->avatar());
-        if(a.pixmap.isNull()) {
-          avatar_pixmap = avatar_loading_.pixmap(av_size, av_size);
+        auto &av = *it->avatar();
+        auto it = avatars_.find(av);
+        if(it == avatars_.end()) {
+          qDebug() << "INTERNAL ERROR: MISSING AVATAR" << av.host() << av.id();
         } else {
-          avatar_pixmap = a.pixmap;
+          auto a = it->second;
+          if(a.pixmap.isNull()) {
+            avatar_pixmap = avatar_loading_.pixmap(av_size, av_size);
+          } else {
+            avatar_pixmap = a.pixmap;
+          }
         }
       } else {
         avatar_pixmap = avatar_unset_.pixmap(av_size, av_size);
@@ -409,6 +415,7 @@ void TimelineView::set_avatar(const matrix::Content &content, const QString &typ
 void TimelineView::unref_avatar(const matrix::Content &content) {
   auto it = avatars_.find(content);
   --it->second.references;
+  qDebug() << room_.pretty_name() << "unref" << content.host() << content.id() << it->second.references;
   if(it->second.references == 0) {
     avatars_.erase(it);
   }
@@ -573,6 +580,7 @@ void TimelineView::ref_avatar(const matrix::Content &content) {
     connect(reply, &matrix::ContentFetch::error, &room_, &matrix::Room::error);
   }
   ++result.first->second.references;
+  qDebug() << room_.pretty_name() << "ref" << content.host() << content.id() << result.first->second.references;
 }
 
 TimelineView::VisibleBlock *TimelineView::dispatch_event(const optional<QPointF> &p, QEvent *e) {
