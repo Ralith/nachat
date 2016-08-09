@@ -51,7 +51,18 @@ std::unique_ptr<Session> Session::create(Matrix& universe, QUrl homeserver, QStr
     throw std::runtime_error(("unable to create state directory at " + state_path).toStdString().c_str());
   }
 
-  env.open(state_path.toStdString().c_str());
+  try {
+    env.open(state_path.toStdString().c_str());
+  } catch(const lmdb::version_mismatch_error &e) {
+    qDebug() << "resetting cache due to LMDB version mismatch:" << e.what();
+    QDir state_dir(state_path);
+    for(const auto &file : state_dir.entryList(QDir::NoDotAndDotDot)) {
+      if(!state_dir.remove(file)) {
+        throw std::runtime_error(("unable to delete state file " + state_path + file).toStdString().c_str());
+      }
+    }
+    env.open(state_path.toStdString().c_str());
+  }
 
   auto txn = lmdb::txn::begin(env);
   auto state_db = lmdb::dbi::open(txn, "state", MDB_CREATE);
@@ -64,7 +75,7 @@ std::unique_ptr<Session> Session::create(Matrix& universe, QUrl homeserver, QStr
       compatible = CACHE_FORMAT_VERSION == from_little_endian<uint64_t>(x.data<const uint8_t>());
     }
     if(!compatible) {
-      qDebug() << "incompatible cache, resetting it";
+      qDebug() << "resetting cache due to breaking changes or fixes";
       lmdb::dbi_drop(txn, state_db, false);
       lmdb::dbi_drop(txn, room_db, false);
       fresh = true;
