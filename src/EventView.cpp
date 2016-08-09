@@ -3,6 +3,7 @@
 #include <sstream>
 #include <iomanip>
 #include <ctime>
+#include <cmath>
 
 #include <QMenu>
 #include <QDebug>

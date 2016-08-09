@@ -1,6 +1,7 @@
 #include "TimelineView.hpp"
 
 #include <chrono>
+#include <cmath>
 
 #include <QDebug>
 #include <QScrollBar>
