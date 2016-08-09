@@ -596,29 +596,38 @@ void TimelineView::push_error(const QString &msg) {
 void TimelineView::read_events() {
   if(visible_blocks_.empty() || unread_events_ == 0) return; // Nothing to have read
 
-  const QRectF view_rect = viewport()->contentsRect();
-  const auto &front = visible_blocks_.front();
-  size_t hidden_events = 0;
-  for(auto it = blocks_.crbegin(); &*it != front.block; ++it) {
-    hidden_events += it->events().size();
-  }
-  qreal offset = front.bounds.top() + front.block->header_height();
-  optional<size_t> visible_index;
-  for(const auto event : front.block->events()) {
-    if(view_rect.contains(event->bounding_rect().translated(0, offset))) {
-      visible_index = visible_index ? *visible_index + 1 : 0;
-    }
-  }
   optional<matrix::EventID> id;
-  if(visible_index) {
-    id = front.block->events()[*visible_index]->data.event_id;
-    hidden_events += front.block->events().size() - (1 + *visible_index);
-  } else if(visible_blocks_.size() > 1) {
-    id = visible_blocks_[1].block->events().back()->data.event_id;
-    hidden_events += front.block->events().size();
+  if(verticalScrollBar()->value() == verticalScrollBar()->maximum()) {
+    // Shortcut for the common case; also ensures accuracy when being called after a message is added but before a
+    // repaint
+    if(!blocks_.empty()) {
+      id = blocks_.back().events().back()->data.event_id;
+      unread_events_ = 0;
+    }
+  } else {
+    const QRectF view_rect = viewport()->contentsRect();
+    const auto &front = visible_blocks_.front();
+    size_t hidden_events = 0;
+    for(auto it = blocks_.crbegin(); &*it != front.block; ++it) {
+      hidden_events += it->events().size();
+    }
+    qreal offset = front.bounds.top() + front.block->header_height();
+    optional<size_t> visible_index;
+    for(const auto event : front.block->events()) {
+      if(view_rect.contains(event->bounding_rect().translated(0, offset))) {
+        visible_index = visible_index ? *visible_index + 1 : 0;
+      }
+    }
+    if(visible_index) {
+      id = front.block->events()[*visible_index]->data.event_id;
+      hidden_events += front.block->events().size() - (1 + *visible_index);
+    } else if(visible_blocks_.size() > 1) {
+      id = visible_blocks_[1].block->events().back()->data.event_id;
+      hidden_events += front.block->events().size();
+    }
+    if(hidden_events >= unread_events_) return; // Don't re-issue redundant receipts
+    unread_events_ = hidden_events;
   }
-  if(hidden_events >= unread_events_) return; // Don't re-issue redundant receipts
-  unread_events_ = hidden_events;
   if(id) {
     room_.send_read_receipt(*id);
   }
