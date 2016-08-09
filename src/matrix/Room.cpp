@@ -273,18 +273,22 @@ bool Room::dispatch(lmdb::txn &txn, const proto::JoinedRoom &joined) {
   if(joined.timeline.events.empty() && !buffer_.empty()) {
     buffer_.back().prev_batch = joined.timeline.prev_batch;
   } else {
-    Batch batch;
+    buffer_.emplace_back();     // In-place so has_unread is always up to date
+    auto &batch = buffer_.back();
     batch.prev_batch = joined.timeline.prev_batch;
     batch.events.reserve(joined.timeline.events.size());
     for(auto &evt : joined.timeline.events) {
       state_touched |= state_.dispatch(evt, this, &member_db_, &txn);
+
+      // Must be placed before `message` so resulting calls to `has_unread` return accurate results accounting for the
+      // message in question
+      batch.events.emplace_back(evt);
+
       message(evt);
 
       // Must happen after we dispatch the previous event but before we process the next one, to ensure display names are
       // correct for leave/ban events as well as whatever follows
       state_.prune_departed(this);
-
-      batch.events.emplace_back(evt);
     }
 
     while(!buffer_.empty() && (buffer_size() - batch.events.size()) >= session_.buffer_size()) {
