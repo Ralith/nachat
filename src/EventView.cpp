@@ -216,6 +216,8 @@ Event::Event(const BlockRenderInfo &info, const matrix::RoomState &state, const 
       break;
     }
     }
+  } else if(e.type == "m.room.create") {
+    lines = info.format_text(state, e, QObject::tr("created the room"));
   } else {
     lines = info.format_text(state, e, QObject::tr("unrecognized event type %1").arg(e.type));
   }
@@ -294,7 +296,8 @@ void Block::update_header(const BlockRenderInfo &info, const matrix::RoomState &
       name_layout_.setFormats({f});
     }
   } else {
-    qDebug() << "block sender" << sender_id_ << "is not a member";
+    if(events_.front()->data.type != "m.room.create")
+      qDebug() << "block sender" << sender_id_ << "is not a member";
     name_layout_.setText(sender_id_);
   }
 
