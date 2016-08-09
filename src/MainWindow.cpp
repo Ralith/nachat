@@ -169,8 +169,6 @@ void MainWindow::joined(matrix::Room &room) {
         auto &i = rooms_.at(room.id());
         i.has_unread = true;
         update_room(i);
-      } else {
-        qDebug() << "new" << e.type << e.event_id << "on" << room.pretty_name() << "already read";
       }
     });
 }
