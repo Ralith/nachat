@@ -12,6 +12,8 @@
 #include <QApplication>
 #include <QDesktopServices>
 #include <QMessageBox>
+#include <QRegularExpression>
+#include <QMimeData>
 
 #include "qstringbuilder.h"
 

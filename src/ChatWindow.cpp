@@ -14,6 +14,7 @@ ChatWindow::ChatWindow(QWidget *parent)
   ui->setupUi(this);
 
   setAttribute(Qt::WA_DeleteOnClose);
+  setWindowFlags(Qt::Window);
 
   connect(ui->room_stack, &QStackedWidget::currentChanged, this, &ChatWindow::current_changed);
   ui->splitter->insertWidget(0, room_list_);

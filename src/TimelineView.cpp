@@ -9,9 +9,9 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QMenu>
-#include <QRegularExpression>
 #include <QTimer>
 #include <QToolTip>
+#include <QMimeDatabase>
 
 #include "matrix/Session.hpp"
 #include "Spinner.hpp"

@@ -4,7 +4,6 @@
 #include <memory>
 
 #include <QDialog>
-#include <QSettings>
 
 #include "matrix/Matrix.hpp"
 
@@ -16,19 +15,17 @@ class LoginDialog : public QDialog {
   Q_OBJECT
 
 public:
-  LoginDialog(matrix::Matrix &, QWidget *parent = 0);
+  LoginDialog(QWidget *parent = nullptr);
   ~LoginDialog();
 
   void accept() override;
 
-  std::unique_ptr<matrix::Session> session() { return std::move(session_); }
+  QString username() const;
+  QString password() const;
+  QString homeserver() const;
 
 private:
   Ui::LoginDialog *ui;
-  QSettings settings_;
-  matrix::Matrix &m_;
-
-  std::unique_ptr<matrix::Session> session_;
 };
 
 #endif // LOGINDIALOG_H

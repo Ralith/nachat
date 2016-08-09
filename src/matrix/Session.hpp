@@ -3,11 +3,12 @@
 
 #include <unordered_map>
 #include <chrono>
+#include <memory>
 
-#include <QtNetwork>
 #include <QObject>
 #include <QString>
 #include <QUrlQuery>
+#include <QTimer>
 
 #include <lmdb++.h>
 
@@ -15,6 +16,10 @@
 
 #include "Room.hpp"
 #include "Content.hpp"
+
+class QNetworkRequest;
+class QNetworkReply;
+class QIODevice;
 
 namespace matrix {
 
@@ -55,8 +60,7 @@ public:
   Session(Matrix& universe, QUrl homeserver, QString user_id, QString access_token,
           lmdb::env &&env, lmdb::dbi &&state_db, lmdb::dbi &&room_db);
 
-  // Returns ownership
-  static Session *create(Matrix& universe, QUrl homeserver, QString user_id, QString access_token);
+  static std::unique_ptr<Session> create(Matrix& universe, QUrl homeserver, QString user_id, QString access_token);
 
   Session(const Session &) = delete;
   Session &operator=(const Session &) = delete;
@@ -123,14 +127,17 @@ private:
   bool synced_;
   QString next_batch_;
   lmdb::txn *active_txn_ = nullptr;
+  QNetworkReply *sync_reply_;
+  QTimer sync_retry_timer_;
 
   std::chrono::steady_clock::time_point last_sync_error_;
   // Last time a sync failed. Used to ensure we don't spin if errors happen quickly.
 
   QNetworkRequest request(const QString &path, QUrlQuery query = QUrlQuery(), const QString &content_type = "application/json");
 
-  void sync(QUrlQuery query = QUrlQuery());
-  void handle_sync_reply(QNetworkReply *);
+  void sync();
+  void sync(QUrlQuery query);
+  void handle_sync_reply();
   void dispatch(lmdb::txn &txn, proto::Sync sync);
   void cache_state(lmdb::txn &txn, const Room &room);
 };

@@ -18,7 +18,6 @@ add_version(version.cpp)
 
 add_executable(nachat WIN32
   main.cpp
-  Application.cpp
   LoginDialog.cpp
   MainWindow.cpp
   ChatWindow.cpp

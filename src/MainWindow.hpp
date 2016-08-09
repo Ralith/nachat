@@ -2,7 +2,6 @@
 #define MAINWINDOW_H
 
 #include <unordered_map>
-#include <memory>
 
 #include <QMainWindow>
 #include <QPointer>
@@ -10,7 +9,6 @@
 #include "matrix/Matrix.hpp"
 
 class QProgressBar;
-class QSettings;
 class QLabel;
 class ChatWindow;
 class QListWidgetItem;
@@ -27,7 +25,7 @@ class MainWindow : public QMainWindow {
   Q_OBJECT
 
 public:
-  explicit MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> session);
+  explicit MainWindow(matrix::Session &session);
   ~MainWindow();
 
 signals:
@@ -43,8 +41,7 @@ private:
   };
 
   Ui::MainWindow *ui;
-  QSettings &settings_;
-  std::unique_ptr<matrix::Session> session_;
+  matrix::Session &session_;
   QProgressBar *progress_;
   QLabel *sync_label_;
   QPointer<ChatWindow> last_focused_;

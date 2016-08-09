@@ -5,6 +5,7 @@
   - User feedback for connection/input/permissions errors
   - Sort user list by activity, then power, then name
     https://github.com/matrix-org/matrix-react-sdk/blob/507f5e2ca19156a2afd3470fc9b17fb5e65cdf9b/src/components/views/rooms/MemberList.js#L383
+  - Fix unread state sometimes not being set on message receipt
 
 * Medium
   - Desktop notifications

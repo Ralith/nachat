@@ -3,6 +3,7 @@
 #include <unordered_set>
 #include <memory>
 
+#include <QtNetwork>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonDocument>

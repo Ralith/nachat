@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 
+#include <QtNetwork>
 #include <QTimer>
 #include <QUrl>
 #include <QDataStream>
@@ -39,7 +40,7 @@ constexpr void to_little_endian(T v, uint8_t *x) {
   }
 }
 
-Session *Session::create(Matrix& universe, QUrl homeserver, QString user_id, QString access_token) {
+std::unique_ptr<Session> Session::create(Matrix& universe, QUrl homeserver, QString user_id, QString access_token) {
   auto env = lmdb::env::create();
   env.set_mapsize(128UL * 1024UL * 1024UL);  // 128MB should be enough for anyone!
   env.set_max_dbs(1024UL);                   // maximum rooms plus two
@@ -79,8 +80,8 @@ Session *Session::create(Matrix& universe, QUrl homeserver, QString user_id, QSt
 
   txn.commit();
 
-  return new Session(universe, std::move(homeserver), std::move(user_id), std::move(access_token),
-                     std::move(env), std::move(state_db), std::move(room_db));
+  return std::make_unique<Session>(universe, std::move(homeserver), std::move(user_id), std::move(access_token),
+                                   std::move(env), std::move(state_db), std::move(room_db));
 }
 
 static std::string room_dbname(const QString &room_id) { return ("r." + room_id).toStdString(); }
@@ -114,6 +115,9 @@ Session::Session(Matrix& universe, QUrl homeserver, QString user_id, QString acc
     txn.commit();
   }
 
+  sync_retry_timer_.setSingleShot(true);
+  connect(&sync_retry_timer_, &QTimer::timeout, this, static_cast<void (Session::*)()>(&Session::sync));
+
   QUrlQuery query;
   query.addQueryItem("filter", encode({
         {"room", QJsonObject{
@@ -125,6 +129,11 @@ Session::Session(Matrix& universe, QUrl homeserver, QString user_id, QString acc
   sync(query);
 }
 
+void Session::sync() {
+  // This method exists so that we can hook Qt signals to it without worrying about default arguments.
+  sync(QUrlQuery());
+}
+
 void Session::sync(QUrlQuery query) {
   if(next_batch_.isNull()) {
     query.addQueryItem("full_state", "true");
@@ -132,21 +141,20 @@ void Session::sync(QUrlQuery query) {
     query.addQueryItem("since", next_batch_);
     query.addQueryItem("timeout", POLL_TIMEOUT_MS);
   }
-  auto reply = get("client/r0/sync", query);
-  connect(reply, &QNetworkReply::finished, [this, reply](){
-      sync_progress(0, 0);
-      if(reply->size() > (1 << 12)) {
-        qDebug() << "sync is" << reply->size() << "bytes";
-      }
-      handle_sync_reply(reply);
-    });
-  connect(reply, &QNetworkReply::downloadProgress, this, &Session::sync_progress);
+  sync_reply_ = get("client/r0/sync", query);
+  connect(sync_reply_, &QNetworkReply::finished, this, &Session::handle_sync_reply);
+  connect(sync_reply_, &QNetworkReply::downloadProgress, this, &Session::sync_progress);
 }
 
-void Session::handle_sync_reply(QNetworkReply *reply) {
+void Session::handle_sync_reply() {
+  sync_progress(0, 0);
+  if(sync_reply_->size() > (1 << 12)) {
+    qDebug() << "sync is" << sync_reply_->size() << "bytes";
+  }
+
   using namespace std::chrono_literals;
 
-  auto r = decode(reply);
+  auto r = decode(sync_reply_);
   bool was_synced = synced_;
   if(r.error) {
     synced_ = false;
@@ -181,10 +189,7 @@ void Session::handle_sync_reply(QNetworkReply *reply) {
   constexpr std::chrono::steady_clock::duration RETRY_INTERVAL = 10s;
   auto since_last_error = now - last_sync_error_;
   if(!synced_ && (since_last_error < RETRY_INTERVAL)) {
-    QTimer::singleShot(std::chrono::duration_cast<std::chrono::milliseconds>(RETRY_INTERVAL - since_last_error).count(),
-                       [this](){
-                         sync();
-                       });
+    sync_retry_timer_.start(std::chrono::duration_cast<std::chrono::milliseconds>(RETRY_INTERVAL - since_last_error).count());
   } else {
     sync();
   }

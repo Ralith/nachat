@@ -2,45 +2,39 @@
 #include "ui_LoginDialog.h"
 
 #include <QMessageBox>
+#include <QSettings>
 
 #include "matrix/Session.hpp"
 
-LoginDialog::LoginDialog(matrix::Matrix &m, QWidget *parent)
-    : QDialog(parent), ui(new Ui::LoginDialog), m_(m) {
+LoginDialog::LoginDialog(QWidget *parent)
+    : QDialog(parent), ui(new Ui::LoginDialog) {
   ui->setupUi(this);
 
-  ui->buttonBox->addButton(tr("Sign In"), QDialogButtonBox::AcceptRole);
   ui->buttonBox->addButton(tr("Quit"), QDialogButtonBox::RejectRole);
+  ui->buttonBox->addButton(tr("Sign In"), QDialogButtonBox::AcceptRole);
 
-  auto username = settings_.value("login/username");
+  QSettings settings;
+
+  auto username = settings.value("login/username");
   if(!username.isNull()) {
-    ui->username->setText(settings_.value("login/username").toString());
+    ui->username->setText(settings.value("login/username").toString());
     ui->password->setFocus(Qt::OtherFocusReason);
   }
 
-  auto homeserver = settings_.value("login/homeserver");
+  auto homeserver = settings.value("login/homeserver");
   if(!homeserver.isNull()) {
     ui->homeserver->setText(homeserver.toString());
-  }
-
-  connect(&m_, &matrix::Matrix::login_error, [&](QString err){
-      setDisabled(false);
-      QMessageBox msg(QMessageBox::Critical, tr("Login Error"), err, QMessageBox::Ok, this);
-      msg.exec();
-    });
-  connect(&m_, &matrix::Matrix::logged_in, [this](matrix::Session *session){
-      session_ = std::unique_ptr<matrix::Session>(session);
-      settings_.setValue("login/username", ui->username->text());
-      settings_.setValue("login/homeserver", ui->homeserver->text());
-      settings_.setValue("session/access_token", session->access_token());
-      settings_.setValue("session/user_id", session->user_id());
-      QDialog::accept();
-    });
+  }  
 }
 
 LoginDialog::~LoginDialog() { delete ui; }
 
 void LoginDialog::accept() {
   setDisabled(true);
-  m_.login(ui->homeserver->text(), ui->username->text(), ui->password->text());
+  setResult(QDialog::Accepted);
+  accepted();
 }
+
+QString LoginDialog::username() const { return ui->username->text(); }
+QString LoginDialog::password() const { return ui->password->text(); }
+QString LoginDialog::homeserver() const { return ui->homeserver->text(); }

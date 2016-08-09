@@ -19,7 +19,7 @@
      <item>
       <widget class="QLineEdit" name="username">
        <property name="placeholderText">
-        <string>Matrix ID</string>
+        <string>User ID</string>
        </property>
       </widget>
      </item>

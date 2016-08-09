@@ -4,11 +4,11 @@
 #include <algorithm>
 #include <unordered_set>
 
-#include <QSettings>
 #include <QProgressBar>
 #include <QLabel>
 #include <QSystemTrayIcon>
 #include <QMessageBox>
+#include <QDebug>
 
 #include "matrix/Room.hpp"
 #include "matrix/Session.hpp"
@@ -18,8 +18,8 @@
 #include "ChatWindow.hpp"
 #include "JoinDialog.hpp"
 
-MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> session)
-    : ui(new Ui::MainWindow), settings_(settings), session_(std::move(session)),
+MainWindow::MainWindow(matrix::Session &session)
+    : ui(new Ui::MainWindow), session_(session),
       progress_(new QProgressBar(this)), sync_label_(new QLabel(this)) {
   ui->setupUi(this);
 
@@ -35,19 +35,14 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
     });
   tray->show();
 
-  connect(ui->action_log_out, &QAction::triggered, session_.get(), &matrix::Session::log_out);
-  connect(session_.get(), &matrix::Session::logged_out, [this]() {
-      settings_.remove("session/access_token");
-      settings_.remove("session/user_id");
-      ui->action_quit->trigger();
-    });
+  connect(ui->action_log_out, &QAction::triggered, &session_, &matrix::Session::log_out);
 
   connect(ui->action_join, &QAction::triggered, [this]() {
       QPointer<JoinDialog> dialog(new JoinDialog);
       dialog->setAttribute(Qt::WA_DeleteOnClose);
       connect(dialog, &QDialog::accepted, [this, dialog]() {
           const QString room = dialog->room();
-          auto reply = session_->join(room);
+          auto reply = session_.join(room);
           connect(reply, &matrix::JoinRequest::error, [room, dialog](const QString &msg) {
               if(!dialog) return;
               auto error = new QMessageBox(QMessageBox::Critical,
@@ -65,12 +60,12 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
       dialog->open();
     });
 
-  connect(session_.get(), &matrix::Session::error, [this](QString msg) {
+  connect(&session_, &matrix::Session::error, [this](QString msg) {
       qDebug() << "Session error: " << msg;
     });
 
-  connect(session_.get(), &matrix::Session::synced_changed, [this]() {
-      if(session_->synced()) {
+  connect(&session_, &matrix::Session::synced_changed, [this]() {
+      if(session_.synced()) {
         sync_label_->hide();
       } else {
         sync_label_->setText(tr("Disconnected"));
@@ -78,12 +73,12 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
       }
     });
 
-  connect(session_.get(), &matrix::Session::sync_progress, this, &MainWindow::sync_progress);
-  connect(session_.get(), &matrix::Session::sync_complete, [this]() {
+  connect(&session_, &matrix::Session::sync_progress, this, &MainWindow::sync_progress);
+  connect(&session_, &matrix::Session::sync_complete, [this]() {
       progress_->hide();
       sync_label_->hide();
     });
-  connect(session_.get(), &matrix::Session::joined, this, &MainWindow::joined);
+  connect(&session_, &matrix::Session::joined, this, &MainWindow::joined);
 
   ui->action_quit->setShortcuts(QKeySequence::Quit);
   connect(ui->action_quit, &QAction::triggered, this, &MainWindow::quit);
@@ -121,12 +116,21 @@ MainWindow::MainWindow(QSettings &settings, std::unique_ptr<matrix::Session> ses
     });
 
   sync_progress(0, -1);
-  for(auto room : session_->rooms()) {
+  for(auto room : session_.rooms()) {
     joined(*room);
   }
 }
 
-MainWindow::~MainWindow() { delete ui; }
+MainWindow::~MainWindow() {
+  std::unordered_set<ChatWindow *> windows;
+  for(auto &room : rooms_) {
+    windows.insert(room.second.window);
+  }
+  for(auto window : windows) {
+    delete window;
+  }
+  delete ui;
+}
 
 void MainWindow::joined(matrix::Room &room) {
   auto &i = rooms_.emplace(
@@ -165,6 +169,8 @@ void MainWindow::joined(matrix::Room &room) {
         auto &i = rooms_.at(room.id());
         i.has_unread = true;
         update_room(i);
+      } else {
+        qDebug() << "new" << e.type << e.event_id << "on" << room.pretty_name() << "already read";
       }
     });
 }
@@ -232,14 +238,14 @@ ChatWindow *MainWindow::spawn_chat_window() {
     });
   connect(window, &ChatWindow::claimed, [this, window](const matrix::RoomID &r) {
       rooms_.at(r).window = window;
-      new RoomWindowBridge(*session_->room_from_id(r), *window);
+      new RoomWindowBridge(*session_.room_from_id(r), *window);
     });
   connect(window, &ChatWindow::released, [this](const matrix::RoomID &rid) {
       rooms_.at(rid).window = nullptr;
     });
   connect(window, &ChatWindow::pop_out, [this](const matrix::RoomID &r, RoomView *v) {
       auto w = spawn_chat_window();
-      w->add(*session_->room_from_id(r), v);
+      w->add(*session_.room_from_id(r), v);
       w->show();
       w->raise();
       w->activateWindow();

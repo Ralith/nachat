@@ -7,8 +7,6 @@ class QNetworkAccessManager;
 
 namespace matrix {
 
-class Session;
-
 class Matrix : public QObject {
   Q_OBJECT
 
@@ -21,7 +19,7 @@ public:
   void login(QUrl homeserver, QString username, QString password);
 
 signals:
-  void logged_in(Session* session);
+  void logged_in(const QString &user_id, const QString &access_token);
   void login_error(QString message);
 
 private:
