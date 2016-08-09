@@ -30,6 +30,7 @@ public:
 
 signals:
   void quit();
+  void log_out();
 
 private:
   struct RoomInfo {

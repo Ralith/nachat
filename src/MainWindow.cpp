@@ -35,7 +35,7 @@ MainWindow::MainWindow(matrix::Session &session)
     });
   tray->show();
 
-  connect(ui->action_log_out, &QAction::triggered, &session_, &matrix::Session::log_out);
+  connect(ui->action_log_out, &QAction::triggered, this, &MainWindow::log_out);
 
   connect(ui->action_join, &QAction::triggered, [this]() {
       QPointer<JoinDialog> dialog(new JoinDialog);
@@ -232,6 +232,7 @@ void RoomWindowBridge::check_release(const matrix::RoomID &room) {
 }
 
 ChatWindow *MainWindow::spawn_chat_window() {
+  // We don't create these as children to prevent Qt from hinting to WMs that they should be floating
   auto window = new ChatWindow;
   connect(window, &ChatWindow::focused, [this, window](const matrix::RoomID &r) {
       last_focused_ = window;

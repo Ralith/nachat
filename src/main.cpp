@@ -30,9 +30,6 @@ int main(int argc, char *argv[]) {
 
   auto &&session_established = [&]() {
     QObject::connect(session.get(), &matrix::Session::logged_out, [&]() {
-        settings.remove("session/access_token");
-        settings.remove("session/user_id");
-
         main_window.reset();
 
         // Pass ownership to Qt for disposal
@@ -43,6 +40,11 @@ int main(int argc, char *argv[]) {
       });
     main_window = std::make_unique<MainWindow>(*session);
     QObject::connect(main_window.get(), &MainWindow::quit, &app, &QApplication::quit);
+    QObject::connect(main_window.get(), &MainWindow::log_out, session.get(), &matrix::Session::log_out);
+    QObject::connect(main_window.get(), &MainWindow::log_out, [&settings]() {
+        settings.remove("session/access_token");
+        settings.remove("session/user_id");
+      });
     main_window->show();
   };
 
