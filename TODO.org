@@ -26,6 +26,7 @@
   - Large avatars in user profile views
   - Room info dialog containing aliases, ID in selectable labels
   - Travis CI
+  - Only open URLs on mouse release if the mouse was on the same item when originally clicked
 
 * Low
   - Fix duplication of first message loaded from cache(?) by first message pulled from backlog
