@@ -291,14 +291,13 @@ bool Room::dispatch(lmdb::txn &txn, const proto::JoinedRoom &joined) {
       state_.prune_departed(this);
     }
 
-    while(!buffer_.empty() && (buffer_size() - batch.events.size()) >= session_.buffer_size()) {
+    while(!buffer_.empty() && (buffer_size() - buffer_.front().events.size()) >= session_.buffer_size()) {
       for(auto &evt : buffer_.front().events) {
         initial_state_.apply(evt);
         initial_state_.prune_departed();
       }
       buffer_.pop_front();
     }
-    buffer_.emplace_back(std::move(batch));
   }
 
   for(const auto &evt : joined.ephemeral.events) {
