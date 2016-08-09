@@ -444,12 +444,11 @@ void Event::event(matrix::Room &room, QWidget &container, const optional<QPointF
       container.setCursor(Qt::ArrowCursor);
     }
     break;
-  case QEvent::MouseButtonRelease: {
-    if(target) {
+  case QEvent::MouseButtonRelease:
+    if(static_cast<QMouseEvent*>(e)->button() == Qt::LeftButton && target) {
       open_url(room.session(), *target);
     }
     break;
-  }
   case QEvent::ToolTip:
     if(pos && line_bounds && line_bounds->contains(*pos)) {
       QToolTip::showText(static_cast<QHelpEvent*>(e)->globalPos(), to_timestamp("%T", time));
@@ -722,7 +721,7 @@ void Block::event(matrix::Room &room, QWidget &container, const BlockRenderInfo 
   case QEvent::MouseButtonPress:
     break;
   case QEvent::MouseButtonRelease:
-    if(pos && avatar_ && avatar_rect.contains(*pos)) {
+    if(static_cast<QMouseEvent*>(e)->button() == Qt::LeftButton && pos && avatar_ && avatar_rect.contains(*pos)) {
       open_url(room.session(), avatar_->url());
     }
     break;
