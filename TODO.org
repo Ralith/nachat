@@ -23,6 +23,7 @@
   - User list in main window, separate from room list
   - Per-mxid storage of last transaction ID and open windows+rooms in lmdb
   - Large avatars in user profile views
+  - Room info dialog containing aliases, ID in selectable labels
 
 * Low
   - Fix duplication of first message loaded from cache(?) by first message pulled from backlog
