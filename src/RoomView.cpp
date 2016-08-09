@@ -110,3 +110,7 @@ void RoomView::command(const QString &name, const QString &args) {
     timeline_view_->push_error(tr("Unrecognized command: %1").arg(name));
   }
 }
+
+void RoomView::selected() {
+  timeline_view_->read_events();
+}

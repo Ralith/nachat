@@ -34,6 +34,9 @@ public:
 
   const matrix::Room &room() { return room_; }
 
+  void selected();
+  // Notify that user action has brought the room into view. Triggers read receipts.
+
 private:
   Ui::RoomView *ui;
   TimelineView *timeline_view_;
