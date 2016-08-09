@@ -53,7 +53,8 @@ std::unique_ptr<Session> Session::create(Matrix& universe, QUrl homeserver, QStr
 
   try {
     env.open(state_path.toStdString().c_str());
-  } catch(const lmdb::version_mismatch_error &e) {
+  } catch(const lmdb::error &e) {
+    if(e.code() != MDB_VERSION_MISMATCH && e.code() != MDB_INVALID) throw;
     qDebug() << "resetting cache due to LMDB version mismatch:" << e.what();
     QDir state_dir(state_path);
     for(const auto &file : state_dir.entryList(QDir::NoDotAndDotDot)) {
