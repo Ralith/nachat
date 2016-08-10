@@ -7,7 +7,6 @@
 #include <QProgressBar>
 #include <QLabel>
 #include <QSystemTrayIcon>
-#include <QMessageBox>
 #include <QDebug>
 
 #include "matrix/Room.hpp"
@@ -17,6 +16,7 @@
 #include "RoomView.hpp"
 #include "ChatWindow.hpp"
 #include "JoinDialog.hpp"
+#include "MessageBox.hpp"
 
 MainWindow::MainWindow(matrix::Session &session)
     : ui(new Ui::MainWindow), session_(session),
@@ -45,15 +45,8 @@ MainWindow::MainWindow(matrix::Session &session)
           auto reply = session_.join(room);
           connect(reply, &matrix::JoinRequest::error, [room, dialog](const QString &msg) {
               if(!dialog) return;
-              auto error = new QMessageBox(QMessageBox::Critical,
-                                           tr("Failed to join room"),
-                                           tr("Couldn't join %1: %2")
-                                           .arg(room)
-                                           .arg(msg),
-                                           QMessageBox::Close,
-                                           dialog);
-              error->open();
-              connect(error, &QDialog::finished, dialog, [dialog]() { if(dialog) dialog->setEnabled(true); });
+              dialog->setEnabled(true);
+              MessageBox::critical(tr("Failed to join room"), tr("Couldn't join %1: %2").arg(room).arg(msg), dialog);
             });
           connect(reply, &matrix::JoinRequest::success, dialog, &QWidget::close);
         });

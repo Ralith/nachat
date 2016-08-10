@@ -1,6 +1,5 @@
 #include <QtNetwork>
 #include <QApplication>
-#include <QMessageBox>
 #include <QSettings>
 
 #include "matrix/Matrix.hpp"
@@ -8,6 +7,7 @@
 
 #include "LoginDialog.hpp"
 #include "MainWindow.hpp"
+#include "MessageBox.hpp"
 
 #include "version.hpp"
 
@@ -61,9 +61,7 @@ int main(int argc, char *argv[]) {
 
   QObject::connect(&matrix, &matrix::Matrix::login_error, [&](QString err){
       login.setDisabled(false);
-      auto msg = new QMessageBox(QMessageBox::Critical, QObject::tr("Login Error"), err, QMessageBox::Ok, &login);
-      msg->setAttribute(Qt::WA_DeleteOnClose);
-      msg->open();
+      MessageBox::critical(QObject::tr("Login Error"), err, &login);
     });
 
   QObject::connect(&login, &LoginDialog::accepted, [&](){

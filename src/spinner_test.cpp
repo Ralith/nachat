@@ -1,6 +1,4 @@
 #include <QApplication>
-#include <QMessageBox>
-#include <QSettings>
 
 #include "Spinner.hpp"
 

@@ -1,7 +1,6 @@
 #include "LoginDialog.hpp"
 #include "ui_LoginDialog.h"
 
-#include <QMessageBox>
 #include <QSettings>
 
 #include "matrix/Session.hpp"

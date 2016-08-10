@@ -34,6 +34,7 @@ add_executable(nachat WIN32
   JoinDialog.cpp
   version.cpp
   version_string.cpp
+  MessageBox.cpp
   ${UI_HEADERS}
   )
 
