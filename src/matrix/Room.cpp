@@ -587,7 +587,7 @@ EventSend *Room::leave() {
 }
 
 void Room::send(const QString &type, QJsonObject content) {
-  pending_events_.push_back({type, content, session_.get_transaction_id()});
+  pending_events_.push_back({type, content});
   transmit_event();
 }
 
@@ -686,8 +686,9 @@ void Room::transmit_event() {
   if(transmitting_) return;     // We'll be re-invoked when necessary by transmit_finished
 
   const auto &event = pending_events_.front();
+  if(last_transmit_transaction_.isEmpty()) last_transmit_transaction_ = session_.get_transaction_id();
   transmitting_ = session_.put(
-    "client/r0/rooms/" % QUrl::toPercentEncoding(id_) % "/send/" % QUrl::toPercentEncoding(event.type) % "/" % event.transaction,
+    "client/r0/rooms/" % QUrl::toPercentEncoding(id_) % "/send/" % QUrl::toPercentEncoding(event.type) % "/" % last_transmit_transaction_,
     event.content);
   connect(transmitting_, &QNetworkReply::finished, this, &Room::transmit_finished);
 }
@@ -709,12 +710,15 @@ void Room::transmit_finished() {
     retrying = true;
     qDebug() << "retrying send in" << duration_cast<duration<float>>(retry_backoff_).count() << "seconds due to error:" << *r.error;
   }
+  if(!retrying) {
+    last_transmit_transaction_ = "";
+    retry_backoff_ = MINIMUM_BACKOFF;
+  }
   if(!pending_events_.empty()) {
     if(retrying) {
       transmit_retry_timer_.start(duration_cast<milliseconds>(retry_backoff_).count());
       retry_backoff_ = std::min<steady_clock::duration>(30s, duration_cast<steady_clock::duration>(1.25 * retry_backoff_));
     } else {
-      retry_backoff_ = MINIMUM_BACKOFF;
       transmit_event();
     }
   }

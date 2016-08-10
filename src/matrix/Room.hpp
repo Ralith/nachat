@@ -127,6 +127,11 @@ public:
     uint64_t ts;
   };
 
+  struct PendingEvent {
+    QString type;
+    QJsonObject content;
+  };
+
   Room(Matrix &universe, Session &session, QString id, const QJsonObject &initial,
        lmdb::env &env, lmdb::txn &init_txn, lmdb::dbi &&member_db);
 
@@ -176,6 +181,9 @@ public:
   gsl::span<const Receipt * const> receipts_for(const EventID &id) const;
   const Receipt *receipt_from(const UserID &id) const;
 
+  const std::deque<PendingEvent> &pending_events() const { return pending_events_; }
+  // Events that have not yet been successfully transmitted
+
 signals:
   void membership_changed(const Member &, Membership old);
   void member_disambiguation_changed(const Member &, const QString &old);
@@ -199,12 +207,6 @@ signals:
   void left(Membership reason);
 
 private:
-  struct PendingEvent {
-    QString type;
-    QJsonObject content;
-    QString transaction;
-  };
-
   Matrix &universe_;
   Session &session_;
   const RoomID id_;
@@ -222,10 +224,12 @@ private:
 
   std::vector<UserID> typing_;
 
+  // State used for reliable in-order message delivery in send, transmit_event, and transmit_finished
   std::deque<PendingEvent> pending_events_;
   QNetworkReply *transmitting_;
   QTimer transmit_retry_timer_;
   std::chrono::steady_clock::duration retry_backoff_;
+  QString last_transmit_transaction_;
 
   void update_receipt(const UserID &user, const EventID &event, uint64_t ts);
 
