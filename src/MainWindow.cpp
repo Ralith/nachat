@@ -157,7 +157,7 @@ void MainWindow::joined(matrix::Room &room) {
   connect(&room, &matrix::Room::aliases_changed, just_update);
   connect(&room, &matrix::Room::membership_changed, just_update);
   connect(&room, &matrix::Room::receipts_changed, just_update);
-  connect(&room, &matrix::Room::message, [this, &room](const matrix::proto::Event &e) {
+  connect(&room, &matrix::Room::message, [this, &room]() {
       if(room.has_unread()) {
         auto &i = rooms_.at(room.id());
         i.has_unread = true;
@@ -225,7 +225,7 @@ void RoomWindowBridge::check_release(const matrix::RoomID &room) {
 ChatWindow *MainWindow::spawn_chat_window() {
   // We don't create these as children to prevent Qt from hinting to WMs that they should be floating
   auto window = new ChatWindow;
-  connect(window, &ChatWindow::focused, [this, window](const matrix::RoomID &r) {
+  connect(window, &ChatWindow::focused, [this, window]() {
       last_focused_ = window;
     });
   connect(window, &ChatWindow::claimed, [this, window](const matrix::RoomID &r) {
