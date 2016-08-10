@@ -155,12 +155,12 @@ public:
 
   MessageFetch *get_messages(Direction dir, QString from, uint64_t limit = 0, QString to = "");
 
-  void leave();
+  EventSend *leave();
 
   void send(const QString &type, QJsonObject content);
   void redact(const EventID &event, const QString &reason = "");
 
-  void send_file(const QString &path);
+  void send_file(const QString &uri, const QString &name, const QString &media_type, size_t size);
   void send_message(const QString &body);
   void send_emote(const QString &body);
 

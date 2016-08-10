@@ -44,10 +44,22 @@ class ContentFetch : public QObject {
   Q_OBJECT
 
 public:
-  ContentFetch(QObject *parent = nullptr) : QObject(parent) {}
+  explicit ContentFetch(QObject *parent = nullptr) : QObject(parent) {}
 
 signals:
   void finished(const Content &content, const QString &type, const QString &disposition, const QByteArray &data);
+  void error(const QString &msg);
+};
+
+class ContentPost : public QObject {
+  Q_OBJECT
+
+public:
+  explicit ContentPost(QObject *parent = nullptr) : QObject(parent) {}
+
+signals:
+  void success(const QString &content_uri);
+  void progress(qint64 completed, qint64 total);
   void error(const QString &msg);
 };
 
@@ -90,13 +102,14 @@ public:
   QNetworkReply *get(const QString &path, QUrlQuery query = QUrlQuery());
 
   QNetworkReply *post(const QString &path, QJsonObject body = QJsonObject(), QUrlQuery query = QUrlQuery());
-  QNetworkReply *post(const QString &path, QIODevice *data, const QString &content_type, const QString &filename);
 
   QNetworkReply *put(const QString &path, QJsonObject body);
 
   ContentFetch *get(const Content &);
 
   ContentFetch *get_thumbnail(const Content &, const QSize &size, ThumbnailMethod method = ThumbnailMethod::SCALE);
+
+  ContentPost *upload(QIODevice &data, const QString &content_type, const QString &filename);
 
   QString get_transaction_id();
 

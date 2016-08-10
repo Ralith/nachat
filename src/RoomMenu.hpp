@@ -13,6 +13,8 @@ public:
 
 private:
   matrix::Room &room_;
+
+  void upload_file(const QString &path);
 };
 
 #endif

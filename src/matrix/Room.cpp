@@ -7,8 +7,6 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonDocument>
-#include <QFile>
-#include <QMimeDatabase>
 #include <QDebug>
 
 #include "proto.hpp"
@@ -535,11 +533,10 @@ MessageFetch *Room::get_messages(Direction dir, QString from, uint64_t limit, QS
   if(!to.isEmpty()) query.addQueryItem("to", to);
   auto reply = session_.get(QString("client/r0/rooms/" % QUrl::toPercentEncoding(id_) % "/messages"), query);
   auto result = new MessageFetch(reply);
-  connect(reply, &QNetworkReply::finished, [this, reply, result]() {
+  connect(reply, &QNetworkReply::finished, [reply, result]() {
       auto r = decode(reply);
       if(r.error) {
         result->error(*r.error);
-        error(*r.error);
         return;
       }
       auto start_val = r.object["start"];
@@ -568,14 +565,18 @@ MessageFetch *Room::get_messages(Direction dir, QString from, uint64_t limit, QS
   return result;
 }
 
-void Room::leave() {
+EventSend *Room::leave() {
   auto reply = session_.post(QString("client/r0/rooms/" % QUrl::toPercentEncoding(id_) % "/leave"));
-  connect(reply, &QNetworkReply::finished, [this, reply]() {
+  auto es = new EventSend(reply);
+  connect(reply, &QNetworkReply::finished, [es, reply]() {
       auto r = decode(reply);
       if(r.error) {
-        error(*r.error);
+        es->error(*r.error);
+      } else {
+        es->finished();
       }
     });
+  return es;
 }
 
 void Room::send(const QString &type, QJsonObject content) {
@@ -603,32 +604,16 @@ void Room::redact(const EventID &event, const QString &reason) {
   connect(es, &EventSend::error, this, &Room::error);
 }
 
-void Room::send_file(const QString &path) {
-  auto f = std::make_shared<QFile>(path, this);
-  QFileInfo info(*f);
-  if(!f->open(QIODevice::ReadOnly)) {
-    error(f->errorString());
-    return;
-  }
-  QString type = QMimeDatabase().mimeTypeForFile(info).name();
-  auto reply = session_.post("media/r0/upload", f.get(), type, info.fileName());
-  connect(reply, &QNetworkReply::finished, [this, reply, f, info, type]() {
-      auto r = decode(reply);
-      if(r.error) {
-        error(*r.error);
-        return;
-      }
-      const QString uri = r.object["content_uri"].toString();
-      send("m.room.message",
-           {{"msgtype", "m.file"},  // Autodetect image/audio/video?
-             {"url", uri},
-             {"filename", info.fileName()},
-             {"body", QString(info.fileName())},
-             {"info", QJsonObject{
-                 {"mimetype", type},
-                 {"size", info.size()}}}
+void Room::send_file(const QString &uri, const QString &name, const QString &media_type, size_t size) {
+  send("m.room.message",
+       {{"msgtype", "m.file"},
+         {"url", uri},
+         {"filename", name},
+         {"body", name},
+         {"info", QJsonObject{
+             {"mimetype", media_type},
+             {"size", static_cast<qint64>(size)}}}
            });
-    });
 }
 
 void Room::send_message(const QString &body) {

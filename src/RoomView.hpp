@@ -32,7 +32,8 @@ public:
   explicit RoomView(matrix::Room &room, QWidget *parent = nullptr);
   ~RoomView();
 
-  const matrix::Room &room() { return room_; }
+  const matrix::Room &room() const { return room_; }
+  matrix::Room &room() { return room_; }
 
   void selected();
   // Notify that user action has brought the room into view. Triggers read receipts.

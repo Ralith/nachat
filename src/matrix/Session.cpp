@@ -5,7 +5,6 @@
 #include <QtNetwork>
 #include <QTimer>
 #include <QUrl>
-#include <QDataStream>
 
 #include "utils.hpp"
 #include "Matrix.hpp"
@@ -283,14 +282,6 @@ QNetworkReply *Session::post(const QString &path, QJsonObject body, QUrlQuery qu
   return reply;
 }
 
-QNetworkReply *Session::post(const QString &path, QIODevice *data, const QString &content_type, const QString &filename) {
-  QUrlQuery query;
-  query.addQueryItem("filename", filename);
-  auto reply = universe_.net.post(request(path, query, content_type), data);
-  connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
-  return reply;
-}
-
 QNetworkReply *Session::put(const QString &path, QJsonObject body) {
   auto reply = universe_.net.put(request(path), encode(body));
   connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
@@ -381,6 +372,24 @@ void Session::cache_state(const Room &room) {
   auto txn = lmdb::txn::begin(env_);
   cache_state(txn, room);
   txn.commit();
+}
+
+ContentPost *Session::upload(QIODevice &data, const QString &content_type, const QString &filename) {
+  QUrlQuery query;
+  query.addQueryItem("filename", filename);
+  auto reply = universe_.net.post(request("media/r0/upload", query, content_type), &data);
+  auto result = new ContentPost(reply);
+  connect(reply, &QNetworkReply::finished, [result, reply]() {
+      reply->deleteLater();
+      auto r = decode(reply);
+      if(r.error) {
+        result->error(*r.error);
+      } else {
+        result->success(r.object["content_uri"].toString());
+      }
+    });
+  connect(reply, &QNetworkReply::uploadProgress, result, &ContentPost::progress);
+  return result;
 }
 
 }
