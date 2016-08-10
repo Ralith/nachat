@@ -594,7 +594,7 @@ void TimelineView::push_error(const QString &msg) {
 }
 
 void TimelineView::read_events() {
-  if(visible_blocks_.empty() || unread_events_ == 0) return; // Nothing to have read
+  if(blocks_.empty() || unread_events_ == 0) return; // Nothing to have read
 
   optional<matrix::EventID> id;
   if(verticalScrollBar()->value() == verticalScrollBar()->maximum()) {
