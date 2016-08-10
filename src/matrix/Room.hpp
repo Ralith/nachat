@@ -118,7 +118,7 @@ public:
     QString prev_batch;
   };
 
-  struct ReadEvent {
+  struct Receipt {
     EventID event;
     uint64_t ts;
   };
@@ -169,8 +169,8 @@ public:
   bool has_unread() const;
 
   gsl::span<const UserID> typing() const { return typing_; }
-  gsl::span<const ReadEvent * const> receipts_for(const EventID &id) const;
-  const ReadEvent *receipt_from(const UserID &id) const;
+  gsl::span<const Receipt * const> receipts_for(const EventID &id) const;
+  const Receipt *receipt_from(const UserID &id) const;
 
 signals:
   void membership_changed(const Member &, Membership old);
@@ -207,10 +207,12 @@ private:
 
   uint64_t highlight_count_ = 0, notification_count_ = 0;
 
-  std::unordered_map<EventID, std::vector<ReadEvent *>, QStringHash> receipts_by_event_;
-  std::unordered_map<UserID, ReadEvent, QStringHash> receipts_by_user_;
+  std::unordered_map<EventID, std::vector<Receipt *>, QStringHash> receipts_by_event_;
+  std::unordered_map<UserID, Receipt, QStringHash> receipts_by_user_;
 
   std::vector<UserID> typing_;
+
+  
 
   void update_receipt(const UserID &user, const EventID &event, uint64_t ts);
 };

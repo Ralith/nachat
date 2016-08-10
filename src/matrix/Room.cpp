@@ -641,14 +641,14 @@ void Room::send_read_receipt(const EventID &event) {
   connect(es, &EventSend::error, this, &Room::error);
 }
 
-gsl::span<const Room::ReadEvent * const> Room::receipts_for(const EventID &id) const {
+gsl::span<const Room::Receipt * const> Room::receipts_for(const EventID &id) const {
   auto it = receipts_by_event_.find(id);
   if(it == receipts_by_event_.end()) return {};
-  return gsl::span<const Room::ReadEvent * const>(static_cast<const Room::ReadEvent * const *>(it->second.data()),
+  return gsl::span<const Room::Receipt * const>(static_cast<const Receipt * const *>(it->second.data()),
                                                   it->second.size());
 }
 
-const Room::ReadEvent *Room::receipt_from(const UserID &id) const {
+const Room::Receipt *Room::receipt_from(const UserID &id) const {
   auto it = receipts_by_user_.find(id);
   if(it == receipts_by_user_.end()) return nullptr;
   return &it->second;
@@ -668,7 +668,7 @@ bool Room::has_unread() const {
 }
 
 void Room::update_receipt(const UserID &user, const EventID &event, uint64_t ts) {
-  const ReadEvent new_value{event, ts};
+  const Receipt new_value{event, ts};
   auto emplaced = receipts_by_user_.emplace(user, new_value);
   if(!emplaced.second) {
     auto it = receipts_by_event_.find(emplaced.first->second.event);
