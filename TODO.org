@@ -27,6 +27,8 @@
   - Room info dialog containing aliases, ID in selectable labels
   - Travis CI
   - Only open URLs on mouse release if the mouse was on the same item when originally clicked
+  - Spec-compliant logins with compatibility checking and browser fallback
+  - Check HS's advertised API version support before attempting login
 
 * Low
   - Fix duplication of first message loaded from cache(?) by first message pulled from backlog
