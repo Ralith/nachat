@@ -4,12 +4,14 @@
 #include <vector>
 #include <unordered_map>
 #include <deque>
+#include <chrono>
 
 #include <lmdb++.h>
 
 #include <QString>
 #include <QObject>
 #include <QUrl>
+#include <QTimer>
 
 #include <span.h>
 
@@ -17,6 +19,8 @@
 
 #include "Member.hpp"
 #include "Event.hpp"
+
+class QNetworkReply;
 
 namespace matrix {
 
@@ -195,6 +199,12 @@ signals:
   void left(Membership reason);
 
 private:
+  struct PendingEvent {
+    QString type;
+    QJsonObject content;
+    QString transaction;
+  };
+
   Matrix &universe_;
   Session &session_;
   const RoomID id_;
@@ -212,9 +222,15 @@ private:
 
   std::vector<UserID> typing_;
 
-  
+  std::deque<PendingEvent> pending_events_;
+  QNetworkReply *transmitting_;
+  QTimer transmit_retry_timer_;
+  std::chrono::steady_clock::duration retry_backoff_;
 
   void update_receipt(const UserID &user, const EventID &event, uint64_t ts);
+
+  void transmit_event();
+  void transmit_finished();
 };
 
 }

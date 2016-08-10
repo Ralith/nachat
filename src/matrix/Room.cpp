@@ -2,6 +2,7 @@
 
 #include <unordered_set>
 #include <memory>
+#include <algorithm>
 
 #include <QtNetwork>
 #include <QJsonObject>
@@ -170,11 +171,17 @@ const Member *RoomState::member_from_id(const QString &id) const {
   return &it->second;
 }
 
+static constexpr std::chrono::steady_clock::duration MINIMUM_BACKOFF(std::chrono::seconds(5));
+// Default synapse seconds-per-message when throttled
+
 Room::Room(Matrix &universe, Session &session, QString id, const QJsonObject &initial,
            lmdb::env &env, lmdb::txn &txn, lmdb::dbi &&member_db)
     : universe_(universe), session_(session), id_(std::move(id)),
-      db_env_(env), member_db_(std::move(member_db))
+      db_env_(env), member_db_(std::move(member_db)), transmitting_(nullptr), retry_backoff_(MINIMUM_BACKOFF)
 {
+  transmit_retry_timer_.setSingleShot(true);
+  connect(&transmit_retry_timer_, &QTimer::timeout, this, &Room::transmit_event);
+
   if(!initial.isEmpty()) {
     initial_state_ = RoomState(initial["initial_state"].toObject(), txn, member_db_);
     state_ = initial_state_;
@@ -580,15 +587,8 @@ EventSend *Room::leave() {
 }
 
 void Room::send(const QString &type, QJsonObject content) {
-  auto txn = session_.get_transaction_id();
-  auto reply = session_.put("client/r0/rooms/" % QUrl::toPercentEncoding(id_) % "/send/" % QUrl::toPercentEncoding(type) % "/" % txn,
-                            content);
-  auto es = new EventSend(reply);
-  connect(reply, &QNetworkReply::finished, [reply, es, txn]() {
-      if(reply->error()) es->error(reply->errorString());
-      else es->finished();
-    });
-  connect(es, &EventSend::error, this, &Room::error);
+  pending_events_.push_back({type, content, session_.get_transaction_id()});
+  transmit_event();
 }
 
 void Room::redact(const EventID &event, const QString &reason) {
@@ -680,6 +680,44 @@ void Room::update_receipt(const UserID &user, const EventID &event, uint64_t ts)
     emplaced.first->second = new_value;
   }
   receipts_by_event_[event].push_back(&emplaced.first->second);
+}
+
+void Room::transmit_event() {
+  if(transmitting_) return;     // We'll be re-invoked when necessary by transmit_finished
+
+  const auto &event = pending_events_.front();
+  transmitting_ = session_.put(
+    "client/r0/rooms/" % QUrl::toPercentEncoding(id_) % "/send/" % QUrl::toPercentEncoding(event.type) % "/" % event.transaction,
+    event.content);
+  connect(transmitting_, &QNetworkReply::finished, this, &Room::transmit_finished);
+}
+
+void Room::transmit_finished() {
+  using namespace std::chrono;
+  using namespace std::chrono_literals;
+
+  auto r = decode(transmitting_);
+  transmitting_ = nullptr;
+  bool retrying = false;
+  if(r.code >= 400 && r.code < 500 && r.code != 429) {
+    // HTTP client errors other than rate-limiting are unrecoverable
+    error(*r.error);
+    pending_events_.pop_front();
+  } else if(!r.error) {
+    pending_events_.pop_front();
+  } else {
+    retrying = true;
+    qDebug() << "retrying send in" << duration_cast<duration<float>>(retry_backoff_).count() << "seconds due to error:" << *r.error;
+  }
+  if(!pending_events_.empty()) {
+    if(retrying) {
+      transmit_retry_timer_.start(duration_cast<milliseconds>(retry_backoff_).count());
+      retry_backoff_ = std::min<steady_clock::duration>(30s, duration_cast<steady_clock::duration>(1.25 * retry_backoff_));
+    } else {
+      retry_backoff_ = MINIMUM_BACKOFF;
+      transmit_event();
+    }
+  }
 }
 
 }

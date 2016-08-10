@@ -54,3 +54,4 @@
     - Timeline rendering parameters?
   - Clickable email addresses
   - Consider moving buffer management entirely into matrix lib
+  - matrix::Room::send_now(event)
