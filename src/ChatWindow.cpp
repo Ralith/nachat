@@ -25,7 +25,8 @@ ChatWindow::ChatWindow(QWidget *parent)
       auto &view = *rooms_.at(room);
       ui->room_stack->setCurrentWidget(&view);
       view.setFocus();
-      view.selected();
+      if(isActiveWindow())
+        view.selected();
       focused(room);
     });
   connect(room_list_, &RoomViewList::claimed, this, &ChatWindow::claimed);
