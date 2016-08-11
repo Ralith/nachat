@@ -333,10 +333,10 @@ void Block::update_layout(const BlockRenderInfo &info) {
       }
       return true;
     };
-    auto start_ts = to_timestamp("%R", events_.front()->time);
+    auto start_ts = to_timestamp("%H:%M", events_.front()->time);
     bool done = false;
     if(events_.size() > 1 && events_.back()->time - events_.front()->time > TIMESTAMP_RANGE_THRESHOLD) {
-      auto end_ts = to_timestamp("%R", events_.back()->time);
+      auto end_ts = to_timestamp("%H:%M", events_.back()->time);
       timestamp_layout_.setText(start_ts % "–" % end_ts);
       done = layout_ts();
     }
@@ -457,7 +457,7 @@ void Event::event(matrix::Room &room, QWidget &container, const optional<QPointF
     break;
   case QEvent::ToolTip:
     if(pos && line_bounds && line_bounds->contains(*pos)) {
-      QToolTip::showText(static_cast<QHelpEvent*>(e)->globalPos(), to_timestamp("%T", time));
+      QToolTip::showText(static_cast<QHelpEvent*>(e)->globalPos(), to_timestamp("%H:%M:%S", time));
     } else {
       QToolTip::hideText();
       e->ignore();
@@ -760,7 +760,7 @@ void Block::event(matrix::Room &room, QWidget &container, const BlockRenderInfo 
   }
   case QEvent::ToolTip:
     if(pos && ts_rect.contains(*pos)) {
-      QToolTip::showText(static_cast<QHelpEvent*>(e)->globalPos(), to_timestamp("%F", events().front()->time));
+      QToolTip::showText(static_cast<QHelpEvent*>(e)->globalPos(), to_timestamp("%Y-%m-%d", events().front()->time));
     } else if(pos && (avatar_rect.contains(*pos) || header_rect.contains(*pos))) {
       QToolTip::showText(static_cast<QHelpEvent*>(e)->globalPos(), sender_id());
     } else {
