@@ -69,10 +69,10 @@ class Session : public QObject {
   Q_OBJECT
 
 public:
-  Session(Matrix& universe, QUrl homeserver, QString user_id, QString access_token,
+  Session(Matrix& universe, QUrl homeserver, UserID user_id, QString access_token,
           lmdb::env &&env, lmdb::dbi &&state_db, lmdb::dbi &&room_db);
 
-  static std::unique_ptr<Session> create(Matrix& universe, QUrl homeserver, QString user_id, QString access_token);
+  static std::unique_ptr<Session> create(Matrix& universe, QUrl homeserver, UserID user_id, QString access_token);
 
   Session(const Session &) = delete;
   Session &operator=(const Session &) = delete;
@@ -131,12 +131,12 @@ signals:
 private:
   Matrix &universe_;
   const QUrl homeserver_;
-  const QString user_id_;
+  const UserID user_id_;
   QString access_token_;
   lmdb::env env_;
   lmdb::dbi state_db_, room_db_;
   size_t buffer_size_;
-  std::unordered_map<RoomID, Room, QStringHash> rooms_;
+  std::unordered_map<RoomID, Room> rooms_;
   bool synced_;
   QString next_batch_;
   lmdb::txn *active_txn_ = nullptr;

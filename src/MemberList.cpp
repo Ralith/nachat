@@ -16,7 +16,7 @@ QString MemberList::Compare::key(const QString &n) {
 MemberList::MemberList(const matrix::RoomState &s, QWidget *parent) : QListWidget(parent) {
   auto initial_members = s.members();
   for(const auto &member : initial_members) {
-    members_.insert(std::make_pair(s.member_name(*member), member));
+    members_.insert(std::make_pair(s.member_name(*member), member->id()));
   }
   update_members();
 }
@@ -27,13 +27,13 @@ void MemberList::member_display_changed(const matrix::RoomState &s, const matrix
     QString msg = "member name changed from unknown name " + old + " to " + s.member_name(m);
     throw std::logic_error(msg.toStdString().c_str());
   }
-  members_.insert(std::make_pair(s.member_name(m), &m));
+  members_.insert(std::make_pair(s.member_name(m), m.id()));
   update_members();
 }
 
 void MemberList::membership_changed(const matrix::RoomState &s, const matrix::Member &m) {
   if(membership_displayable(m.membership())) {
-    members_.insert(std::make_pair(s.member_name(m), &m));
+    members_.insert(std::make_pair(s.member_name(m), m.id()));
   } else {
     members_.erase(s.member_name(m));
   }
@@ -45,8 +45,8 @@ void MemberList::update_members() {
   for(const auto &member : members_) {
     auto item = new QListWidgetItem;
     item->setText(member.first);
-    item->setToolTip(member.second->id());
-    item->setData(Qt::UserRole, QVariant::fromValue(const_cast<void*>(reinterpret_cast<const void*>(member.second))));
+    item->setToolTip(member.second.value());
+    item->setData(Qt::UserRole, member.second.value());
     addItem(item);
   }
   setVisible(count() > 2);
@@ -54,7 +54,6 @@ void MemberList::update_members() {
   size_hint_ = QSize(sizeHintForColumn(0) + verticalScrollBar()->sizeHint().width() + margins.left() + margins.right(),
                      fontMetrics().lineSpacing() + horizontalScrollBar()->sizeHint().height());
   updateGeometry();
-  viewport()->update();
 }
 
 QSize MemberList::sizeHint() const {

@@ -63,15 +63,15 @@ TimelineView::TimelineView(matrix::Room &room, QWidget *parent)
   }
 }
 
-void TimelineView::push_back(const matrix::RoomState &state, const matrix::proto::Event &in) {
-  backlog_growable_ &= in.type != "m.room.create";
+void TimelineView::push_back(const matrix::RoomState &state, const matrix::event::Room &in) {
+  backlog_growable_ &= in.type() != matrix::event::room::Create::tag();
 
   assert(!batches_.empty());
   batches_.back().events.emplace_back(block_info(), state, in);
   auto &event = batches_.back().events.back();
 
   if(!blocks_.empty()
-     && blocks_.back().sender_id() == in.sender
+     && blocks_.back().sender_id() == in.sender()
      && event.time - blocks_.back().events().back()->time <= BLOCK_MERGE_INTERVAL) {
     // Add to existing block
     auto &block = blocks_.back();
@@ -248,7 +248,7 @@ void TimelineView::backlog_grow_error() {
   }
 }
 
-void TimelineView::prepend_batch(QString start, QString end, gsl::span<const matrix::proto::Event> events) {
+void TimelineView::prepend_batch(QString start, QString end, gsl::span<const matrix::event::Room> events) {
   backlog_growing_ = false;
   if(backlog_grow_cancelled_) {
     backlog_grow_cancelled_ = false;
@@ -261,11 +261,24 @@ void TimelineView::prepend_batch(QString start, QString end, gsl::span<const mat
   auto &batch = batches_.front();
   batch.token = start;
   for(const auto &e : events) {  // Events is in reverse order
-    initial_state_.ensure_member(e); // Make sure a just-departed member is accounted for
-    batch.events.emplace_front(block_info(), initial_state_, e);
+    if(e.redacted()) continue;
+    try {
+      if(e.type() == matrix::event::room::Member::tag()) {
+        // Make sure a just-departed member is accounted for in e.g. display name and disambiguation lookups
+        initial_state_.ensure_member(matrix::event::room::Member(matrix::event::room::State(e))); 
+      }
+      batch.events.emplace_front(block_info(), initial_state_, e);
+    } catch(const matrix::malformed_event &ex) {
+      initial_state_.prune_departed();
+
+      qDebug() << "WARNING: Skipping malformed event:" << ex.what();
+      qDebug() << e.json();
+
+      continue;
+    }
     auto &internal = batch.events.front();
     if(!blocks_.empty()
-       && blocks_.front().sender_id() == e.sender
+       && blocks_.front().sender_id() == e.sender()
        && blocks_.front().events().front()->time - internal.time <= BLOCK_MERGE_INTERVAL) {
       content_height_ -= blocks_.front().bounding_rect(block_info()).height();
       blocks_.front().events().emplace_front(&internal);
@@ -287,8 +300,9 @@ void TimelineView::prepend_batch(QString start, QString end, gsl::span<const mat
       if(av) ref_avatar(*av);
       content_height_ += blocks_.front().bounding_rect(block_info()).height() + block_info().spacing();
     }
-    initial_state_.revert(e);
-    backlog_growable_ &= e.type != "m.room.create";
+    if(auto s = e.to_state())
+      initial_state_.revert(*s);
+    backlog_growable_ &= e.type() != matrix::event::room::Create::tag();
   }
 
   total_events_ += events.size();
@@ -588,7 +602,7 @@ TimelineView::VisibleBlock *TimelineView::dispatch_event(const optional<QPointF>
 }
 
 void TimelineView::push_error(const QString &msg) {
-  qDebug() << "ERROR:" << msg;
+  qDebug() << "ERROR:" << room_.pretty_name() << msg;
 }
 
 void TimelineView::read_events() {
@@ -599,7 +613,7 @@ void TimelineView::read_events() {
     // Shortcut for the common case; also ensures accuracy when being called after a message is added but before a
     // repaint
     if(!blocks_.empty()) {
-      id = blocks_.back().events().back()->data.event_id;
+      id = blocks_.back().events().back()->data.id();
       unread_events_ = 0;
     }
   } else {
@@ -617,10 +631,10 @@ void TimelineView::read_events() {
       }
     }
     if(visible_index) {
-      id = front.block->events()[*visible_index]->data.event_id;
+      id = front.block->events()[*visible_index]->data.id();
       hidden_events += front.block->events().size() - (1 + *visible_index);
     } else if(visible_blocks_.size() > 1) {
-      id = visible_blocks_[1].block->events().back()->data.event_id;
+      id = visible_blocks_[1].block->events().back()->data.id();
       hidden_events += front.block->events().size();
     }
     if(hidden_events >= unread_events_) return; // Don't re-issue redundant receipts

@@ -1,11 +1,13 @@
 #ifndef NATIVE_CHAT_MATRIX_MATRIX_H_
 #define NATIVE_CHAT_MATRIX_MATRIX_H_
 
-#include "Room.hpp"
+#include <QObject>
 
 class QNetworkAccessManager;
 
 namespace matrix {
+
+struct UserID;
 
 class Matrix : public QObject {
   Q_OBJECT
@@ -19,7 +21,7 @@ public:
   void login(QUrl homeserver, QString username, QString password);
 
 signals:
-  void logged_in(const QString &user_id, const QString &access_token);
+  void logged_in(const UserID &user_id, const QString &access_token);
   void login_error(QString message);
 
 private:

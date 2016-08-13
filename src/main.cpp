@@ -48,12 +48,12 @@ int main(int argc, char *argv[]) {
     main_window->show();
   };
 
-  QObject::connect(&matrix, &matrix::Matrix::logged_in, [&](const QString &user_id, const QString &access_token) {
+  QObject::connect(&matrix, &matrix::Matrix::logged_in, [&](const matrix::UserID &user_id, const QString &access_token) {
       session = matrix::Session::create(matrix, login.homeserver(), user_id, access_token);
       settings.setValue("login/username", login.username());
       settings.setValue("login/homeserver", login.homeserver());
       settings.setValue("session/access_token", access_token);
-      settings.setValue("session/user_id", user_id);
+      settings.setValue("session/user_id", user_id.value());
       login.hide();
       login.setDisabled(false);
       session_established();
@@ -74,7 +74,7 @@ int main(int argc, char *argv[]) {
   if(access_token.isNull() || homeserver.isNull() || user_id.isNull()) {
     login.show();
   } else {
-    session = matrix::Session::create(matrix, homeserver.toString(), user_id.toString(), access_token.toString());
+    session = matrix::Session::create(matrix, homeserver.toString(), matrix::UserID(user_id.toString()), access_token.toString());
     session_established();
   }
 

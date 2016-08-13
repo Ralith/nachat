@@ -10,6 +10,7 @@ qt5_wrap_ui(UI_HEADERS
   ChatWindow.ui
   RedactDialog.ui
   JoinDialog.ui
+  EventSourceView.ui
   )
 
 add_subdirectory(matrix)
@@ -35,6 +36,7 @@ add_executable(nachat WIN32
   version.cpp
   version_string.cpp
   MessageBox.cpp
+  EventSourceView.cpp
   ${UI_HEADERS}
   )
 

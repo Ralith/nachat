@@ -5,6 +5,7 @@
 #include <QStandardPaths>
 
 #include "utils.hpp"
+#include "Event.hpp"
 
 namespace matrix {
 
@@ -39,7 +40,7 @@ void Matrix::login(QUrl homeserver, QString username, QString password) {
         login_error(tr("Malformed response from server"));
         return;
       }
-      logged_in(user_id.toString(), token.toString());
+      logged_in(UserID(user_id.toString()), token.toString());
     });
 }
 

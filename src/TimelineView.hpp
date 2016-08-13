@@ -29,7 +29,7 @@ public:
   void end_batch(const QString &token);
   // Call upon receiving a new batch, with that batch's prev_batch token.
 
-  void push_back(const matrix::RoomState &state, const matrix::proto::Event &e);
+  void push_back(const matrix::RoomState &state, const matrix::event::Room &e);
 
   void reset();
   // Call if a gap arises in events
@@ -147,7 +147,7 @@ private:
   void update_scrollbar(bool grew_upward);
 
   void grow_backlog();
-  void prepend_batch(QString start, QString end, gsl::span<const matrix::proto::Event> events);
+  void prepend_batch(QString start, QString end, gsl::span<const matrix::event::Room> events);
   void backlog_grow_error();
   int scrollback_trigger_size() const;
   int scrollback_status_size() const;

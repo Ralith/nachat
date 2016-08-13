@@ -6,50 +6,39 @@
 #include <QString>
 #include <QUrl>
 
+#include "Event.hpp"
+
 class QJsonObject;
 
 namespace matrix {
 
 class Room;
 
-namespace proto {
-struct Event;
-}
-
-enum class Membership {
-  INVITE, JOIN, LEAVE, BAN
-};
-
-std::experimental::optional<Membership> parse_membership(const QString &m);
-
 // Whether a membership participates in naming per 11.2.2.3
 constexpr inline bool membership_displayable(Membership m) {
   return m == Membership::JOIN || m == Membership::INVITE;
 }
 
-using UserID = QString;
-
 class Member {
 public:
-  explicit Member(UserID id) : id_(std::move(id)) {}
+  explicit Member(UserID id) : id_(std::move(id)), member_{event::room::MemberContent::leave} {}
+  // Can this constructor be removed?
 
-  Member(QString id, const QJsonObject &);
+  Member(UserID id, event::room::MemberContent content);
 
-  QJsonObject to_json() const;
+  QJsonObject json() const { return member_.json(); }
 
   const UserID &id() const { return id_; }
-  const QString &display_name() const { return display_name_; }
-  const QUrl &avatar_url() const { return avatar_url_; }
-  Membership membership() const { return membership_; }
-  const QString &pretty_name() const { return display_name_.isEmpty() ? id_ : display_name_; }
+  const std::experimental::optional<QString> &displayname() const { return member_.displayname(); }
+  const std::experimental::optional<QString> &avatar_url() const { return member_.avatar_url(); }
+  Membership membership() const { return member_.membership(); }
+  const QString &pretty_name() const { return member_.displayname() ? *member_.displayname() : id_.value(); }
 
-  void update_membership(const QJsonObject &content);
+  void update_membership(event::room::MemberContent content) { member_ = content; }
 
 private:
   UserID id_;
-  QString display_name_;  // Optional
-  QUrl avatar_url_;       // Optional
-  Membership membership_ = Membership::LEAVE;
+  event::room::MemberContent member_;
 };
 
 }

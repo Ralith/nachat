@@ -15,12 +15,14 @@
 #include <QMessageBox>
 #include <QRegularExpression>
 #include <QMimeData>
+#include <QPointer>
 
 #include "qstringbuilder.h"
 
 #include "matrix/Session.hpp"
 
 #include "RedactDialog.hpp"
+#include "EventSourceView.hpp"
 
 using std::experimental::optional;
 
@@ -38,7 +40,7 @@ static QString pretty_size(double n) {
 }
 
 std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>>
-  BlockRenderInfo::format_text(const matrix::RoomState &state, const matrix::proto::Event &evt, const QString &str) const {
+  BlockRenderInfo::format_text(const matrix::RoomState &state, const matrix::event::Room &evt, const QString &str) const {
 
   std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> result;
   const static QRegularExpression line_re("\\R", QRegularExpression::UseUnicodePropertiesOption | QRegularExpression::OptimizeOnFirstUsageOption);
@@ -47,17 +49,20 @@ std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>>
   std::transform(lines.begin(), lines.end(), std::back_inserter(result),
                  [](const QString &s){ return std::pair<QString, QVector<QTextLayout::FormatRange>>(s, {}); });
 
-  if(evt.type == "m.room.message") {
-    const auto msgtype = evt.content["msgtype"].toString();
-    if(msgtype == "m.emote" && !result.empty()) {
-      auto &member = *state.member_from_id(evt.sender);
+  if(evt.type() == matrix::event::room::Message::tag()) {
+    matrix::event::room::Message msg(evt);
+    if(msg.msgtype() == matrix::event::room::message::Emote::tag() && !result.empty()) {
+      auto &member = *state.member_from_id(evt.sender());
       result.front().first = "* " % member.pretty_name() % " " % result.front().first;
     }
   }
 
   // Detect highlights
   auto self_member = state.member_from_id(self());
-  const bool highlight = self_member && str.toCaseFolded().contains(self_member->display_name().toCaseFolded());
+  const bool highlight =
+    self_member
+    && ((self_member->displayname() && str.toCaseFolded().contains(self_member->displayname()->toCaseFolded()))
+        || str.toCaseFolded().contains(self().value()));
   if(highlight) {
     QTextCharFormat highlight_format;
     highlight_format.setFontWeight(QFont::Bold);
@@ -103,48 +108,58 @@ std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>>
   return result;
 }
 
-Event::Event(const BlockRenderInfo &info, const matrix::RoomState &state, const matrix::proto::Event &e)
-  : data(e), time(to_time_point(e.origin_server_ts)) {
+Event::Event(const BlockRenderInfo &info, const matrix::RoomState &state, const matrix::event::Room &e)
+  : data(e), time(to_time_point(e.origin_server_ts())) {
   std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> lines;
-  if(e.type == "m.room.message") {
-    const auto msgtype = e.content["msgtype"].toString();
-    if(msgtype == "m.file" || msgtype == "m.image" || msgtype == "m.video" || msgtype == "m.audio") {
+  if(e.type() == matrix::event::room::Message::tag()) {
+    matrix::event::room::Message msg(e);
+    if(msg.msgtype() == matrix::event::room::message::File::tag()
+       || msg.msgtype() == matrix::event::room::message::Image::tag()
+       || msg.msgtype() == matrix::event::room::message::Video::tag()
+       || msg.msgtype() == matrix::event::room::message::Audio::tag()) {
+      matrix::event::room::message::FileLike file(msg);
       lines.emplace_back();
       auto &line = lines.front();
-      line.first = e.content["body"].toString();
-      if(line.first.isEmpty()) line.first = e.content["filename"].toString();
+      if(msg.msgtype() == matrix::event::room::message::File::tag() && msg.body() == "") {
+        line.first = matrix::event::room::message::File(file).filename();
+      } else {
+        line.first = file.body();
+      }
+      line.first = msg.body();
       {
         QTextLayout::FormatRange range;
         range.start = 0;
         range.length = line.first.length();
         QTextCharFormat format;
         format.setAnchor(true);
-        format.setAnchorHref(e.content["url"].toString());
+        format.setAnchorHref(file.url());
         format.setForeground(info.palette().link());
         format.setFontUnderline(true);
         range.format = format;
         line.second.push_back(range);
       }
-      auto info = e.content["info"].toObject();
-      auto type = info["mimetype"];
-      auto size = info["size"];
-      if(type.isString() || size.isDouble())
+      auto type = file.mimetype();
+      auto size = file.size();
+      if(type || size)
         line.first += " (";
-      if(size.isDouble())
-        line.first += pretty_size(size.toDouble());
-      if(type.isString())
-        line.first += " " % type.toString();
-      if(type.isString() || size.isDouble())
+      if(size)
+        line.first += pretty_size(*size);
+      if(type) {
+        if(size) line.first += " ";
+        line.first += *type;
+      }
+      if(type || size)
         line.first += ")";
     } else {
-      lines = info.format_text(state, e, e.content["body"].toString());
+      lines = info.format_text(state, e, msg.body());
     }
-  } else if(e.type == "m.room.member") {
-    switch(matrix::parse_membership(e.content["membership"].toString()).value()) {
+  } else if(e.type() == matrix::event::room::Member::tag()) {
+    matrix::event::room::Member member{matrix::event::room::State{e}};
+    switch(member.content().membership()) {
     case matrix::Membership::INVITE: {
-      auto invitee = state.member_from_id(e.state_key);
+      auto invitee = state.member_from_id(member.user());
       if(!invitee) {
-        qDebug() << "got invite for non-member" << e.state_key << " probably because we're probably stepping backwards over a duplicated event from SYN-645";
+        qDebug() << "got invite for non-member" << member.user().value() << "probably due to SYN-645";
         lines = info.format_text(state, e, QObject::tr("SYN-645 related error"));
       } else {
         lines = info.format_text(state, e, QObject::tr("invited %1").arg(state.member_name(*invitee)));
@@ -152,35 +167,34 @@ Event::Event(const BlockRenderInfo &info, const matrix::RoomState &state, const 
       break;
     }
     case matrix::Membership::JOIN: {
-      if(!e.unsigned_.prev_content) {
+      if(!member.prev_content()) {
         lines = info.format_text(state, e, QObject::tr("joined"));
         break;
       }
-      const auto &prev = *e.unsigned_.prev_content;
-      auto prev_membership = matrix::parse_membership(prev["membership"].toString()).value();
-      switch(prev_membership) {
+      const auto &prev = *member.prev_content();
+      switch(prev.membership()) {
       case matrix::Membership::INVITE:
         lines = info.format_text(state, e, QObject::tr("accepted invite"));
         break;
       case matrix::Membership::JOIN: {
-        const bool avatar_changed = QUrl(prev["avatar_url"].toString()) != QUrl(e.content["avatar_url"].toString());
-        const auto new_dn = e.content["displayname"].toString();
-        const auto old_dn = prev["displayname"].toString();
+        const bool avatar_changed = prev.avatar_url() != member.content().avatar_url();
+        const auto new_dn = member.content().displayname();
+        const auto old_dn = prev.displayname();
         const bool dn_changed = old_dn != new_dn;
         if(avatar_changed && dn_changed) {
-          if(new_dn.isEmpty())
+          if(!new_dn)
             lines = info.format_text(state, e, QObject::tr("unset display name and changed avatar"));
           else
-            lines = info.format_text(state, e, QObject::tr("changed display name to %1 and changed avatar").arg(new_dn));
+            lines = info.format_text(state, e, QObject::tr("changed display name to %1 and changed avatar").arg(*new_dn));
         } else if(avatar_changed) {
           lines = info.format_text(state, e, QObject::tr("changed avatar"));
         } else if(dn_changed) {
-          if(new_dn.isEmpty()) {
+          if(!new_dn) {
             lines = info.format_text(state, e, QObject::tr("unset display name"));
-          } else if(old_dn.isEmpty()) {
-            lines = info.format_text(state, e, QObject::tr("set display name to %1").arg(new_dn));
+          } else if(!old_dn) {
+            lines = info.format_text(state, e, QObject::tr("set display name to %1").arg(*new_dn));
           } else {
-            lines = info.format_text(state, e, QObject::tr("changed display name from %1 to %2").arg(old_dn).arg(new_dn));
+            lines = info.format_text(state, e, QObject::tr("changed display name from %1 to %2").arg(*old_dn).arg(*new_dn));
           }
         } else {
           lines = info.format_text(state, e, QObject::tr("sent a no-op join"));
@@ -194,32 +208,32 @@ Event::Event(const BlockRenderInfo &info, const matrix::RoomState &state, const 
       break;
     }
     case matrix::Membership::LEAVE: {
-      if(e.state_key == e.sender) {
+      if(member.user() == member.sender()) {
         lines = info.format_text(state, e, QObject::tr("left"));
       } else {
-        auto gone = state.member_from_id(e.state_key);
+        auto gone = state.member_from_id(member.user());
         if(!gone) {
-          qDebug() << "got leave for non-member" << e.state_key;
+          qDebug() << "got leave for non-member" << member.user().value();
         }
-        lines = info.format_text(state, e, QObject::tr("kicked %1").arg(gone ? state.member_name(*gone) : e.state_key));
+        lines = info.format_text(state, e, QObject::tr("kicked %1").arg(gone ? state.member_name(*gone) : member.user().value()));
       }
       break;
     }
     case matrix::Membership::BAN: {
-      auto banned = state.member_from_id(e.state_key);
+      auto banned = state.member_from_id(member.user());
       if(!banned) {
-        qDebug() << "INTERNAL ERROR: displaying ban of unknown member" << e.state_key;
-        lines = info.format_text(state, e, QObject::tr("banned %1").arg(e.state_key));
+        qDebug() << "INTERNAL ERROR: displaying ban of unknown member" << member.user().value();
+        lines = info.format_text(state, e, QObject::tr("banned %1").arg(member.user().value()));
       } else {
         lines = info.format_text(state, e, QObject::tr("banned %1").arg(state.member_name(*banned)));
       }
       break;
     }
     }
-  } else if(e.type == "m.room.create") {
+  } else if(e.type() == matrix::event::room::Create::tag()) {
     lines = info.format_text(state, e, QObject::tr("created the room"));
   } else {
-    lines = info.format_text(state, e, QObject::tr("unrecognized event type %1").arg(e.type));
+    lines = info.format_text(state, e, QObject::tr("unrecognized event type %1").arg(e.type().value()));
   }
   layouts = std::vector<QTextLayout>(lines.size());
   QTextOption body_options;
@@ -244,9 +258,9 @@ static QString to_timestamp(const char *format, std::chrono::system_clock::time_
   return QString::fromStdString(s.str());
 }
 
-Block::Block(const BlockRenderInfo &info, const matrix::RoomState &state, const matrix::proto::Event &e,
+Block::Block(const BlockRenderInfo &info, const matrix::RoomState &state, const matrix::event::Room &e,
                            Event &e_internal)
-    : sender_id_(e.sender) {
+  : sender_id_(e.sender()) {
   events_.emplace_back(&e_internal);
 
   {
@@ -272,12 +286,12 @@ Block::Block(const BlockRenderInfo &info, const matrix::RoomState &state, const 
 
 void Block::update_header(const BlockRenderInfo &info, const matrix::RoomState &state) {
   auto sender = state.member_from_id(sender_id_);
-  if(sender && !sender->avatar_url().isEmpty()) {
+  if(sender && sender->avatar_url()) {
     std::experimental::optional<matrix::Content> new_avatar;
     try {
-      avatar_ = matrix::Content(sender->avatar_url());
+      avatar_ = matrix::Content(*sender->avatar_url());
     } catch(const std::invalid_argument &e) {
-      qDebug() << sender_id_ << "has invalid avatar URL:" << e.what() << ":" << sender->avatar_url();
+      qDebug() << sender_id().value() << "has invalid avatar URL:" << e.what() << ":" << *sender->avatar_url();
     }
   }
   if(sender) {
@@ -296,9 +310,9 @@ void Block::update_header(const BlockRenderInfo &info, const matrix::RoomState &
       name_layout_.setFormats({f});
     }
   } else {
-    if(events_.front()->data.type != "m.room.create")
-      qDebug() << "block sender" << sender_id_ << "is not a member";
-    name_layout_.setText(sender_id_);
+    if(events_.front()->data.type() != matrix::event::room::Create::tag())
+      qDebug() << "block sender" << sender_id().value() << "is not a member probably due to SYN-645";
+    name_layout_.setText(sender_id_.value());
   }
 
   update_layout(info);
@@ -505,22 +519,30 @@ void Event::populate_menu(matrix::Room &room, QMenu &menu, const QPointF &pos) c
     populate_menu_link(room, menu, *target);
   }
   menu.addSection(QObject::tr("Event"));
-  const matrix::EventID &event_id = data.event_id;
+  const matrix::EventID &event_id = data.id();
   const matrix::RoomID &room_id = room.id();
-  auto &session = room.session();
+  QPointer<matrix::Session> session = &room.session();
+
   auto redact_action = menu.addAction(QIcon::fromTheme("edit-delete"), QObject::tr("&Redact..."));
-  QObject::connect(redact_action, &QAction::triggered, [&session, room_id, event_id]() {
+  QObject::connect(redact_action, &QAction::triggered, [session, room_id, event_id]() {
       auto dialog = new RedactDialog;
       dialog->setAttribute(Qt::WA_DeleteOnClose);
-      QObject::connect(dialog, &QDialog::accepted, [&session, room_id, event_id, dialog]() {
-          auto r = session.room_from_id(room_id);
+      QObject::connect(dialog, &QDialog::accepted, [session, room_id, event_id, dialog]() {
+          if(!session) return;
+          auto r = session->room_from_id(room_id);
           if(r) {
             r->redact(event_id, dialog->reason());
           } else {
-            qDebug() << "couldn't redact" << event_id << "without apparently being in room" << room_id;
+            qDebug() << "couldn't redact" << event_id.value() << "without apparently being in room" << room_id.value();
           }
         });
       dialog->open();
+    });
+
+  auto source_action = menu.addAction(QObject::tr("&View source..."));
+  QJsonObject source = data.json();
+  QObject::connect(source_action, &QAction::triggered, [source]() {
+      (new EventSourceView(source))->show();
     });
 }
 
@@ -626,7 +648,7 @@ void Block::draw(const BlockRenderInfo &info, QPainter &p, QPointF offset, const
 
   for(const auto event : events_) {
     p.save();
-    if(event->data.type != "m.room.message") {
+    if(event->data.type() != matrix::event::room::Message::tag()) {
       p.setPen(info.palette().color(QPalette::Dark));
     }
     QRectF event_bounds;
@@ -746,10 +768,11 @@ void Block::event(matrix::Room &room, QWidget &container, const BlockRenderInfo 
         auto member = room.state().member_from_id(sender_id());
         // TODO: Store this info with the block so it's available even if the user left
         auto dialog = new QMessageBox(QMessageBox::Information,
-                                      QObject::tr("Profile of %1").arg(member ? room.state().member_name(*member) : sender_id()),
+                                      QObject::tr("Profile of %1")
+                                      .arg(member ? room.state().member_name(*member) : sender_id().value()),
                                       QObject::tr("MXID: %1\nDisplay name: %2")
-                                      .arg(sender_id())
-                                      .arg(member ? member->display_name() : ""),
+                                      .arg(sender_id().value())
+                                      .arg(member && member->displayname() ? *member->displayname() : ""),
                                       QMessageBox::Close);
         dialog->setAttribute(Qt::WA_DeleteOnClose);
         dialog->open();
@@ -762,7 +785,7 @@ void Block::event(matrix::Room &room, QWidget &container, const BlockRenderInfo 
     if(pos && ts_rect.contains(*pos)) {
       QToolTip::showText(static_cast<QHelpEvent*>(e)->globalPos(), to_timestamp("%Y-%m-%d", events().front()->time));
     } else if(pos && (avatar_rect.contains(*pos) || header_rect.contains(*pos))) {
-      QToolTip::showText(static_cast<QHelpEvent*>(e)->globalPos(), sender_id());
+      QToolTip::showText(static_cast<QHelpEvent*>(e)->globalPos(), sender_id().value());
     } else {
       QToolTip::hideText();
       e->ignore();

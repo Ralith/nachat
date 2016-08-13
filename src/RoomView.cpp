@@ -45,10 +45,7 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
   connect(entry_, &EntryBox::activity, timeline_view_, &TimelineView::read_events);
 
   connect(&room_, &matrix::Room::message, this, &RoomView::message);
-  connect(&room_, &matrix::Room::error, [this](const QString &message) {
-      // TODO: UI feedback
-      qDebug() << "ERROR:" << room_.pretty_name() << message;
-    });
+  connect(&room_, &matrix::Room::error, timeline_view_, &TimelineView::push_error);
 
   connect(&room_, &matrix::Room::membership_changed, this, &RoomView::membership_changed);
   connect(&room_, &matrix::Room::member_name_changed, this, &RoomView::member_name_changed);
@@ -60,19 +57,19 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
   for(const auto &batch : room_.buffer()) {
     timeline_view_->end_batch(batch.prev_batch);
     for(const auto &event : batch.events) {
-      replay_state.apply(event);
+      if(auto s = event.to_state()) replay_state.apply(*s);
       append_message(replay_state, event);
       replay_state.prune_departed();
     }
   }
 
   connect(&room_, &matrix::Room::topic_changed, this, &RoomView::topic_changed);
-  topic_changed("");
+  topic_changed();
 }
 
 RoomView::~RoomView() { delete ui; }
 
-void RoomView::message(const matrix::proto::Event &evt) {
+void RoomView::message(const matrix::event::Room &evt) {
   append_message(room_.state(), evt);
 }
 
@@ -85,18 +82,23 @@ void RoomView::membership_changed(const matrix::Member &member, matrix::Membersh
   member_list_->membership_changed(room_.state(), member);
 }
 
-void RoomView::append_message(const matrix::RoomState &state, const matrix::proto::Event &msg) {
-  timeline_view_->push_back(state, msg);
+void RoomView::append_message(const matrix::RoomState &state, const matrix::event::Room &msg) {
+  if(msg.redacted()) return;
+  try {
+    timeline_view_->push_back(state, msg);
+  } catch(const matrix::malformed_event &e) {
+    qDebug() << "WARNING:" << room_.pretty_name() << "discarding malformed event:" << e.what();
+    qDebug() << msg.json();
+  }
 }
 
-void RoomView::topic_changed(const QString &old) {
-  (void)old;
-  if(room_.state().topic().isEmpty()) {
+void RoomView::topic_changed() {
+  if(!room_.state().topic()) {
     ui->topic->setTextFormat(Qt::RichText);
     ui->topic->setText("<h2>" + room_.pretty_name() + "</h2>");
   } else {
     ui->topic->setTextFormat(Qt::PlainText);
-    ui->topic->setText(room_.state().topic());
+    ui->topic->setText(*room_.state().topic());
   }
 }
 

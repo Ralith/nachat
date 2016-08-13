@@ -31,37 +31,34 @@ namespace proto {
 struct JoinedRoom;
 }
 
-using RoomID = QString;
-using EventID = QString;
-
 class RoomState {
 public:
   RoomState() = default;  // New, empty room
   RoomState(const QJsonObject &state, lmdb::txn &txn, lmdb::dbi &members);  // Load from db
 
-  void apply(const proto::Event &e) {
+  void apply(const event::room::State &e) {
     dispatch(e, nullptr, nullptr, nullptr);
   }
-  void revert(const proto::Event &e);  // Reverts an event that, if a state event, has prev_content
+  void revert(const event::room::State &e);  // Reverts an event that, if a state event, has prev_content
 
-  void ensure_member(const proto::Event &e);
+  void ensure_member(const event::room::Member &e);
   // Recovers member whose membership is set to "leave" or "ban" by
   // e. Useful for allowing name disambiguation of departed members,
   // e.g. when stepping backwards.
 
-  bool dispatch(const proto::Event &e, Room *room, lmdb::dbi *member_db, lmdb::txn *txn);
+  bool dispatch(const event::room::State &e, Room *room, lmdb::dbi *member_db, lmdb::txn *txn);
   // Returns true if changes were made. Emits state change events on room if supplied.
 
-  const QString &name() const { return name_; }
-  const QString &canonical_alias() const { return canonical_alias_; }
+  const std::experimental::optional<QString> &name() const { return name_; }
+  const std::experimental::optional<QString> &canonical_alias() const { return canonical_alias_; }
   gsl::span<const QString> aliases() const { return aliases_; }
-  const QString &topic() const { return topic_; }
+  const std::experimental::optional<QString> &topic() const { return topic_; }
   const QUrl &avatar() const { return avatar_; }
 
   std::vector<const Member *> members() const;
   const Member *member_from_id(const UserID &id) const;
 
-  QString pretty_name(const QString &own_id) const;
+  QString pretty_name(const UserID &own_id) const;
   // Matrix r0.1.0 11.2.2.5 ish (like vector-web)
 
   QString member_disambiguation(const Member &member) const;
@@ -74,21 +71,19 @@ public:
   // For serialization
 
 private:
-  QString name_;
-  QString canonical_alias_;
+  std::experimental::optional<QString> name_, canonical_alias_, topic_;
   std::vector<QString> aliases_;
-  QString topic_;
   QUrl avatar_;
-  std::unordered_map<UserID, Member, QStringHash> members_by_id_;
+  std::unordered_map<UserID, Member> members_by_id_;
   std::unordered_map<QString, std::vector<UserID>, QStringHash> members_by_displayname_;
-  UserID departed_;
+  std::experimental::optional<UserID> departed_;
 
   void forget_displayname(const UserID &member, const QString &old_name, Room *room);
   void record_displayname(const UserID &member, const QString &name, Room *room);
   std::vector<UserID> &members_named(QString displayname);
   const std::vector<UserID> &members_named(QString displayname) const;
 
-  bool update_membership(const QString &user_id, const QJsonObject &content, Room *room, lmdb::dbi *member_db, lmdb::txn *txn);
+  bool update_membership(const UserID &user_id, const event::room::MemberContent &content, Room *room, lmdb::dbi *member_db, lmdb::txn *txn);
 };
 
 class MessageFetch : public QObject {
@@ -98,7 +93,7 @@ public:
   MessageFetch(QObject *parent = nullptr) : QObject(parent) {}
 
 signals:
-  void finished(QString start, QString end, gsl::span<const proto::Event> events);
+  void finished(QString start, QString end, gsl::span<const event::Room> events);
   void error(const QString &message);
 };
 
@@ -118,7 +113,7 @@ class Room : public QObject {
 
 public:
   struct Batch {
-    std::vector<proto::Event> events;
+    std::vector<event::Room> events;
     QString prev_batch;
   };
 
@@ -132,7 +127,7 @@ public:
     QJsonObject content;
   };
 
-  Room(Matrix &universe, Session &session, QString id, const QJsonObject &initial,
+  Room(Matrix &universe, Session &session, RoomID id, const QJsonObject &initial,
        lmdb::env &env, lmdb::txn &init_txn, lmdb::dbi &&member_db);
 
   Room(const Room &) = delete;
@@ -152,7 +147,7 @@ public:
     return pretty_name() + (highlight_count() != 0 ? " (" + QString::number(highlight_count()) + ")" : "");
   }
 
-  void load_state(lmdb::txn &txn, gsl::span<const proto::Event>);
+  void load_state(lmdb::txn &txn, gsl::span<const event::room::State>);
   bool dispatch(lmdb::txn &txn, const proto::JoinedRoom &);
 
   const std::deque<Batch> &buffer() const { return buffer_; }
@@ -194,14 +189,14 @@ signals:
   void name_changed();
   void canonical_alias_changed();
   void aliases_changed();
-  void topic_changed(const QString &old);
+  void topic_changed(const std::experimental::optional<QString> &old);
   void avatar_changed();
   void discontinuity();
   void typing_changed();
   void receipts_changed();
 
   void prev_batch(const QString &);
-  void message(const proto::Event &);
+  void message(const event::Room &);
 
   void error(const QString &msg);
   void left(Membership reason);
@@ -219,8 +214,8 @@ private:
 
   uint64_t highlight_count_ = 0, notification_count_ = 0;
 
-  std::unordered_map<EventID, std::vector<Receipt *>, QStringHash> receipts_by_event_;
-  std::unordered_map<UserID, Receipt, QStringHash> receipts_by_user_;
+  std::unordered_map<EventID, std::vector<Receipt *>> receipts_by_event_;
+  std::unordered_map<UserID, Receipt> receipts_by_user_;
 
   std::vector<UserID> typing_;
 

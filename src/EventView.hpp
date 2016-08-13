@@ -37,7 +37,7 @@ public:
   const QPalette &palette() const { return palette_; }
 
   std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>>
-    format_text(const matrix::RoomState &state, const matrix::proto::Event &evt, const QString &str) const;
+    format_text(const matrix::RoomState &state, const matrix::event::Room &evt, const QString &str) const;
 
 private:
   matrix::UserID self_;
@@ -48,11 +48,11 @@ private:
 
 class Event {
 public:
-  matrix::proto::Event data;
+  matrix::event::Room data;
   std::vector<QTextLayout> layouts;
   const std::chrono::time_point<std::chrono::system_clock, std::chrono::milliseconds> time;
 
-  Event(const BlockRenderInfo &, const matrix::RoomState &, const matrix::proto::Event &);
+  Event(const BlockRenderInfo &, const matrix::RoomState &, const matrix::event::Room &);
   QRectF bounding_rect() const;
   void update_layout(const BlockRenderInfo &);
 
@@ -72,7 +72,7 @@ struct EventHit {
 
 class Block {
 public:
-  Block(const BlockRenderInfo &, const matrix::RoomState &, const matrix::proto::Event &, Event &);
+  Block(const BlockRenderInfo &, const matrix::RoomState &, const matrix::event::Room &, Event &);
   void update_header(const BlockRenderInfo &, const matrix::RoomState &state);
   void update_layout(const BlockRenderInfo &);
   void draw(const BlockRenderInfo &, QPainter &p, QPointF offset,
@@ -86,7 +86,7 @@ public:
                          std::experimental::optional<QPointF> select_start,
                          std::experimental::optional<QPointF> select_end) const;
 
-  const QString &sender_id() const { return sender_id_; }
+  const matrix::UserID &sender_id() const { return sender_id_; }
   size_t size() const;
   const std::experimental::optional<matrix::Content> &avatar() const { return avatar_; }
   EventHit event_at(const QFontMetrics &, const QPointF &);
@@ -98,8 +98,7 @@ public:
   qreal header_height() const { return name_layout_.boundingRect().height(); }
 
 private:
-  const QString event_id_;
-  const QString sender_id_;
+  const matrix::UserID sender_id_;
   std::experimental::optional<matrix::Content> avatar_;
 
   QTextLayout name_layout_, timestamp_layout_;

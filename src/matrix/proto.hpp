@@ -4,9 +4,10 @@
 #include <vector>
 
 #include <QString>
-#include <QJsonObject>
 
 #include "Event.hpp"
+
+class QJsonValue;
 
 namespace matrix {
 
@@ -17,13 +18,13 @@ struct Presence {
 };
 
 struct State {
-  std::vector<Event> events;
+  std::vector<event::room::State> events;
 };
 
 struct Timeline {
   bool limited;
   QString prev_batch;
-  std::vector<Event> events;
+  std::vector<event::Room> events;
 };
 
 struct UnreadNotifications {
@@ -40,18 +41,22 @@ struct Ephemeral {
 };
 
 struct JoinedRoom {
-  QString id;
+  RoomID id;
   UnreadNotifications unread_notifications;
   Timeline timeline;
   State state;
   AccountData account_data;
   Ephemeral ephemeral;
+
+  explicit JoinedRoom(RoomID id) : id(id) {}
 };
 
 struct LeftRoom {
-  QString id;
+  RoomID id;
   Timeline timeline;
   State state;
+
+  explicit LeftRoom(RoomID id) : id(id) {}
 };
 
 struct InviteState {
@@ -75,6 +80,8 @@ struct Sync {
 };
 
 }
+
+proto::Sync parse_sync(QJsonValue v);
 
 }
 

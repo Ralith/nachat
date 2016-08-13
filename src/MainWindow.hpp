@@ -7,6 +7,7 @@
 #include <QPointer>
 
 #include "matrix/Matrix.hpp"
+#include "matrix/ID.hpp"
 
 class QProgressBar;
 class QLabel;
@@ -19,6 +20,7 @@ class MainWindow;
 
 namespace matrix {
 class Room;
+class Session;
 }
 
 class MainWindow : public QMainWindow {
@@ -47,7 +49,7 @@ private:
   QLabel *sync_label_;
   QPointer<ChatWindow> last_focused_;
 
-  std::unordered_map<matrix::RoomID, RoomInfo, QStringHash> rooms_;
+  std::unordered_map<matrix::RoomID, RoomInfo> rooms_;
 
   void joined(matrix::Room &room);
   void highlight(const matrix::RoomID &room);

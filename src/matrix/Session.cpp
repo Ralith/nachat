@@ -8,7 +8,7 @@
 
 #include "utils.hpp"
 #include "Matrix.hpp"
-#include "parse.hpp"
+#include "proto.hpp"
 
 namespace matrix {
 
@@ -39,12 +39,12 @@ constexpr void to_little_endian(T v, uint8_t *x) {
   }
 }
 
-std::unique_ptr<Session> Session::create(Matrix& universe, QUrl homeserver, QString user_id, QString access_token) {
+std::unique_ptr<Session> Session::create(Matrix& universe, QUrl homeserver, UserID user_id, QString access_token) {
   auto env = lmdb::env::create();
   env.set_mapsize(128UL * 1024UL * 1024UL);  // 128MB should be enough for anyone!
   env.set_max_dbs(1024UL);                   // maximum rooms plus two
 
-  QString state_path = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) % "/" % QString::fromUtf8(user_id.toUtf8().toHex() % "/state");
+  QString state_path = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) % "/" % QString::fromUtf8(user_id.value().toUtf8().toHex() % "/state");
   bool fresh = !QFile::exists(state_path);
   if(!QDir().mkpath(state_path)) {
     throw std::runtime_error(("unable to create state directory at " + state_path).toStdString().c_str());
@@ -95,9 +95,9 @@ std::unique_ptr<Session> Session::create(Matrix& universe, QUrl homeserver, QStr
                                    std::move(env), std::move(state_db), std::move(room_db));
 }
 
-static std::string room_dbname(const QString &room_id) { return ("r." + room_id).toStdString(); }
+static std::string room_dbname(const RoomID &room_id) { return ("r." + room_id.value()).toStdString(); }
 
-Session::Session(Matrix& universe, QUrl homeserver, QString user_id, QString access_token,
+Session::Session(Matrix& universe, QUrl homeserver, UserID user_id, QString access_token,
                  lmdb::env &&env, lmdb::dbi &&state_db, lmdb::dbi &&room_db)
     : universe_(universe), homeserver_(homeserver), user_id_(user_id), access_token_(access_token),
       env_(std::move(env)), state_db_(std::move(state_db)), room_db_(std::move(room_db)),
@@ -113,7 +113,7 @@ Session::Session(Matrix& universe, QUrl homeserver, QString user_id, QString acc
       lmdb::val state;
       auto cursor = lmdb::cursor::open(txn, room_db_);
       while(cursor.get(room, state, MDB_NEXT)) {
-        auto id = QString::fromUtf8(room.data(), room.size());
+        auto id = RoomID(QString::fromUtf8(room.data(), room.size()));
         rooms_.emplace(std::piecewise_construct,
                        std::forward_as_tuple(id),
                        std::forward_as_tuple(universe_, *this, id,
@@ -236,7 +236,7 @@ void Session::dispatch(lmdb::txn &txn, proto::Sync sync) {
 
 void Session::cache_state(lmdb::txn &txn, const Room &room) {
   auto data = QJsonDocument(room.to_json()).toBinaryData();
-  auto utf8 = room.id().toUtf8();
+  auto utf8 = room.id().value().toUtf8();
   lmdb::dbi_put(txn, room_db_, lmdb::val(utf8.data(), utf8.size()), lmdb::val(data.data(), data.size()));
 }
 
@@ -354,7 +354,7 @@ JoinRequest *Session::join(const QString &id_or_alias) {
       if(r.error) {
         req->error(*r.error);
       } else {
-        req->success(r.object["room_id"].toString());
+        req->success(RoomID(r.object["room_id"].toString()));
       }
     });
   return req;

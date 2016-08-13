@@ -12,21 +12,21 @@ RoomViewList::RoomViewList(QWidget *parent) : QListWidget(parent), menu_(new QMe
   connect(this, &QListWidget::currentItemChanged, [this](QListWidgetItem *item, QListWidgetItem *previous) {
       (void)previous;
       if(item != nullptr) {
-        auto room = item->data(Qt::UserRole).toString();
+        auto room = matrix::RoomID(item->data(Qt::UserRole).toString());
         activated(room);
       }
     });
 
   auto move_up = menu_->addAction(tr("Move up"));
   connect(move_up, &QAction::triggered, [this]() {
-      auto r = row(items_.at(context_).item);
+      auto r = row(items_.at(context_.value()).item);
       auto item = takeItem(r);
       insertItem(r > 0 ? r - 1 : 0, item);
       setCurrentItem(item);
     });
   auto move_down = menu_->addAction(tr("Move down"));
   connect(move_down, &QAction::triggered, [this]() {
-      auto r = row(items_.at(context_).item);
+      auto r = row(items_.at(context_.value()).item);
       auto item = takeItem(r);
       insertItem(r+1, item);
       setCurrentItem(item);
@@ -34,11 +34,11 @@ RoomViewList::RoomViewList(QWidget *parent) : QListWidget(parent), menu_(new QMe
   menu_->addSeparator();
   auto pop_out_action = menu_->addAction(QIcon::fromTheme("window-new"), tr("&Pop out"));
   connect(pop_out_action, &QAction::triggered, [this]() {
-      pop_out(context_);
+      pop_out(context_.value());
     });
   auto close = menu_->addAction(QIcon::fromTheme("window-close"), tr("&Close"));
   connect(close, &QAction::triggered, [this]() {
-      release(context_);
+      release(context_.value());
     });
 
   QSizePolicy policy(QSizePolicy::Preferred, QSizePolicy::Preferred);
@@ -51,8 +51,8 @@ RoomViewList::RoomInfo::RoomInfo(QListWidgetItem *i, const matrix::Room &r)
 
 void RoomViewList::add(matrix::Room &room) {
   auto item = new QListWidgetItem;
-  item->setToolTip(room.id());
-  item->setData(Qt::UserRole, room.id());
+  item->setToolTip(room.id().value());
+  item->setData(Qt::UserRole, room.id().value());
   addItem(item);
   auto r = items_.emplace(room.id(), RoomInfo{item, room});
   assert(r.second);
@@ -89,7 +89,7 @@ void RoomViewList::update_display(matrix::Room &room) {
 
 void RoomViewList::contextMenuEvent(QContextMenuEvent *e) {
   if(auto item = itemAt(e->pos())) {
-    context_ = item->data(Qt::UserRole).toString();
+    context_ = matrix::RoomID(item->data(Qt::UserRole).toString());
     menu_->popup(e->globalPos());
   }
 }

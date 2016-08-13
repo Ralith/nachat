@@ -3,8 +3,9 @@
 
 #include <QListWidget>
 #include <unordered_map>
+#include <experimental/optional>
 
-#include "matrix/Room.hpp"
+#include "matrix/ID.hpp"
 
 class QMenu;
 
@@ -43,9 +44,9 @@ private:
     size_t highlight_count;
   };
 
-  std::unordered_map<matrix::RoomID, RoomInfo, QStringHash> items_;
+  std::unordered_map<matrix::RoomID, RoomInfo> items_;
   QMenu *menu_;
-  matrix::RoomID context_;
+  std::experimental::optional<matrix::RoomID> context_;
 
   void update_item(const RoomInfo &i);
 };

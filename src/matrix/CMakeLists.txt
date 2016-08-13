@@ -8,8 +8,8 @@ add_library(matrix
   Room.cpp
   Member.cpp
   proto.cpp
-  parse.cpp
   Content.cpp
+  Event.cpp
   )
 
 target_include_directories(matrix

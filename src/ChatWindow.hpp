@@ -48,7 +48,7 @@ protected:
 private:
   Ui::ChatWindow *ui;
   RoomViewList *room_list_;
-  std::unordered_map<matrix::RoomID, RoomView *, QStringHash> rooms_;
+  std::unordered_map<matrix::RoomID, RoomView *> rooms_;
 
   void update_title();
   void current_changed(int i);

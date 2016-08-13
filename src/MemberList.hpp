@@ -5,6 +5,8 @@
 
 #include <QListWidget>
 
+#include "matrix/ID.hpp"
+
 namespace matrix {
 class Member;
 class RoomState;
@@ -28,7 +30,7 @@ private:
     static QString key(const QString &n);
   };
 
-  std::map<QString, const matrix::Member *, Compare> members_;
+  std::map<QString, const matrix::UserID, Compare> members_;
   QSize size_hint_;             // cache to avoid recomputing
 
   void update_members();
