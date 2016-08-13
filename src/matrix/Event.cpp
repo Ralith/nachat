@@ -17,6 +17,15 @@ static Membership parse_membership(const QString &m) {
   throw malformed_event("unrecognized membership value");
 }
 
+static QString to_qstring(Membership m) {
+  switch(m) {
+  case Membership::INVITE: return "invite";
+  case Membership::JOIN: return "join";
+  case Membership::LEAVE: return "leave";
+  case Membership::BAN: return "ban";
+  }
+}
+
 struct EventInfo {
   const char *real_name;
   const char *name;
@@ -156,6 +165,15 @@ MemberContent::MemberContent(Content c) : Content(std::move(c)) {
       displayname_ = json()["displayname"].toString();
   }
 }
+
+MemberContent::MemberContent(Membership membership,
+                             std::experimental::optional<QString> displayname,
+                             std::experimental::optional<QString> avatar_url)
+  : Content({
+      {"membership", to_qstring(membership)},
+      {"displayname", displayname ? QJsonValue(*displayname) : QJsonValue()},
+      {"avatar_url", avatar_url ? QJsonValue(*avatar_url) : QJsonValue()}
+    }) {}
 
 const MemberContent MemberContent::leave(Content({{"membership", "leave"}}));
 

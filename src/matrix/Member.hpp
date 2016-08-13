@@ -14,11 +14,6 @@ namespace matrix {
 
 class Room;
 
-// Whether a membership participates in naming per 11.2.2.3
-constexpr inline bool membership_displayable(Membership m) {
-  return m == Membership::JOIN || m == Membership::INVITE;
-}
-
 class Member {
 public:
   explicit Member(UserID id) : id_(std::move(id)), member_{event::room::MemberContent::leave} {}

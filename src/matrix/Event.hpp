@@ -53,6 +53,11 @@ enum class Membership {
   INVITE, JOIN, LEAVE, BAN
 };
 
+// Whether a membership participates in naming per 11.2.2.3
+constexpr inline bool membership_displayable(Membership m) {
+  return m == Membership::JOIN || m == Membership::INVITE;
+}
+
 namespace event {
 
 class Content {
@@ -212,8 +217,10 @@ public:
 
   QString state_key() const noexcept { return json()["state_key"].toString(); }
   std::experimental::optional<Content> prev_content() const noexcept {
-    auto it = json().find("prev_content");
-    if(it == json().end() || it->isNull()) return {};
+    auto u = unsigned_data();
+    if(!u) return {};
+    auto it = u->find("prev_content");
+    if(it == u->end() || it->isNull()) return {};
     return Content(it->toObject());
   }
 };
@@ -221,6 +228,9 @@ public:
 class MemberContent : public Content {
 public:
   explicit MemberContent(Content);
+  MemberContent(Membership membership,
+                std::experimental::optional<QString> displayname,
+                std::experimental::optional<QString> avatar_url);
 
   static const MemberContent leave;
 
