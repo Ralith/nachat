@@ -286,15 +286,18 @@ Block::Block(const BlockRenderInfo &info, const matrix::RoomState &state, const 
 
 void Block::update_header(const BlockRenderInfo &info, const matrix::RoomState &state) {
   auto sender = state.member_from_id(sender_id_);
-  if(sender && sender->avatar_url()) {
-    std::experimental::optional<matrix::Content> new_avatar;
-    try {
-      avatar_ = matrix::Content(*sender->avatar_url());
-    } catch(const std::invalid_argument &e) {
-      qDebug() << sender_id().value() << "has invalid avatar URL:" << e.what() << ":" << *sender->avatar_url();
-    }
-  }
   if(sender) {
+    if(sender->avatar_url()) {
+      try {
+        avatar_ = matrix::Content(*sender->avatar_url());
+      } catch(const std::invalid_argument &e) {
+        qDebug() << sender_id().value() << "has invalid avatar URL:" << e.what() << ":" << *sender->avatar_url();
+        avatar_ = {};
+      }
+    } else {
+      avatar_ = {};
+    }
+
     auto name = sender->pretty_name();
     auto disambig = state.member_disambiguation(*sender);
     if(disambig.isEmpty()) {
