@@ -77,8 +77,7 @@ void RoomView::member_name_changed(const matrix::Member &member, QString old) {
   member_list_->member_display_changed(room_.state(), member, old);
 }
 
-void RoomView::membership_changed(const matrix::Member &member, matrix::Membership old) {
-  (void)old;
+void RoomView::membership_changed(const matrix::Member &member) {
   member_list_->membership_changed(room_.state(), member);
 }
 

@@ -46,7 +46,7 @@ private:
   matrix::Room &room_;
 
   void message(const matrix::event::Room &);
-  void membership_changed(const matrix::Member &, matrix::Membership);
+  void membership_changed(const matrix::Member &);
   void member_name_changed(const matrix::Member &, QString);
   void topic_changed();
   void append_message(const matrix::RoomState &, const matrix::event::Room &);
