@@ -71,7 +71,7 @@ QJsonObject RoomState::to_json() const {
 }
 
 QString RoomState::pretty_name(const UserID &own_id) const {
-  if(name_) return *name_;
+  if(name_ && !name_->isEmpty()) return *name_;
   if(canonical_alias_) return *canonical_alias_;
   if(!aliases_.empty()) return aliases_[0];  // Non-standard, but matches vector-web
   // FIXME: Maintain earliest two IDs as state!
