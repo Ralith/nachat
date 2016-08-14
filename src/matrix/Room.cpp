@@ -440,7 +440,6 @@ bool RoomState::dispatch(const event::room::State &state, Room *room, lmdb::dbi 
     event::room::Name n{state};
     auto old = std::move(name_);
     name_ = n.name();
-    assert(!(name_ && name_->isEmpty()));
     if(room && name_ != old) room->name_changed();
     return true;
   }
