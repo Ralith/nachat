@@ -20,7 +20,7 @@ install:
   - ps: if ( -not (Test-Path "LMDB.tar.gz") ) { Start-FileDownload "https://github.com/LMDB/lmdb/archive/LMDB_${env:LMDB_VERSION}.tar.gz" -FileName "LMDB.tar.gz" }
   - 7z x "LMDB.tar.gz" -so | 7z x -si -ttar
   - C:\msys64\usr\bin\bash.exe -lc "cd $APPVEYOR_BUILD_FOLDER/lmdb-LMDB_$LMDB_VERSION/libraries/liblmdb/; make install"
-  - C:\msys64\usr\bin\bash.exe -lc "pacman --noconfirm -S mingw-w64-x86_64-qt5"
+  - C:\msys64\usr\bin\bash.exe -lc "pacman --noconfirm -Syuu mingw-w64-x86_64-qt5"
 
 build_script:
   - C:\msys64\usr\bin\bash.exe -lc "cd $APPVEYOR_BUILD_FOLDER; cmake -DCMAKE_BUILD_TYPE=$CONFIGURATION -H. -Bbuild -G 'MSYS Makefiles'; make -C build -j2"
@@ -28,11 +28,11 @@ build_script:
 after_build:
   - ps: md nachat
   - ps: Copy-Item "build/src/nachat.exe" -Destination "nachat/"
+  - C:\msys64\usr\bin\bash.exe -lc "cp `ldd $APPVEYOR_BUILD_FOLDER/nachat/nachat.exe |cut -d' ' -f3 |grep /mingw64/bin/` $APPVEYOR_BUILD_FOLDER/nachat/"
+  - C:\msys64\usr\bin\bash.exe -lc "windeployqt.exe --release --no-libraries $APPVEYOR_BUILD_FOLDER/nachat/nachat.exe"
   - 7z a nachat.zip nachat/
-
-# Currently broken in mingw-w64:
-#  - C:\msys64\usr\bin\bash.exe -lc "cd $APPVEYOR_BUILD_FOLDER/nachat; windeployqt nachat.exe"
-
+  - 7z a nachat.exe.zip ./nachat/nachat.exe
 
 artifacts:
   - path: nachat.zip
+  - path: nachat.exe.zip
