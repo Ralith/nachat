@@ -31,7 +31,8 @@ after_build:
   - C:\msys64\usr\bin\bash.exe -lc "cp `ldd $APPVEYOR_BUILD_FOLDER/nachat/nachat.exe |cut -d' ' -f3 |grep /mingw64/bin/` $APPVEYOR_BUILD_FOLDER/nachat/"
   - C:\msys64\usr\bin\bash.exe -lc "windeployqt.exe --release --no-libraries $APPVEYOR_BUILD_FOLDER/nachat/nachat.exe"
   - 7z a nachat.zip nachat/
+  - 7z a nachat.exe.zip ./nachat/nachat.exe
 
 artifacts:
   - path: nachat.zip
-  - path: nachat/nachat.exe
+  - path: nachat.exe.zip
