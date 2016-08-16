@@ -8,7 +8,7 @@
 
 #include "matrix/Room.hpp"
 
-RoomViewList::RoomViewList(QWidget *parent) : QListWidget(parent), menu_(new QMenu(this)) {
+RoomViewList::RoomViewList(QWidget *parent) : QListWidget(parent), menu_(new QMenu(this)), context_{""} {
   connect(this, &QListWidget::currentItemChanged, [this](QListWidgetItem *item, QListWidgetItem *previous) {
       (void)previous;
       if(item != nullptr) {
@@ -19,14 +19,14 @@ RoomViewList::RoomViewList(QWidget *parent) : QListWidget(parent), menu_(new QMe
 
   auto move_up = menu_->addAction(tr("Move up"));
   connect(move_up, &QAction::triggered, [this]() {
-      auto r = row(items_.at(context_.value()).item);
+      auto r = row(items_.at(context_).item);
       auto item = takeItem(r);
       insertItem(r > 0 ? r - 1 : 0, item);
       setCurrentItem(item);
     });
   auto move_down = menu_->addAction(tr("Move down"));
   connect(move_down, &QAction::triggered, [this]() {
-      auto r = row(items_.at(context_.value()).item);
+      auto r = row(items_.at(context_).item);
       auto item = takeItem(r);
       insertItem(r+1, item);
       setCurrentItem(item);
@@ -34,11 +34,11 @@ RoomViewList::RoomViewList(QWidget *parent) : QListWidget(parent), menu_(new QMe
   menu_->addSeparator();
   auto pop_out_action = menu_->addAction(QIcon::fromTheme("window-new"), tr("&Pop out"));
   connect(pop_out_action, &QAction::triggered, [this]() {
-      pop_out(context_.value());
+      pop_out(context_);
     });
   auto close = menu_->addAction(QIcon::fromTheme("window-close"), tr("&Close"));
   connect(close, &QAction::triggered, [this]() {
-      release(context_.value());
+      release(context_);
     });
 
   QSizePolicy policy(QSizePolicy::Preferred, QSizePolicy::Preferred);

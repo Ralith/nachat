@@ -3,7 +3,6 @@
 
 #include <QListWidget>
 #include <unordered_map>
-#include <experimental/optional>
 
 #include "matrix/ID.hpp"
 
@@ -46,7 +45,7 @@ private:
 
   std::unordered_map<matrix::RoomID, RoomInfo> items_;
   QMenu *menu_;
-  std::experimental::optional<matrix::RoomID> context_;
+  matrix::RoomID context_;
 
   void update_item(const RoomInfo &i);
 };
