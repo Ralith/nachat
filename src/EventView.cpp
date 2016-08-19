@@ -51,7 +51,7 @@ std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>>
 
   if(evt.type() == matrix::event::room::Message::tag()) {
     matrix::event::room::Message msg(evt);
-    if(msg.msgtype() == matrix::event::room::message::Emote::tag() && !result.empty()) {
+    if(msg.content().type() == matrix::event::room::message::Emote::tag() && !result.empty()) {
       auto &member = *state.member_from_id(evt.sender());
       result.front().first = "* " % member.pretty_name() % " " % result.front().first;
     }
@@ -113,19 +113,20 @@ Event::Event(const BlockRenderInfo &info, const matrix::RoomState &state, const 
   std::vector<std::pair<QString, QVector<QTextLayout::FormatRange>>> lines;
   if(e.type() == matrix::event::room::Message::tag()) {
     matrix::event::room::Message msg(e);
-    if(msg.msgtype() == matrix::event::room::message::File::tag()
-       || msg.msgtype() == matrix::event::room::message::Image::tag()
-       || msg.msgtype() == matrix::event::room::message::Video::tag()
-       || msg.msgtype() == matrix::event::room::message::Audio::tag()) {
-      matrix::event::room::message::FileLike file(msg);
+    const auto &content = msg.content();
+    if(content.type() == matrix::event::room::message::File::tag()
+       || content.type() == matrix::event::room::message::Image::tag()
+       || content.type() == matrix::event::room::message::Video::tag()
+       || content.type() == matrix::event::room::message::Audio::tag()) {
+      matrix::event::room::message::FileLike file(content);
       lines.emplace_back();
       auto &line = lines.front();
-      if(msg.msgtype() == matrix::event::room::message::File::tag() && msg.body() == "") {
+      if(content.type() == matrix::event::room::message::File::tag() && content.body() == "") {
         line.first = matrix::event::room::message::File(file).filename();
       } else {
         line.first = file.body();
       }
-      line.first = msg.body();
+      line.first = content.body();
       {
         QTextLayout::FormatRange range;
         range.start = 0;
@@ -151,7 +152,7 @@ Event::Event(const BlockRenderInfo &info, const matrix::RoomState &state, const 
       if(type || size)
         line.first += ")";
     } else {
-      lines = info.format_text(state, e, msg.body());
+      lines = info.format_text(state, e, content.body());
     }
   } else if(e.type() == matrix::event::room::Member::tag()) {
     matrix::event::room::Member member{matrix::event::room::State{e}};

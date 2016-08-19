@@ -140,30 +140,42 @@ public:
 
 namespace room {
 
+class MessageContent : public Content {
+public:
+  MessageContent() : Content(QJsonObject{}) {}
+  explicit MessageContent(Content);
+
+  QString body() const noexcept { return json()["body"].toString(); }
+
+  MessageType type() const noexcept { return MessageType(json()["msgtype"].toString()); }
+};
+
 class Message : public Room {
 public:
   explicit Message(Room);
 
   static const EventType tag() { return EventType("m.room.message"); }
 
-  MessageType msgtype() const noexcept { return MessageType(content().json()["msgtype"].toString()); }
-  QString body() const noexcept { return content().json()["body"].toString(); }
+  const MessageContent &content() const { return content_; }
+
+private:
+  MessageContent content_;
 };
 
 namespace message {
 
-class Emote : public Message {
+class Emote : public MessageContent {
 public:
-  explicit Emote(Message m) : Message(std::move(m)) { if(msgtype() != tag()) throw type_mismatch(); }
+  explicit Emote(MessageContent m) : MessageContent(std::move(m)) { if(type() != tag()) throw type_mismatch(); }
 
   static const MessageType tag() { return MessageType("m.emote"); }
 };
 
-class FileLike : public Message {
+class FileLike : public MessageContent {
 public:
-  explicit FileLike(Message m);
+  explicit FileLike(MessageContent m);
 
-  QJsonObject info() const { return content().json()["info"].toObject(); }
+  QJsonObject info() const { return json()["info"].toObject(); }
   std::experimental::optional<QString> mimetype() const {
     auto i = info();
     auto it = i.find("mimetype");
@@ -176,35 +188,35 @@ public:
     if(it != i.end() && !it->isNull()) return it->toDouble();
     return {};
   }
-  QString url() const { return content().json()["url"].toString(); }
+  QString url() const { return json()["url"].toString(); }
 };
 
 class File : public FileLike {
 public:
   explicit File(FileLike m);
 
-  QString filename() const { return content().json()["filename"].toString(); }
+  QString filename() const { return json()["filename"].toString(); }
 
   static const MessageType tag() { return MessageType("m.file"); }
 };
 
 class Image : public FileLike {
 public:
-  explicit Image(FileLike m) : FileLike(std::move(m)) { if(msgtype() != tag()) throw type_mismatch(); }
+  explicit Image(FileLike m) : FileLike(std::move(m)) { if(type() != tag()) throw type_mismatch(); }
 
   static const MessageType tag() { return MessageType("m.image"); }
 };
 
 class Video : public FileLike {
 public:
-  explicit Video(FileLike m) : FileLike(std::move(m)) { if(msgtype() != tag()) throw type_mismatch(); }
+  explicit Video(FileLike m) : FileLike(std::move(m)) { if(type() != tag()) throw type_mismatch(); }
 
   static const MessageType tag() { return MessageType("m.video"); }
 };
 
 class Audio : public FileLike {
 public:
-  explicit Audio(FileLike m) : FileLike(std::move(m)) { if(msgtype() != tag()) throw type_mismatch(); }
+  explicit Audio(FileLike m) : FileLike(std::move(m)) { if(type() != tag()) throw type_mismatch(); }
 
   static const MessageType tag() { return MessageType("m.audio"); }
 };

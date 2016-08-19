@@ -97,21 +97,24 @@ Room::Room(Identifiable e) : Identifiable(std::move(e)) {
 
 namespace room {
 
-Message::Message(Room e) : Room(std::move(e)) {
-  if(type() != tag()) throw type_mismatch();
-  if(redacted()) return;
-  check(content().json(), {
+MessageContent::MessageContent(Content c) : Content(std::move(c)) {
+  check(json(), {
       {"msgtype", "content.msgtype", QJsonValue::String},
       {"body", "content.body", QJsonValue::String}
     });
 }
 
+Message::Message(Room e) : Room(std::move(e)) {
+  if(type() != tag()) throw type_mismatch();
+  if(redacted()) return;
+  content_ = MessageContent(Event::content());
+}
+
 namespace message {
 
-FileLike::FileLike(Message m) : Message(std::move(m)) {
-  if(redacted()) return;
-  check(content().json(), {
-      {"url", "content.url", QJsonValue::String},
+FileLike::FileLike(MessageContent m) : MessageContent(std::move(m)) {
+  check(json(), {
+      {"url", QJsonValue::String},
     });
   QJsonObject i;
   {
@@ -121,21 +124,20 @@ FileLike::FileLike(Message m) : Message(std::move(m)) {
   }
   {
     auto it = i.find("mimetype");
-    if(it != i.end() && !it->isNull())
-      throw ill_typed_field("content.info.mimetype", QJsonValue::String, it->type());
+    if(it != i.end() && !it->isString() && !it->isNull())
+      throw ill_typed_field("info.mimetype", QJsonValue::String, it->type());
   }
   {
     auto it = i.find("size");
     if(it != i.end() && !it->isDouble() && !it->isNull())
-      throw ill_typed_field("content.info.size", QJsonValue::Double, it->type());
+      throw ill_typed_field("info.size", QJsonValue::Double, it->type());
   }
 }
 
 File::File(FileLike m) : FileLike(std::move(m)) {
-  if(msgtype() != tag()) throw type_mismatch();
-  if(redacted()) return;
-  check(content().json(), {
-      {"filename", "content.filename", QJsonValue::String},
+  if(type() != tag()) throw type_mismatch();
+  check(json(), {
+      {"filename", QJsonValue::String}
     });
 }
 
