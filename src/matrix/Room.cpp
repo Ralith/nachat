@@ -375,7 +375,7 @@ bool RoomState::update_membership(const UserID &user_id, const event::room::Memb
       room->membership_changed(member, old_membership);
     }
     if(member_db) {
-      auto data = QJsonDocument(member.json()).toBinaryData();
+      auto data = QJsonDocument(member.content().json()).toBinaryData();
       lmdb::dbi_put(*txn, *member_db, lmdb::val(id_utf8.data(), id_utf8.size()),
                     lmdb::val(data.data(), data.size()));
     }

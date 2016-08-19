@@ -21,12 +21,14 @@ public:
 
   Member(UserID id, event::room::MemberContent content);
 
-  QJsonObject json() const { return member_.json(); }
+  const event::room::MemberContent &content() const { return member_; }
 
   const UserID &id() const { return id_; }
+
   const std::experimental::optional<QString> &displayname() const { return member_.displayname(); }
   const std::experimental::optional<QString> &avatar_url() const { return member_.avatar_url(); }
   Membership membership() const { return member_.membership(); }
+
   const QString &pretty_name() const { return member_.displayname() ? *member_.displayname() : id_.value(); }
 
   void update_membership(event::room::MemberContent content) { member_ = content; }

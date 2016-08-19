@@ -284,22 +284,31 @@ Block::Block(const BlockRenderInfo &info, const matrix::RoomState &state, const 
   update_header(info, state);
 }
 
+static matrix::event::room::MemberContent get_header_content(const matrix::Member &m, const matrix::event::Room &e) {
+  if(e.type() != matrix::event::room::Member::tag()) return m.content();
+  matrix::event::room::Member me{matrix::event::room::State{e}};
+  if(me.sender() != me.user()) return m.content();
+  if(!me.prev_content() || me.prev_content()->membership() == matrix::Membership::LEAVE) return me.content();
+  return *me.prev_content();
+}
+
 void Block::update_header(const BlockRenderInfo &info, const matrix::RoomState &state) {
   auto sender = state.member_from_id(sender_id_);
   if(sender) {
-    if(sender->avatar_url()) {
+    const auto &header_content = get_header_content(*sender, events().back()->data);
+    if(header_content.avatar_url()) {
       try {
-        avatar_ = matrix::Content(*sender->avatar_url());
+        avatar_ = matrix::Content(*header_content.avatar_url());
       } catch(const std::invalid_argument &e) {
-        qDebug() << sender_id().value() << "has invalid avatar URL:" << e.what() << ":" << *sender->avatar_url();
+        qDebug() << sender_id().value() << "has invalid avatar URL:" << e.what() << ":" << *header_content.avatar_url();
         avatar_ = {};
       }
     } else {
       avatar_ = {};
     }
 
-    auto name = sender->pretty_name();
-    auto disambig = state.member_disambiguation(*sender);
+    const auto &name = header_content.displayname() ? *header_content.displayname() : sender_id_.value();
+    auto disambig = state.member_disambiguation(*sender); // FIXME: Out of sync with a just-changed display name
     if(disambig.isEmpty()) {
       name_layout_.setText(name);
     } else {
