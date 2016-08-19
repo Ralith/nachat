@@ -80,7 +80,7 @@ void TimelineView::push_back(const matrix::RoomState &state, const matrix::event
     block.update_header(block_info(), state); // Updates timestamp if necessary
     content_height_ += block.bounding_rect(block_info()).height();
   } else {
-    blocks_.emplace_back(block_info(), state, in, event);
+    blocks_.emplace_back(block_info(), state, event);
     if(blocks_.back().avatar()) ref_avatar(*blocks_.back().avatar());
     head_color_alternate_ = !head_color_alternate_;
 
@@ -295,7 +295,7 @@ void TimelineView::prepend_batch(QString start, QString end, gsl::span<const mat
       }
       content_height_ += blocks_.front().bounding_rect(block_info()).height();
     } else {
-      blocks_.emplace_front(block_info(), initial_state_, e, internal);
+      blocks_.emplace_front(block_info(), initial_state_, internal);
       const auto &av = blocks_.front().avatar();
       if(av) ref_avatar(*av);
       content_height_ += blocks_.front().bounding_rect(block_info()).height() + block_info().spacing();

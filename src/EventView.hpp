@@ -72,7 +72,7 @@ struct EventHit {
 
 class Block {
 public:
-  Block(const BlockRenderInfo &, const matrix::RoomState &, const matrix::event::Room &, Event &);
+  Block(const BlockRenderInfo &, const matrix::RoomState &, Event &);
   void update_header(const BlockRenderInfo &, const matrix::RoomState &state);
   void update_layout(const BlockRenderInfo &);
   void draw(const BlockRenderInfo &, QPainter &p, QPointF offset,

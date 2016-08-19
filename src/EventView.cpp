@@ -258,10 +258,9 @@ static QString to_timestamp(const char *format, std::chrono::system_clock::time_
   return QString::fromStdString(s.str());
 }
 
-Block::Block(const BlockRenderInfo &info, const matrix::RoomState &state, const matrix::event::Room &e,
-                           Event &e_internal)
-  : sender_id_(e.sender()) {
-  events_.emplace_back(&e_internal);
+Block::Block(const BlockRenderInfo &info, const matrix::RoomState &state, Event &e)
+  : sender_id_(e.data.sender()) {
+  events_.emplace_back(&e);
 
   {
     QTextOption options;
