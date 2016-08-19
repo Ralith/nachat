@@ -12,7 +12,7 @@
 
 namespace matrix {
 
-constexpr uint64_t CACHE_FORMAT_VERSION = 1;
+constexpr uint64_t CACHE_FORMAT_VERSION = 2;
 // Bumped every time a backwards-incompatible format change is made, a
 // corruption bug is fixed, or a previously ignored class of state is
 // persisted

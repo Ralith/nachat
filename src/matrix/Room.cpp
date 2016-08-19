@@ -192,20 +192,22 @@ Room::Room(Matrix &universe, Session &session, RoomID id, const QJsonObject &ini
   connect(&transmit_retry_timer_, &QTimer::timeout, this, &Room::transmit_event);
 
   if(!initial.isEmpty()) {
-    initial_state_ = RoomState(initial["initial_state"].toObject(), txn, member_db_);
-    state_ = initial_state_;
+    state_ = RoomState(initial["state"].toObject(), txn, member_db_);
+    initial_state_ = state_;
 
     QJsonObject b = initial["buffer"].toObject();
     if(!b.isEmpty()) {
       buffer_.emplace_back();
-      buffer_.back().prev_batch = b["prev_batch"].toString();
-      buffer_.back().events.reserve(b.size());
+      auto &batch = buffer_.back();
+      batch.prev_batch = b["prev_batch"].toString();
+      batch.events.reserve(b.size());
       auto es = b["events"].toArray();
       for(const auto &e : es) {
         event::Room evt(event::Identifiable(Event(e.toObject())));
-        buffer_.back().events.emplace_back(evt);
-        if(auto s = evt.to_state()) state_.apply(*s);
-        state_.prune_departed();
+        batch.events.emplace_back(evt);
+      }
+      for(auto it = batch.events.crbegin(); it != batch.events.crend(); ++it) {
+        if(auto s = it->to_state()) initial_state_.revert(*s);
       }
     }
     highlight_count_ = initial["highlight_count"].toDouble(0);
@@ -256,7 +258,7 @@ QJsonObject Room::to_json() const {
     receipts[receipt.first.value()] = QJsonObject{{"event_id", receipt.second.event.value()}, {"ts", static_cast<qint64>(receipt.second.ts)}};
   }
   return QJsonObject{
-    {"initial_state", initial_state_.to_json()},
+    {"state", state_.to_json()},
     {"buffer", std::move(o)},
     {"highlight_count", static_cast<double>(highlight_count_)},
     {"notification_count", static_cast<double>(notification_count_)},
