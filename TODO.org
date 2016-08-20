@@ -39,7 +39,6 @@
   - Handle error 502 in content fetch as federation failure
   - Factor application logic out of widget subclasses
   - Room categories with drag&drop (QTreeView?)
-  - 'view source' for events
   - Special-case block header/avatar for blocks whose first message is header/avatar change, using prev_content
   - Factor event rendering and input response out of TimelineView
   - WebRTC
@@ -56,3 +55,4 @@
   - Clickable email addresses
   - Consider moving buffer management entirely into matrix lib
   - matrix::Room::send_now(event)
+  - Global (refcounted? LRU?) content cache for avatars (and other inline content?)

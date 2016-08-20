@@ -99,7 +99,7 @@ void TimelineView::push_back(const matrix::RoomState &state, const matrix::event
   unread_events_ += 1;
 }
 
-void TimelineView::end_batch(const QString &token) {
+void TimelineView::end_batch(const matrix::TimelineCursor &token) {
   if(batches_.empty()) {
     prev_batch_ = token;
   } else {
@@ -233,9 +233,9 @@ void TimelineView::showEvent(QShowEvent *e) {
 }
 
 void TimelineView::grow_backlog() {
-  if(verticalScrollBar()->value() >= scrollback_trigger_size() || backlog_growing_ || !backlog_growable_) return;
+  if(verticalScrollBar()->value() >= scrollback_trigger_size() || backlog_growing_ || !backlog_growable_ || !prev_batch_) return;
   backlog_growing_ = true;
-  auto reply = room_.get_messages(matrix::Room::Direction::BACKWARD, prev_batch_, BACKLOG_BATCH_SIZE);
+  auto reply = room_.get_messages(matrix::Direction::BACKWARD, *prev_batch_, BACKLOG_BATCH_SIZE);
   connect(reply, &matrix::MessageFetch::finished, this, &TimelineView::prepend_batch);
   connect(reply, &matrix::MessageFetch::error, &room_, &matrix::Room::error);
   connect(reply, &matrix::MessageFetch::error, this, &TimelineView::backlog_grow_error);
@@ -248,7 +248,7 @@ void TimelineView::backlog_grow_error() {
   }
 }
 
-void TimelineView::prepend_batch(QString start, QString end, gsl::span<const matrix::event::Room> events) {
+void TimelineView::prepend_batch(const matrix::TimelineCursor &start, const matrix::TimelineCursor &end, gsl::span<const matrix::event::Room> events) {
   backlog_growing_ = false;
   if(backlog_grow_cancelled_) {
     backlog_grow_cancelled_ = false;
@@ -435,7 +435,7 @@ void TimelineView::reset() {
   total_events_ = 0;
   backlog_growable_ = true;
   content_height_ = 0;
-  prev_batch_ = QString();  // Should be filled in again before control returns to Qt
+  prev_batch_ = {};  // Should be filled in again before control returns to the main loop
   if(backlog_growing_) backlog_grow_cancelled_ = true;
 }
 

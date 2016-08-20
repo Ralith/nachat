@@ -106,8 +106,8 @@ Session::Session(Matrix& universe, QUrl homeserver, UserID user_id, QString acce
     auto txn = lmdb::txn::begin(env_, nullptr, MDB_RDONLY);
     lmdb::val stored_batch;
     if(lmdb::dbi_get(txn, state_db_, next_batch_key, stored_batch)) {
-      next_batch_ = QString::fromUtf8(stored_batch.data(), stored_batch.size());
-      qDebug() << "resuming from" << next_batch_;
+      next_batch_ = SyncCursor{QString::fromUtf8(stored_batch.data(), stored_batch.size())};
+      qDebug() << "resuming from" << next_batch_->value();
 
       lmdb::val room;
       lmdb::val state;
@@ -146,10 +146,10 @@ void Session::sync() {
 }
 
 void Session::sync(QUrlQuery query) {
-  if(next_batch_.isNull()) {
+  if(!next_batch_) {
     query.addQueryItem("full_state", "true");
   } else {
-    query.addQueryItem("since", next_batch_);
+    query.addQueryItem("since", next_batch_->value());
     query.addQueryItem("timeout", POLL_TIMEOUT_MS);
   }
   sync_reply_ = get("client/r0/sync", query);
@@ -171,13 +171,13 @@ void Session::handle_sync_reply() {
     synced_ = false;
     error(*r.error);
   } else {
-    QString current_batch = next_batch_;
+    auto current_batch = next_batch_;
     try {
       auto s = parse_sync(r.object);
       auto txn = lmdb::txn::begin(env_);
       active_txn_ = &txn;
       try {
-        auto batch_utf8 = s.next_batch.toUtf8();
+        auto batch_utf8 = s.next_batch.value().toUtf8();
         lmdb::dbi_put(txn, state_db_, next_batch_key, lmdb::val(batch_utf8.data(), batch_utf8.size()));
         next_batch_ = s.next_batch;
         dispatch(txn, std::move(s));

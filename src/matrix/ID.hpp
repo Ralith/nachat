@@ -7,6 +7,8 @@
 
 namespace matrix {
 
+enum class Direction { FORWARD, BACKWARD };
+
 class ID {
 public:
   explicit ID(QString value) : s(std::move(value)) {}
@@ -21,6 +23,9 @@ private:
 inline bool operator==(const ID &x, const ID &y) noexcept { return x.value() == y.value(); }
 inline bool operator!=(const ID &x, const ID &y) noexcept { return x.value() != y.value(); }
 inline bool operator<(const ID &x, const ID &y) noexcept { return x.value() < y.value(); }
+
+struct TimelineCursor : public ID { using ID::ID; };
+struct SyncCursor : public ID { using ID::ID; };
 
 struct EventID : public ID { using ID::ID; };
 struct RoomID : public ID { using ID::ID; };

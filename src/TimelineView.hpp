@@ -26,7 +26,7 @@ class TimelineView : public QAbstractScrollArea {
 public:
   TimelineView(matrix::Room &room, QWidget *parent = nullptr);
 
-  void end_batch(const QString &token);
+  void end_batch(const matrix::TimelineCursor &token);
   // Call upon receiving a new batch, with that batch's prev_batch token.
 
   void push_back(const matrix::RoomState &state, const matrix::event::Room &e);
@@ -58,7 +58,7 @@ protected:
 private:
   struct Batch {
     std::deque<Event> events;  // deque purely so we don't try to copy/move QTextLayout
-    QString token;
+    std::experimental::optional<matrix::TimelineCursor> token;
 
     size_t size() const;
   };
@@ -134,7 +134,7 @@ private:
   bool backlog_grow_cancelled_;  // true iff we reset since backlog started growing
   size_t min_backlog_size_;
   qreal content_height_;
-  QString prev_batch_;  // Token for the batch immediately prior to the first message
+  std::experimental::optional<matrix::TimelineCursor> prev_batch_;  // Token for the batch immediately prior to the first message
   std::unordered_map<matrix::Content, Avatar> avatars_;
   QIcon avatar_unset_, avatar_loading_;
   std::experimental::optional<Selection> selection_;
@@ -147,7 +147,7 @@ private:
   void update_scrollbar(bool grew_upward);
 
   void grow_backlog();
-  void prepend_batch(QString start, QString end, gsl::span<const matrix::event::Room> events);
+  void prepend_batch(const matrix::TimelineCursor &start, const matrix::TimelineCursor &end, gsl::span<const matrix::event::Room> events);
   void backlog_grow_error();
   int scrollback_trigger_size() const;
   int scrollback_status_size() const;

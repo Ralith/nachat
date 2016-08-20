@@ -93,7 +93,7 @@ public:
   MessageFetch(QObject *parent = nullptr) : QObject(parent) {}
 
 signals:
-  void finished(QString start, QString end, gsl::span<const event::Room> events);
+  void finished(const TimelineCursor &start, const TimelineCursor &end, gsl::span<const event::Room> events);
   void error(const QString &message);
 };
 
@@ -114,7 +114,9 @@ class Room : public QObject {
 public:
   struct Batch {
     std::vector<event::Room> events;
-    QString prev_batch;
+    TimelineCursor prev_batch;
+
+    explicit Batch(TimelineCursor prev) : prev_batch(prev) {}
   };
 
   struct Receipt {
@@ -155,9 +157,7 @@ public:
 
   QJsonObject to_json() const;
 
-  enum class Direction { FORWARD, BACKWARD };
-
-  MessageFetch *get_messages(Direction dir, QString from, uint64_t limit = 0, QString to = "");
+  MessageFetch *get_messages(Direction dir, const TimelineCursor &from, uint64_t limit = 0, std::experimental::optional<TimelineCursor> to = {});
 
   EventSend *leave();
 
@@ -195,7 +195,7 @@ signals:
   void typing_changed();
   void receipts_changed();
 
-  void prev_batch(const QString &);
+  void prev_batch(const TimelineCursor &);
   void message(const event::Room &);
 
   void error(const QString &msg);

@@ -197,9 +197,8 @@ Room::Room(Matrix &universe, Session &session, RoomID id, const QJsonObject &ini
 
     QJsonObject b = initial["buffer"].toObject();
     if(!b.isEmpty()) {
-      buffer_.emplace_back();
+      buffer_.emplace_back(TimelineCursor{b["prev_batch"].toString()});
       auto &batch = buffer_.back();
-      batch.prev_batch = b["prev_batch"].toString();
       batch.events.reserve(b.size());
       auto es = b["events"].toArray();
       for(const auto &e : es) {
@@ -246,7 +245,7 @@ size_t Room::buffer_size() const {
 QJsonObject Room::to_json() const {
   QJsonObject o;
   if(!buffer_.empty()) {
-    o["prev_batch"] = buffer_.back().prev_batch;
+    o["prev_batch"] = buffer_.back().prev_batch.value();
     QJsonArray es;
     for(const auto &x : buffer_.back().events) {
       es.push_back(x.json());
@@ -293,9 +292,8 @@ bool Room::dispatch(lmdb::txn &txn, const proto::JoinedRoom &joined) {
   if(joined.timeline.events.empty() && !buffer_.empty()) {
     buffer_.back().prev_batch = joined.timeline.prev_batch;
   } else {
-    buffer_.emplace_back();     // In-place so has_unread is always up to date
+    buffer_.emplace_back(joined.timeline.prev_batch);     // In-place so has_unread is always up to date
     auto &batch = buffer_.back();
-    batch.prev_batch = joined.timeline.prev_batch;
     batch.events.reserve(joined.timeline.events.size());
     for(auto &evt : joined.timeline.events) {
       if(auto s = evt.to_state()) {
@@ -536,12 +534,12 @@ void RoomState::prune_departed(Room *room) {
   }
 }
 
-MessageFetch *Room::get_messages(Direction dir, QString from, uint64_t limit, QString to) {
+MessageFetch *Room::get_messages(Direction dir, const TimelineCursor &from, uint64_t limit, optional<TimelineCursor> to) {
   QUrlQuery query;
-  query.addQueryItem("from", from);
+  query.addQueryItem("from", from.value());
   query.addQueryItem("dir", dir == Direction::FORWARD ? "f" : "b");
   if(limit != 0) query.addQueryItem("limit", QString::number(limit));
-  if(!to.isEmpty()) query.addQueryItem("to", to);
+  if(to) query.addQueryItem("to", to->value());
   auto reply = session_.get(QString("client/r0/rooms/" % QUrl::toPercentEncoding(id_.value()) % "/messages"), query);
   auto result = new MessageFetch(reply);
   connect(reply, &QNetworkReply::finished, [reply, result]() {
@@ -550,18 +548,21 @@ MessageFetch *Room::get_messages(Direction dir, QString from, uint64_t limit, QS
         result->error(*r.error);
         return;
       }
+
       auto start_val = r.object["start"];
       if(!start_val.isString()) {
         result->error("invalid or missing \"start\" attribute in server's response");
         return;
       }
-      auto start = start_val.toString();
+      TimelineCursor start{start_val.toString()};
+
       auto end_val = r.object["end"];
       if(!end_val.isString()) {
         result->error("invalid or missing \"end\" attribute in server's response");
         return;
       }
-      auto end = end_val.toString();
+      TimelineCursor end{end_val.toString()};
+
       auto chunk_val = r.object["chunk"];
       if(!chunk_val.isArray()) {
         result->error("invalid or missing \"chunk\" attribute in server's response");

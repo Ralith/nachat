@@ -6,6 +6,7 @@
 #include <QString>
 
 #include "Event.hpp"
+#include "ID.hpp"
 
 class QJsonValue;
 
@@ -23,8 +24,10 @@ struct State {
 
 struct Timeline {
   bool limited;
-  QString prev_batch;
+  TimelineCursor prev_batch;
   std::vector<event::Room> events;
+
+  explicit Timeline(TimelineCursor &&prev) : prev_batch{std::move(prev)} {}
 };
 
 struct UnreadNotifications {
@@ -48,7 +51,7 @@ struct JoinedRoom {
   AccountData account_data;
   Ephemeral ephemeral;
 
-  explicit JoinedRoom(RoomID id) : id(id) {}
+  JoinedRoom(RoomID &&id, Timeline &&t) : id(std::move(id)), timeline(std::move(t)) {}
 };
 
 struct LeftRoom {
@@ -56,7 +59,7 @@ struct LeftRoom {
   Timeline timeline;
   State state;
 
-  explicit LeftRoom(RoomID id) : id(id) {}
+  LeftRoom(RoomID &&id, Timeline &&timeline) : id(std::move(id)), timeline(std::move(timeline)) {}
 };
 
 struct InviteState {
@@ -74,9 +77,11 @@ struct Rooms {
 };
 
 struct Sync {
-  QString next_batch;
+  SyncCursor next_batch;
   Presence presence;
   Rooms rooms;
+
+  explicit Sync(SyncCursor &&next) : next_batch{std::move(next)} {}
 };
 
 }

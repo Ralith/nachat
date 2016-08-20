@@ -18,10 +18,9 @@ std::vector<std::result_of_t<F(QJsonValue)>> parse_array(QJsonValue v, F &&f) {
 
 Timeline parse_timeline(QJsonValue v) {
   auto o = v.toObject();
-  Timeline t;
+  Timeline t{TimelineCursor{o["prev_batch"].toString()}};
 
   t.limited = o["limited"].toBool();
-  t.prev_batch = o["prev_batch"].toString();
   t.events = parse_array(o["events"], [](QJsonValue v) {
       return event::Room(event::Identifiable(Event(v.toObject())));
     });
@@ -31,9 +30,7 @@ Timeline parse_timeline(QJsonValue v) {
 
 JoinedRoom parse_joined_room(QString id, QJsonValue v) {
   auto o = v.toObject();
-  JoinedRoom room{RoomID{id}};
-
-  room.timeline = parse_timeline(o["timeline"]);
+  JoinedRoom room{RoomID{id}, parse_timeline(o["timeline"])};
 
   auto un = o["unread_notifications"].toObject();
   room.unread_notifications.highlight_count = un["highlight_count"].toDouble();
@@ -51,21 +48,10 @@ JoinedRoom parse_joined_room(QString id, QJsonValue v) {
   return room;
 }
 
-LeftRoom parse_left_room(QString id, QJsonValue v) {
-  auto o = v.toObject();
-  LeftRoom room{RoomID{id}};
-
-  room.timeline = parse_timeline(o["timeline"]);
-
-  return room;
-}
-
 Sync parse_sync(QJsonValue v) {
   auto o = v.toObject();
-  Sync sync;
+  Sync sync{SyncCursor{o["next_batch"].toString()}};
   QJsonObject::iterator i;
-
-  sync.next_batch = o["next_batch"].toString();
 
   {
     auto rooms = o["rooms"].toObject();
@@ -79,7 +65,7 @@ Sync parse_sync(QJsonValue v) {
     auto leave = rooms["leave"].toObject();
     sync.rooms.leave.reserve(leave.size());
     for(auto i = leave.begin(); i != leave.end(); ++i) {
-      sync.rooms.leave.push_back(parse_left_room(i.key(), i.value()));
+      sync.rooms.leave.emplace_back(RoomID{i.key()}, parse_timeline(i.value().toObject()["timeline"]));
     }
   }
 

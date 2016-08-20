@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <chrono>
 #include <memory>
+#include <experimental/optional>
 
 #include <QObject>
 #include <QString>
@@ -138,7 +139,7 @@ private:
   size_t buffer_size_;
   std::unordered_map<RoomID, Room> rooms_;
   bool synced_;
-  QString next_batch_;
+  std::experimental::optional<SyncCursor> next_batch_;
   lmdb::txn *active_txn_ = nullptr;
   QNetworkReply *sync_reply_;
   QTimer sync_retry_timer_;
