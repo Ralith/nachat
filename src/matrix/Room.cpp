@@ -32,7 +32,7 @@ RoomState::RoomState(const QJsonObject &info, lmdb::txn &txn, lmdb::dbi &member_
     avatar_ = info["avatar"].toString();
   }
 
-  const auto &as = info["aliases"].toArray();
+  const auto as = info["aliases"].toArray();
   aliases_.reserve(as.size());
   std::transform(as.begin(), as.end(), std::back_inserter(aliases_),
                  [](const QJsonValue &v) {
@@ -328,9 +328,9 @@ bool Room::dispatch(lmdb::txn &txn, const proto::JoinedRoom &joined) {
 
   for(const auto &evt : joined.ephemeral.events) {
     if(evt.type() == event::Receipt::tag()) {
-      const auto &content = evt.content().json();
+      const auto content = evt.content().json();
       for(auto read_evt = content.begin(); read_evt != content.end(); ++read_evt) {
-        const auto &obj = read_evt.value().toObject()["m.read"].toObject();
+        const auto obj = read_evt.value().toObject()["m.read"].toObject();
         for(auto user = obj.begin(); user != obj.end(); ++user) {
           update_receipt(UserID(user.key()), EventID(read_evt.key()), user.value().toObject()["ts"].toDouble());
         }
