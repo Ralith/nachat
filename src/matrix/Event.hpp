@@ -274,9 +274,18 @@ class Name : public State {
 public:
   explicit Name(State);
 
-  QString name() const noexcept { return content().json()["name"].toString(); }
+  std::experimental::optional<QString> name() const noexcept {
+    auto c = content();
+    auto it = c.json().find("name");
+    if(it == c.json().end() || it->isNull() || it->toString() == "") return {};
+    return it->toString();
+  }
   std::experimental::optional<QString> prev_name() const noexcept {
-    if(auto c = prev_content()) return c->json()["name"].toString();
+    if(auto c = prev_content()) {
+      auto it = c->json().find("name");
+      if(it == c->json().end() || it->isNull() || it->toString() == "") return {};
+      return it->toString();
+    }
     return {};
   }
 
@@ -300,9 +309,18 @@ class CanonicalAlias : public State {
 public:
   explicit CanonicalAlias(State);
 
-  QString alias() const noexcept { return content().json()["alias"].toString(); }
+  std::experimental::optional<QString> alias() const noexcept {
+    auto c = content();
+    auto it = c.json().find("alias");
+    if(it == c.json().end() || it->isNull() || it->toString() == "") return {};
+    return it->toString();
+  }
   std::experimental::optional<QString> prev_alias() const noexcept {
-    if(auto c = prev_content()) return c->json()["alias"].toString();
+    if(auto c = prev_content()) {
+      auto it = c->json().find("alias");
+      if(it == c->json().end() || it->isNull() || it->toString() == "") return {};
+      return it->toString();
+    }
     return {};
   }
 

@@ -187,19 +187,13 @@ Member::Member(State e) : State(std::move(e)), content_{State::content()} {
   }
 }
 
-Name::Name(State e) : State(std::move(e)) {
-  if(redacted()) return;
-  check(content().json(), {{"name", "content.name", QJsonValue::String}});
-}
+Name::Name(State e) : State(std::move(e)) {}
 
 Aliases::Aliases(State e) : State(std::move(e)) {
   check(content().json(), {{"aliases", "content.aliases", QJsonValue::Array}});
 }
 
-CanonicalAlias::CanonicalAlias(State e) : State(std::move(e)) {
-  if(redacted()) return;
-  check(content().json(), {{"alias", "content.alias", QJsonValue::String}});
-}
+CanonicalAlias::CanonicalAlias(State e) : State(std::move(e)) {}
 
 Topic::Topic(State e) : State(std::move(e)) {
   if(redacted()) return;
