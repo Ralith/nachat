@@ -106,17 +106,23 @@ optional<matrix::UserID> get_affected_user(const matrix::event::Room &e) {
   return member_evt.user();
 }
 
+optional<matrix::EventID> get_redacts(const matrix::event::Room &e) {
+  if(e.type() != matrix::event::room::Redaction::tag()) return {};
+  matrix::event::room::Redaction re{e};
+  return re.redacts();
+}
+
 }
 
 EventLike::EventLike(const matrix::RoomState &state, matrix::event::Room real)
-  : EventLike(state, real.sender(), to_time_point(real.origin_server_ts()), real.type(), real.content(), get_affected_user(real))
+  : EventLike(state, real.sender(), to_time_point(real.origin_server_ts()), real.type(), real.content(), get_affected_user(real), get_redacts(real))
 {
   event = std::move(real);
 }
 
 EventLike::EventLike(const matrix::RoomState &state, const matrix::UserID &sender, Time time, matrix::EventType type, matrix::event::Content content,
-                     optional<matrix::UserID> affected_user)
-  : type{std::move(type)}, time{time}, sender{sender}, content{std::move(content)}
+                     optional<matrix::UserID> affected_user, optional<matrix::EventID> redacts)
+  : type{std::move(type)}, time{time}, sender{sender}, redacts{redacts}, content{std::move(content)}
 {
   if(affected_user) {
     auto m = state.member_from_id(*affected_user);
@@ -325,16 +331,26 @@ void EventBlock::Event::init(const TimelineView &view, const EventBlock &block, 
 
   using namespace matrix::event::room;
 
-  optional<QString> redaction;
-  if(e.event) {
-    redaction = e.event->redacted_because();
+  optional<Redaction> redaction;
+  if(e.event && e.event->unsigned_data()) {
+    redaction = e.event->unsigned_data()->redacted_because();
   }
+
+  const auto &&redaction_note = [&]() {
+    if(redaction) {
+      if(auto r = redaction->content().reason()) {
+        text = tr("%1 (redacted: %2)").arg(text).arg(*r);
+      } else {
+        text = tr("%1 (redacted)").arg(text);
+      }
+    }
+  };
 
   if(e.type == Message::tag()) {
     MessageContent msg{e.content};
     if(redaction) {
-      if(*redaction != "") {
-        text = tr("REDACTED: %1").arg(*redaction);
+      if(auto r = redaction->content().reason()) {
+        text = tr("REDACTED: %1").arg(*r);
       } else {
         text = tr("REDACTED");
       }
@@ -426,13 +442,7 @@ void EventBlock::Event::init(const TimelineView &view, const EventBlock &block, 
         break;
       }
     }
-    if(redaction) {
-      if(*redaction != "") {
-        text += tr(" (redacted: %1)").arg(*redaction);
-      } else {
-        text += tr(" (redacted)");
-      }
-    }
+    redaction_note();
   } else if(e.type == Name::tag()) {
     const auto n = NameContent{e.content}.name();
     if(n) {
@@ -440,15 +450,17 @@ void EventBlock::Event::init(const TimelineView &view, const EventBlock &block, 
     } else {
       text = tr("removed the room name");
     }
-    if(redaction) {
-      if(*redaction != "") {
-        text += tr(" (redacted: %1)").arg(*redaction);
-      } else {
-        text += tr(" (redacted)");
-      }
-    }
+    redaction_note();
   } else if(e.type == Create::tag()) {
     text = tr("created the room");
+  } else if(e.type == Redaction::tag()) {
+    auto reason = e.content.json()["reason"].toString();
+     // TODO: Clickable event ID
+    if(reason.isEmpty()) {
+      text = tr("redacted %1").arg(e.redacts->value());
+    } else {
+      text = tr("redacted %1: %2").arg(e.redacts->value()).arg(reason);
+    }
   } else {
     text = tr("unrecognized message type %1").arg(e.type.value());
   }
@@ -513,10 +525,12 @@ void TimelineView::prepend(const matrix::TimelineCursor &begin, const matrix::Ro
     batches_.emplace_front(begin, std::deque<EventLike>{EventLike{state, evt}});
   }
 
-  if(auto txid = evt.transaction_id()) {
-    pending_.erase(std::remove_if(pending_.begin(), pending_.end(),
-                                  [&](const Pending &p) { return p.transaction == *txid; }),
-                   pending_.end());
+  if(auto u = evt.unsigned_data()) {
+    if(auto txid = u->transaction_id()) {
+      pending_.erase(std::remove_if(pending_.begin(), pending_.end(),
+                                    [&](const Pending &p) { return p.transaction == *txid; }),
+                     pending_.end());
+    }
   }
 
   rebuild_blocks();
@@ -530,10 +544,12 @@ void TimelineView::append(const matrix::TimelineCursor &begin, const matrix::Roo
     batches_.emplace_back(begin, std::deque<EventLike>{EventLike{state, evt}});
   }
 
-  if(auto txid = evt.transaction_id()) {
-    pending_.erase(std::remove_if(pending_.begin(), pending_.end(),
-                                  [&](const Pending &p) { return p.transaction == *txid; }),
-                   pending_.end());
+  if(auto u = evt.unsigned_data()) {
+    if(auto txid = u->transaction_id()) {
+      pending_.erase(std::remove_if(pending_.begin(), pending_.end(),
+                                    [&](const Pending &p) { return p.transaction == *txid; }),
+                     pending_.end());
+    }
   }
 
   rebuild_blocks();

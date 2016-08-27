@@ -85,25 +85,10 @@ int main(int argc, char *argv[]) {
           }}
       }));
 
-  auto leave_evt = member_evt(QJsonObject{
-        {"type", "m.room.member"},
-        {"event_id", "4"},
-        {"sender", somebody},
-        {"origin_server_ts", 72000002LL},
-        {"state_key", somebody},
-        {"content", QJsonObject{
-            {"membership", "leave"},
-          }}
-    });
-
-  tv.append(cursor1, rs, leave_evt);
-
-  rs.apply(leave_evt);
-
   matrix::event::room::Redaction redact_evt{room_evt(QJsonObject{
         {"type", "m.room.redaction"},
         {"event_id", "5"},
-        {"origin_server_ts", 82000000LL},
+        {"origin_server_ts", 42000003LL},
         {"redacts", "3.1"},
         {"sender", somebody},
         {"content", QJsonObject{
@@ -113,6 +98,21 @@ int main(int argc, char *argv[]) {
 
   tv.redact(redact_evt);
   tv.append(cursor1, rs, redact_evt);
+
+  auto leave_evt = member_evt(QJsonObject{
+        {"type", "m.room.member"},
+        {"event_id", "4"},
+        {"sender", somebody},
+        {"origin_server_ts", 82000002LL},
+        {"state_key", somebody},
+        {"content", QJsonObject{
+            {"membership", "leave"},
+          }}
+    });
+
+  tv.append(cursor1, rs, leave_evt);
+
+  rs.apply(leave_evt);
 
   return a.exec();
 }

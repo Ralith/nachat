@@ -45,13 +45,16 @@ struct EventLike {
   // Set to sender's info iff sender is a member of the room
 
   std::experimental::optional<MemberInfo> affected_user_info;
-  // Set to information about the affected user iff type == matrix::event::room::Member::tag()
+  // Set to information about the affected user iff type == Member::tag()
+
+  std::experimental::optional<matrix::EventID> redacts;
+  // Set to the redacted event iff type == Redaction::tag()
 
   matrix::event::Content content;
 
   explicit EventLike(const matrix::RoomState &, matrix::event::Room real);
   EventLike(const matrix::RoomState &, const matrix::UserID &sender, Time time, matrix::EventType type, matrix::event::Content content,
-            std::experimental::optional<matrix::UserID> affected_user = {});
+            std::experimental::optional<matrix::UserID> affected_user = {}, std::experimental::optional<matrix::EventID> redacts = {});
 
   std::experimental::optional<matrix::event::room::MemberContent> effective_profile() const;
   void redact(const matrix::event::room::Redaction &);

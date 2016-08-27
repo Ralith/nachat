@@ -51,11 +51,33 @@ static void check(const QJsonObject &o, std::initializer_list<EventInfo> fields)
   }
 }
 
+namespace event {
+
+UnsignedData::UnsignedData(QJsonObject o) : json_{std::move(o)} {
+  check(json(), {
+      {"age", "unsigned.age", QJsonValue::Double, false},
+      {"redacted_because", "unsigned.redacted_because", QJsonValue::Object, false}
+    });
+
+  auto it = json().find("redacted_because");
+  if(it != json().end()) {
+    redacted_because_ = std::make_shared<event::room::Redaction>(event::Room{event::Identifiable{Event{it->toObject()}}});
+  }
+}
+
+}
+
 Event::Event(QJsonObject o) : json_(std::move(o)) {
   check(json(), {
       {"content", QJsonValue::Object},
-      {"type", QJsonValue::String}
+      {"type", QJsonValue::String},
+      {"unsigned", QJsonValue::Object, false}
     });
+
+  auto it = json().find("unsigned");
+  if(it != json().end()) {
+    unsigned_data_ = event::UnsignedData{it->toObject()};
+  }
 }
 
 void Event::redact(const event::room::Redaction &because) {
@@ -102,7 +124,8 @@ void Event::redact(const event::room::Redaction &because) {
     json_.insert("content", content_obj);
   }
 
-  json_.insert("unsigned", QJsonObject{{"redacted_because", because.reason() ? *because.reason() : ""}});
+  auto unsigned_it = json_.insert("unsigned", QJsonObject{{"redacted_because", because.json()}});
+  unsigned_data_ = event::UnsignedData{unsigned_it->toObject()};
 }
 
 namespace event {
@@ -237,6 +260,11 @@ Member::Member(State e) : State(std::move(e)), content_{State::content()} {
   }
 }
 
+void Member::redact(const event::room::Redaction &because) {
+  Event::redact(because);
+  content_ = MemberContent{State::content()};
+}
+
 Aliases::Aliases(State e) : State(std::move(e)) {
   check(content().json(), {{"aliases", "content.aliases", QJsonValue::Array}});
 }
@@ -264,6 +292,9 @@ PowerLevels::PowerLevels(State e) : State(std::move(e)) {}
 Redaction::Redaction(Room r) : Room(std::move(r)) {
   if(redacted()) return;
   check(json(), {{"redacts", QJsonValue::String}});
+  check(content().json(), {
+      {"reason", "content.reason", QJsonValue::String, false}
+    });
 }
 
 }

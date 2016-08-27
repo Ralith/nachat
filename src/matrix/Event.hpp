@@ -74,8 +74,35 @@ namespace room {
 class Redaction;
 }
 
-}
+class UnsignedData {
+public:
+  explicit UnsignedData(QJsonObject o);
 
+  const QJsonObject &json() const noexcept { return json_; }
+
+  std::experimental::optional<int64_t> age() const noexcept {
+    auto it = json().find("age");
+    if(it != json().end()) return it->toDouble();
+    return {};
+  }
+
+  std::experimental::optional<QString> transaction_id() const noexcept {
+    auto it = json().find("transaction_id");
+    if(it != json().end()) return it->toString();
+    return {};
+  }
+
+  std::experimental::optional<event::room::Redaction> redacted_because() const noexcept;
+  bool redacted() const {
+    return static_cast<bool>(redacted_because_);
+  }
+
+private:
+  QJsonObject json_;
+  std::shared_ptr<event::room::Redaction> redacted_because_;
+};
+
+}
 
 class Event {
 public:
@@ -85,11 +112,15 @@ public:
 
   event::Content content() const noexcept { return event::Content(json()["content"].toObject()); }
   EventType type() const noexcept { return EventType(json()["type"].toString()); }
+  const std::experimental::optional<event::UnsignedData> &unsigned_data() const noexcept { return unsigned_data_; }  
 
-  void redact(const event::room::Redaction &because);
+  virtual void redact(const event::room::Redaction &because);
+
+  bool redacted() const { return unsigned_data_ && unsigned_data_->redacted(); }
 
 private:
   QJsonObject json_;
+  std::experimental::optional<event::UnsignedData> unsigned_data_;
 };
 
 namespace event {
@@ -125,33 +156,8 @@ class Room : public Identifiable {
 public:
   explicit Room(Identifiable);
 
-  std::experimental::optional<QString> redacted_because() const noexcept {
-    auto u = unsigned_data();
-    if(!u) return {};
-    auto it = u->find("redacted_because");
-    if(it == u->end()) return {};
-    return it->toString();
-  }
-  bool redacted() const {
-    auto u = unsigned_data();
-    return u && u->contains("redacted_because");
-  }
-
-  std::experimental::optional<QString> transaction_id() const noexcept {
-    auto u = unsigned_data();
-    if(!u) return {};
-    auto it = u->find("transaction_id");
-    if(it == u->end()) return {};
-    return it->toString();
-  }
-
   UserID sender() const noexcept { return UserID(json()["sender"].toString()); }
   uint64_t origin_server_ts() const noexcept { return json()["origin_server_ts"].toDouble(); }
-  std::experimental::optional<QJsonObject> unsigned_data() const noexcept {
-    auto it = json().find("unsigned");
-    if(it == json().end() || it->isNull()) return {};
-    return it->toObject();
-  }
   std::experimental::optional<room::State> to_state() const noexcept;
 };
 
@@ -262,8 +268,8 @@ public:
   std::experimental::optional<Content> prev_content() const noexcept {
     auto u = unsigned_data();
     if(!u) return {};
-    auto it = u->find("prev_content");
-    if(it == u->end() || it->isNull()) return {};
+    auto it = u->json().find("prev_content");
+    if(it == u->json().end() || it->isNull()) return {};
     return Content(it->toObject());
   }
 };
@@ -295,6 +301,8 @@ public:
   UserID user() const noexcept { return UserID(state_key()); }
   const MemberContent &content() const { return content_; }
   const std::experimental::optional<MemberContent> &prev_content() const noexcept { return prev_content_; }
+
+  void redact(const event::room::Redaction &because) override;
 
 private:
   MemberContent content_;
@@ -416,17 +424,23 @@ public:
 };
 
 
+class RedactionContent : public Content {
+public:
+  explicit RedactionContent(Content c) : Content{std::move(c)} {}
+
+  std::experimental::optional<QString> reason() const noexcept {
+    auto it = json().find("reason");
+    if(it == json().end() || it->isNull() || it->toString() == "") return {};
+    return it->toString();
+  }
+};
+
 class Redaction : public Room {
 public:
   explicit Redaction(Room);
 
   EventID redacts() const noexcept { return EventID{json()["redacts"].toString()}; }
-  std::experimental::optional<QString> reason() const noexcept {
-    auto c = content().json();
-    auto it = c.find("reason");
-    if(it == c.end() || it->isNull() || it->toString() == "") return {};
-    return it->toString();
-  }
+  RedactionContent content() const noexcept { return RedactionContent(Room::content()); }
 
   static EventType tag() { return EventType("m.room.redaction"); }
 };
@@ -435,6 +449,11 @@ public:
 
 inline std::experimental::optional<room::State> Room::to_state() const noexcept {
   if(json().contains("state_key")) return room::State(*this);
+  return {};
+}
+
+inline std::experimental::optional<event::room::Redaction> UnsignedData::redacted_because() const noexcept {
+  if(redacted_because_) return *redacted_because_;
   return {};
 }
 
