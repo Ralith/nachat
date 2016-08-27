@@ -30,6 +30,7 @@
   - Spec-compliant logins with compatibility checking and browser fallback
   - Check HS's advertised API version support before attempting login
   - Include date in timestamps >24h ago
+  - Factor out reusable custom widgets into a lib
 
 * Low
   - Fix duplication of first message loaded from cache(?) by first message pulled from backlog
@@ -56,3 +57,4 @@
   - Consider moving buffer management entirely into matrix lib
   - matrix::Room::send_now(event)
   - Global (refcounted? LRU?) content cache for avatars (and other inline content?)
+  - Clickable user names in membership event display

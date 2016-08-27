@@ -29,12 +29,16 @@ struct SyncCursor : public ID { using ID::ID; };
 
 struct EventID : public ID { using ID::ID; };
 struct RoomID : public ID { using ID::ID; };
-struct UserID : public ID { using ID::ID; };
 
 struct EventType : public ID { using ID::ID; };
 struct MessageType : public ID { using ID::ID; };
 
 struct StateKey : public ID { using ID::ID; };
+
+struct UserID : public ID {
+  using ID::ID;
+  UserID(const StateKey &key) : ID(key.value()) {}
+};
 
 struct StateID {
   EventType type;

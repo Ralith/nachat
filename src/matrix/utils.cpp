@@ -20,7 +20,13 @@ Response decode(QNetworkReply *reply) {
   }
   QJsonParseError err{0, QJsonParseError::NoError};
   auto json = QJsonDocument::fromJson(data, &err);
-  if(err.error || !json.isObject()) {
+  if(err.error) {
+    if(r.code >= 300) {
+      // If we couldn't parse the json returned with an error, we probably aren't talking to a matrix server, so just return the HTTP code.
+      r.error = QObject::tr("HTTP %1 %2").arg(reply->attribute(QNetworkRequest::HttpReasonPhraseAttribute).toString());
+      return r;
+    }
+
     QString msg;
     msg = QObject::tr("Malformed response from server: %1").arg(err.errorString());
     if(data.size()) {
@@ -30,12 +36,17 @@ Response decode(QNetworkReply *reply) {
     return r;
   }
 
+  if(!json.isObject()) {
+    r.error = QObject::tr("Malformed response from server: not a json object\nResponse was:\n%1").arg(QString::fromUtf8(data));
+    return r;
+  }
+
   r.object = json.object();
 
-  if(r.code != 200) {
+  if(r.code >= 300) {
     r.error = r.object["error"].toString();
     if(!r.error->size()) {
-      r.error = QString("HTTP " + QString::number(r.code) + ": " + reply->attribute(QNetworkRequest::HttpReasonPhraseAttribute).toString());
+      r.error = QObject::tr("HTTP %1 %2").arg(reply->attribute(QNetworkRequest::HttpReasonPhraseAttribute).toString());
     }
   }
   return r;

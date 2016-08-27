@@ -64,8 +64,6 @@ signals:
   void error(const QString &msg);
 };
 
-enum class ThumbnailMethod { CROP, SCALE };
-
 class Session : public QObject {
   Q_OBJECT
 

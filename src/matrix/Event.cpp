@@ -2,6 +2,8 @@
 
 #include <utility>
 
+#include <initializer_list>
+
 namespace matrix {
 
 static Membership parse_membership(const QString &m) {
@@ -56,6 +58,52 @@ Event::Event(QJsonObject o) : json_(std::move(o)) {
     });
 }
 
+void Event::redact(const event::room::Redaction &because) {
+  struct ContentRule {
+    EventType type;
+    std::initializer_list<const char *> preserved_keys;
+  };
+
+  using namespace event::room;
+
+  // section 6.5
+  const char *const preserved_keys[] = {"event_id", "type", "room_id", "sender", "state_key", "prev_content", "content"};
+  const ContentRule content_rules[] = {
+    {Member::tag(), {"membership"}},
+    {Create::tag(), {"creator"}},
+    {JoinRules::tag(), {"join_rule"}},
+    {PowerLevels::tag(), {"ban", "events", "events_default", "kick", "redact", "state_default", "users", "users_default"}},
+    {Aliases::tag(), {"aliases"}},
+  };
+
+  for(auto it = json_.begin(); it != json_.end();) {
+    auto p = std::find(std::begin(preserved_keys), std::end(preserved_keys), it.key());
+    if(p == std::end(preserved_keys)) {
+      it = json_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+
+  auto content_rule = std::find_if(std::begin(content_rules), std::end(content_rules), [this](const ContentRule &c) {
+      return c.type == type();
+    });
+  if(content_rule != std::end(content_rules)) {
+    const auto &keys = content_rule->preserved_keys;
+    auto content_obj = json_.take("content").toObject();
+    for(auto it = content_obj.begin(); it != content_obj.end();) {
+      auto p = std::find(std::begin(keys), std::end(keys), it.key());
+      if(p == std::end(keys)) {
+        it = content_obj.erase(it);
+      } else {
+        ++it;
+      }
+    }
+    json_.insert("content", content_obj);
+  }
+
+  json_.insert("unsigned", QJsonObject{{"redacted_because", because.reason() ? *because.reason() : ""}});
+}
 
 namespace event {
 
@@ -87,9 +135,11 @@ Identifiable::Identifiable(Event e) : Event(e) {
 }
 
 Room::Room(Identifiable e) : Identifiable(std::move(e)) {
+  check(json(), {{"sender", QJsonValue::String}});
+
   if(redacted()) return;
+
   check(json(), {
-      {"sender", QJsonValue::String},
       {"origin_server_ts", QJsonValue::Double},
       {"unsigned", QJsonValue::Object, false}
     });
@@ -187,8 +237,6 @@ Member::Member(State e) : State(std::move(e)), content_{State::content()} {
   }
 }
 
-Name::Name(State e) : State(std::move(e)) {}
-
 Aliases::Aliases(State e) : State(std::move(e)) {
   check(content().json(), {{"aliases", "content.aliases", QJsonValue::Array}});
 }
@@ -207,6 +255,15 @@ Avatar::Avatar(State e) : State(std::move(e)) {
 
 Create::Create(State e) : State(std::move(e)) {
   check(content().json(), {{"creator", "content.create", QJsonValue::String}});
+}
+
+JoinRules::JoinRules(State e) : State(std::move(e)) {}
+
+PowerLevels::PowerLevels(State e) : State(std::move(e)) {}
+
+Redaction::Redaction(Room r) : Room(std::move(r)) {
+  if(redacted()) return;
+  check(json(), {{"redacts", QJsonValue::String}});
 }
 
 }

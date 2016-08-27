@@ -1,59 +1,502 @@
 #include "TimelineView.hpp"
 
-#include <chrono>
 #include <cmath>
+#include <vector>
+#include <sstream>
+#include <iomanip>
+#include <stdexcept>
+
+#include <QShortcut>
+#include <QPainter>
+#include <QScrollBar>
+#include <QRegularExpression>
+#include <QStringBuilder>
+#include <QGuiApplication>
+#include <QClipboard>
+#include <QToolTip>
 
 #include <QDebug>
-#include <QScrollBar>
-#include <QPainter>
-#include <QShortcut>
-#include <QApplication>
-#include <QClipboard>
-#include <QMenu>
-#include <QTimer>
-#include <QToolTip>
-#include <QMimeDatabase>
 
-#include "matrix/Session.hpp"
+#include "matrix/Room.hpp"
+
 #include "Spinner.hpp"
 
 using std::experimental::optional;
 
-constexpr static int BACKLOG_BATCH_SIZE = 50;
-constexpr static std::chrono::minutes BLOCK_MERGE_INTERVAL(2);
+namespace {
 
-size_t TimelineView::Batch::size() const {
-  return events.size();
+constexpr std::chrono::minutes BLOCK_MERGE_INTERVAL(5);
+
+qreal block_spacing(const QWidget &parent) {
+  return std::round(parent.fontMetrics().lineSpacing() * 0.75);
 }
 
-TimelineView::TimelineView(matrix::Room &room, QWidget *parent)
-    : QAbstractScrollArea(parent), room_(room), initial_state_(room.initial_state()), total_events_(0),
-      head_color_alternate_(true), backlog_growing_(false), backlog_growable_(true), backlog_grow_cancelled_(false),
-      min_backlog_size_(50), content_height_(0),
-      avatar_unset_(QIcon::fromTheme("unknown")),
-      avatar_loading_(QIcon::fromTheme("image-loading", avatar_unset_)),
-      copy_(new QShortcut(QKeySequence::Copy, this)),
-      grabbed_focus_(nullptr),
-      unread_events_(0) {
+qreal block_padding(const QWidget &parent) {
+  return std::round(parent.fontMetrics().lineSpacing() * 0.33);
+}
+
+auto to_time_point(uint64_t ts) {
+  return std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::from_time_t(0))
+      + std::chrono::duration<uint64_t, std::milli>(ts);
+}
+
+QString to_timestamp(const char *format, Time p) {
+  auto time = std::chrono::system_clock::to_time_t(p);
+  auto tm = std::localtime(&time);
+  std::ostringstream s;
+  s << std::put_time(tm, format);
+  return QString::fromStdString(s.str());
+}
+
+QString pretty_size(double n) {
+  constexpr const static char *const units[9] = {"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"}; // should be enough for anyone!
+  auto idx = std::min<size_t>(8, std::log(n)/std::log(1024.));
+  return QString::number(n / std::pow<double>(1024, idx), 'g', 4) + " " + units[idx];
+}
+
+void href_urls(const QPalette &palette, QVector<QTextLayout::FormatRange> &formats, const QString &text, int offset = 0) {
+  const static QRegularExpression regex(
+    R"(\b()"
+    R"([a-z][a-z0-9+-.]*://[^\s]+)"
+    R"(|[^\s]+\.(com|net|org)(/[^\s]*)?)"
+    R"(|www\.[^\s]+\.[^\s]+)"
+    R"(|data:[^\s]+)"
+    R"())",
+    QRegularExpression::UseUnicodePropertiesOption | QRegularExpression::OptimizeOnFirstUsageOption | QRegularExpression::CaseInsensitiveOption);
+
+  auto urls = regex.globalMatch(text, offset);
+  while(urls.hasNext()) {
+    auto candidate = urls.next();
+    // QUrl doesn't handle some things consistently (e.g. emoticons in .la) so we round-trip it
+    QUrl url(QUrl(candidate.captured(), QUrl::StrictMode).toString(QUrl::FullyEncoded), QUrl::StrictMode);
+    if(!url.isValid()) continue;
+    if(url.scheme().isEmpty()) url = QUrl("http://" + url.toString(QUrl::FullyEncoded), QUrl::StrictMode);
+
+    QTextLayout::FormatRange range;
+    range.start = candidate.capturedStart();
+    range.length = candidate.capturedLength();
+    QTextCharFormat format;
+    format.setAnchor(true);
+    format.setAnchorHref(url.toString(QUrl::FullyEncoded));
+    format.setForeground(palette.link());
+    format.setFontUnderline(true);
+    range.format = format;
+    formats.push_back(range);
+  }
+}
+
+QVector<QTextLayout::FormatRange> format_view(const QVector<QTextLayout::FormatRange> &formats, int start, int length) {
+  const auto end = start + length;
+  QVector<QTextLayout::FormatRange> result;
+  for(const auto &in : formats) {
+    const auto in_end = in.start + in.length;
+    if(in_end <= start || end <= in.start) continue;
+    QTextLayout::FormatRange out;
+    out.format = in.format;
+    out.start = in.start - start;
+    out.length = in.length;
+    result.push_back(out);
+  }
+  return result;
+}
+
+optional<matrix::UserID> get_affected_user(const matrix::event::Room &e) {
+  if(e.type() != matrix::event::room::Member::tag()) return {};
+  matrix::event::room::Member member_evt{matrix::event::room::State{e}};
+  return member_evt.user();
+}
+
+}
+
+EventLike::EventLike(const matrix::RoomState &state, matrix::event::Room real)
+  : EventLike(state, real.sender(), to_time_point(real.origin_server_ts()), real.type(), real.content(), get_affected_user(real))
+{
+  event = std::move(real);
+}
+
+EventLike::EventLike(const matrix::RoomState &state, const matrix::UserID &sender, Time time, matrix::EventType type, matrix::event::Content content,
+                     optional<matrix::UserID> affected_user)
+  : type{std::move(type)}, time{time}, sender{sender}, content{std::move(content)}
+{
+  if(affected_user) {
+    auto m = state.member_from_id(*affected_user);
+    affected_user_info = MemberInfo{*affected_user, m ? m->content() : matrix::event::room::MemberContent::leave};
+  }
+
+  auto member = state.member_from_id(sender);
+  if(member) {
+    disambiguation = state.member_disambiguation(*member);
+    member_content = member->content();
+  }
+}
+
+optional<matrix::event::room::MemberContent> EventLike::effective_profile() const {
+  // Events concerning non-present users use the profile they set, whereas all others use the previously set one, if any
+  if(affected_user_info && affected_user_info->user == sender) {
+    matrix::event::room::MemberContent mc{content};
+    if(affected_user_info->prev_content.membership() == matrix::Membership::LEAVE
+       || affected_user_info->prev_content.membership() == matrix::Membership::BAN) {
+      return mc;
+    }
+  }
+  return member_content;
+}
+
+void EventLike::redact(const matrix::event::room::Redaction &because) {
+  if(!event) throw std::logic_error("tried to redact a fake event");
+  event->redact(because);
+  time = {};
+  content = event->content();
+}
+
+EventBlock::EventBlock(TimelineView &parent, ThumbnailCache &thumbnail_cache, gsl::span<const EventLike *const> events)
+  : parent_{parent}, sender_{events[0]->sender}, events_{static_cast<std::size_t>(events.size())}
+{
+  const auto &front = *events[0];
+
+  if(auto p = front.effective_profile()) {
+    if(auto avatar = p->avatar_url()) {
+      const auto size = static_cast<int>(std::floor(avatar_extent()));
+      try {
+        avatar_ = ThumbnailRef{matrix::Thumbnail{matrix::Content{*avatar}, QSize{size, size}, matrix::ThumbnailMethod::SCALE}, thumbnail_cache};
+      } catch(const matrix::illegal_content_scheme &) {
+        qDebug() << "illegal content in avatar url" << *avatar << "for user" << front.sender.value();
+      }
+    }
+  }
+
+  if(front.time) {
+    time_ = TimeInfo{*events[0]->time, *events[events.size()-1]->time};
+  }
+
+  {
+    QTextOption options;
+    options.setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    options.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+
+    optional<QString> displayname;
+    if(auto p = front.effective_profile()) {
+      displayname = p->displayname();
+    }
+    name_.setText((displayname ? *displayname : front.sender.value())
+                  + (front.disambiguation ? QString(" (" % *front.disambiguation % ")") : ""));
+    name_.setFont(parent_.font());
+    name_.setTextOption(options);
+    name_.setCacheEnabled(true);
+  }
+
+  {
+    QTextOption options;
+    options.setAlignment(Qt::AlignRight | Qt::AlignTop);
+    options.setWrapMode(QTextOption::NoWrap);
+    timestamp_.setFont(parent_.font());
+    timestamp_.setTextOption(options);
+    timestamp_.setCacheEnabled(true);
+  }
+
+  for(std::size_t i = 0; i < events_.size(); ++i) {
+    events_[i].init(parent, *this, *events[i]);
+  }
+}
+
+void EventBlock::update_layout(qreal width) {
+  const auto &metrics = parent_.fontMetrics();
+
+  // Header and first line
+  const qreal early_offset = avatar_extent() + horizontal_padding();
+
+  size_t lines = 0;
+  {
+    name_.beginLayout();
+    while(true) {
+      auto line = name_.createLine();
+      if(!line.isValid()) break;
+      qreal offset = (lines < 2) * early_offset;
+      line.setLineWidth(width - offset);
+      line.setPosition(QPointF(offset, lines * metrics.lineSpacing()));
+      lines += 1;
+    }
+    name_.endLayout();
+  }
+
+  {
+    // Lay out as a single or range timestamp as appropriate, degrading to single or nothing of space in the header is unavailable
+    auto layout_ts = [&](){
+      timestamp_.beginLayout();
+      auto line = timestamp_.createLine();
+      line.setLineWidth(width - early_offset);
+      line.setPosition(QPointF(early_offset, 0));
+      timestamp_.endLayout();
+      if(name_.lineAt(0).naturalTextWidth() + early_offset > width - line.naturalTextWidth()) {
+        timestamp_.clearLayout();
+        return false;
+      }
+      return true;
+    };
+    if(time_) {
+      auto start_ts = to_timestamp("%H:%M", time_->start);
+      bool done = false;
+      if(time_->end - time_->start > BLOCK_MERGE_INTERVAL) {
+        auto end_ts = to_timestamp("%H:%M", time_->end);
+        timestamp_.setText(start_ts % "–" % end_ts);
+        done = layout_ts();
+      }
+      if(!done) {
+        timestamp_.setText(start_ts);
+        layout_ts();
+      }
+    } else {
+      timestamp_.setText(TimelineView::tr("REDACTED"));
+      layout_ts();
+    }
+  }
+
+  for(auto &event : events_) {
+    for(auto &paragraph : event.paragraphs) {
+      paragraph.beginLayout();
+      while(true) {
+        auto line = paragraph.createLine();
+        if(!line.isValid()) break;
+        qreal offset = (lines < 2) * early_offset;
+        line.setLineWidth(width - offset);
+        line.setPosition(QPointF(offset, lines * metrics.lineSpacing()));
+        lines += 1;
+      }
+      paragraph.endLayout();
+    }
+  }
+}
+
+QRectF EventBlock::bounds() const {
+  // We assume that name_ overlaps timestamp_ and that all paragraphs have equal width.
+  //return QRectF(0, 0, avatar_extent(), avatar_extent()) | name_.boundingRect() | events_.back().paragraphs.back().boundingRect();
+  size_t lines = name_.lineCount();
+  for(const auto &event : events_) {
+    for(const auto &paragraph : event.paragraphs) {
+      lines += paragraph.lineCount();
+    }
+  }
+  return QRectF(0, 0, name_.boundingRect().width(), (std::max<size_t>(2, lines) - 1) * parent_.fontMetrics().lineSpacing() + parent_.fontMetrics().ascent());
+}
+
+void EventBlock::draw(QPainter &p, Selection *selection) const {
+  if(avatar_) {
+    if(const auto &pixmap = **avatar_) {
+      const QSize logical_size = pixmap->size() / pixmap->devicePixelRatio();
+      p.drawPixmap(QPointF((avatar_extent() - logical_size.width()) / 2.,
+                           (avatar_extent() - logical_size.height()) / 2.),
+                   *pixmap);
+    } else {
+      // TODO: Draw loading indicator
+    }
+  } else {
+    // TODO: Draw default avatar
+  }
+
+  const static QPointF origin{0, 0};
+
+  name_.draw(&p, origin);
+  timestamp_.draw(&p, origin);
+
+  for(const auto &event : events_) {
+    for(const auto &paragraph : event.paragraphs) {
+      paragraph.draw(&p, origin);
+    }
+  }
+}
+
+qreal EventBlock::avatar_extent() const {
+  const auto m = parent_.fontMetrics();
+  // From 0 to baseline of second line of text, so text flowed underneath isn't cramped
+  return m.lineSpacing() + m.ascent();
+}
+
+qreal EventBlock::horizontal_padding() const {
+  return std::round(parent_.fontMetrics().lineSpacing() * 0.33);
+}
+
+void EventBlock::Event::init(const TimelineView &view, const EventBlock &block, const EventLike &e) {
+  source = e.event;
+
+  const auto &&tr = [](const char *s) { return TimelineView::tr(s); };
+
+  QString text;
+  QVector<QTextLayout::FormatRange> formats;
+
+  using namespace matrix::event::room;
+
+  optional<QString> redaction;
+  if(e.event) {
+    redaction = e.event->redacted_because();
+  }
+
+  if(e.type == Message::tag()) {
+    MessageContent msg{e.content};
+    if(redaction) {
+      if(*redaction != "") {
+        text = tr("REDACTED: %1").arg(*redaction);
+      } else {
+        text = tr("REDACTED");
+      }
+    } else if(msg.type() == message::Text::tag() || msg.type() == message::Notice::tag()) {
+      text = msg.body();
+      href_urls(view.palette(), formats, text);
+    } else if(msg.type() == message::Emote::tag()) {
+      text = QString("* %1 %2").arg(block.name_.text()).arg(msg.body());
+      href_urls(view.palette(), formats, text, block.name_.text().size() + 3);
+    } else {
+      qDebug() << "displaying fallback for unrecognized msgtype:" << msg.type().value();
+      text = msg.body();
+      href_urls(view.palette(), formats, text);
+    }
+  } else if(e.type == Member::tag()) {
+    const MemberContent content{e.content};
+    const MemberContent prev_content{e.affected_user_info->prev_content};
+    const matrix::UserID &user = e.affected_user_info->user;
+    if(user == block.sender_) {
+      switch(content.membership()) {
+      case matrix::Membership::INVITE:
+        text = tr("invited themselves");
+        break;
+      case matrix::Membership::JOIN:
+        switch(prev_content.membership()) {
+        case matrix::Membership::INVITE:
+          text = tr("accepted invite");
+          break;
+        case matrix::Membership::JOIN:
+          if(content.avatar_url() != prev_content.avatar_url()) {
+            if(content.displayname() != prev_content.displayname()) {
+              if(content.displayname()) {
+                text = tr("changed avatar and set display name to \"%1\"").arg(*content.displayname());
+              } else {
+                text = tr("changed avatar and removed display name");
+              }
+            } else {
+              text = tr("changed avatar");
+            }
+          } else if(content.displayname() != prev_content.displayname()) {
+            if(content.displayname()) {
+              text = tr("set display name to \"%1\"").arg(*content.displayname());
+            } else {
+              text = tr("removed display name");
+            }
+          } else {
+            text = "sent a no-op join";
+          }
+          break;
+        default:
+          text = tr("joined");
+          break;
+        }
+        break;
+      case matrix::Membership::LEAVE:
+        text = tr("left");
+        break;
+      case matrix::Membership::BAN:
+        text = tr("banned themselves");
+        break;
+      }
+    } else {
+      const QString pretty_target = content.displayname().value_or(user.value()); // TODO: Clickable
+      switch(content.membership()) {
+      case matrix::Membership::INVITE:
+        text = tr("invited %1").arg(pretty_target);
+        break;
+      case matrix::Membership::JOIN:
+        if(prev_content.membership() == matrix::Membership::JOIN) {
+          text = tr("modified profile of %1").arg(pretty_target);
+        } else {
+          text = tr("forced %1 to join").arg(pretty_target);
+        }
+        break;
+      case matrix::Membership::LEAVE:
+        switch(prev_content.membership()) {
+        case matrix::Membership::INVITE:
+          text = tr("rescinded invite to %1").arg(pretty_target);
+          break;
+        case matrix::Membership::BAN:
+          text = tr("unbanned %1").arg(pretty_target);
+          break;
+        default:
+          text = tr("kicked %1").arg(pretty_target);
+          break;
+        }
+      case matrix::Membership::BAN:
+        text = tr("banned %1").arg(pretty_target);
+        break;
+      }
+    }
+    if(redaction) {
+      if(*redaction != "") {
+        text += tr(" (redacted: %1)").arg(*redaction);
+      } else {
+        text += tr(" (redacted)");
+      }
+    }
+  } else if(e.type == Name::tag()) {
+    const auto n = NameContent{e.content}.name();
+    if(n) {
+      text = tr("set the room name to \"%1\"").arg(*n);
+    } else {
+      text = tr("removed the room name");
+    }
+    if(redaction) {
+      if(*redaction != "") {
+        text += tr(" (redacted: %1)").arg(*redaction);
+      } else {
+        text += tr(" (redacted)");
+      }
+    }
+  } else if(e.type == Create::tag()) {
+    text = tr("created the room");
+  } else {
+    text = tr("unrecognized message type %1").arg(e.type.value());
+  }
+
+  const static QRegularExpression line_re("\\R", QRegularExpression::UseUnicodePropertiesOption | QRegularExpression::OptimizeOnFirstUsageOption);
+  auto lines = text.split(line_re);
+
+
+  QTextOption body_options;
+  body_options.setAlignment(Qt::AlignLeft | Qt::AlignTop);
+  body_options.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+
+  paragraphs = FixedVector<QTextLayout>(lines.size());
+  size_t start = 0;
+  for(int i = 0; i < lines.size(); ++i) {
+    auto &paragraph = paragraphs[i];
+
+    paragraph.setText(lines[i]);
+    paragraph.setFormats(format_view(formats, start, lines[i].length()));
+    paragraph.setFont(view.font());
+    paragraph.setTextOption(body_options);
+    paragraph.setCacheEnabled(true);
+
+    start += 1 + lines[i].size();
+  }
+}
+
+TimelineView::TimelineView(ThumbnailCache &cache, QWidget *parent)
+  : QAbstractScrollArea{parent}, thumbnail_cache_{cache}, copy_{new QShortcut(QKeySequence::Copy, this)},
+    at_bottom_{false} {
   setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
   verticalScrollBar()->setSingleStep(20);  // Taken from QScrollArea
   setMouseTracking(true);
-  setMinimumSize(minimumSizeHint());
 
   QSizePolicy policy(QSizePolicy::Expanding, QSizePolicy::Expanding);
   policy.setHorizontalStretch(1);
   policy.setVerticalStretch(0);
   setSizePolicy(policy);
 
-  connect(verticalScrollBar(), &QAbstractSlider::valueChanged, [this](int value) {
-      (void)value;
-      grow_backlog();
+  connect(verticalScrollBar(), &QAbstractSlider::valueChanged, [this]() {
+      maybe_need_forwards();
+      maybe_need_backwards();
     });
   connect(copy_, &QShortcut::activated, this, &TimelineView::copy);
 
   {
-    const int extent = devicePixelRatioF() * (scrollback_status_size() - block_info().spacing());
+    const int extent = devicePixelRatioF() * spinner_space() * .9;
     spinner_ = QPixmap(extent, extent);
     spinner_.fill(Qt::transparent);
     QPainter painter(&spinner_);
@@ -63,508 +506,175 @@ TimelineView::TimelineView(matrix::Room &room, QWidget *parent)
   }
 }
 
-void TimelineView::push_back(const matrix::RoomState &state, const matrix::event::Room &in) {
-  backlog_growable_ &= in.type() != matrix::event::room::Create::tag();
-
-  assert(!batches_.empty());
-  batches_.back().events.emplace_back(block_info(), state, in);
-  auto &event = batches_.back().events.back();
-
-  if(!blocks_.empty()
-     && blocks_.back().sender_id() == in.sender()
-     && event.time - blocks_.back().events().back()->time <= BLOCK_MERGE_INTERVAL) {
-    // Add to existing block
-    auto &block = blocks_.back();
-    content_height_ -= block.bounding_rect(block_info()).height();
-    block.events().emplace_back(&event);
-    block.update_header(block_info(), state); // Updates timestamp if necessary
-    content_height_ += block.bounding_rect(block_info()).height();
+void TimelineView::prepend(const matrix::TimelineCursor &begin, const matrix::RoomState &state, const matrix::event::Room &evt) {
+  if(!batches_.empty() && batches_.front().begin == begin) {
+    batches_.front().events.emplace_front(state, evt);
   } else {
-    blocks_.emplace_back(block_info(), state, event);
-    if(blocks_.back().avatar()) ref_avatar(*blocks_.back().avatar());
-    head_color_alternate_ = !head_color_alternate_;
-
-    content_height_ += block_info().spacing();
-    content_height_ += blocks_.back().bounding_rect(block_info()).height();
+    batches_.emplace_front(begin, std::deque<EventLike>{EventLike{state, evt}});
   }
 
-  total_events_ += 1;
+  if(auto txid = evt.transaction_id()) {
+    pending_.erase(std::remove_if(pending_.begin(), pending_.end(),
+                                  [&](const Pending &p) { return p.transaction == *txid; }),
+                   pending_.end());
+  }
 
-  prune_backlog();
-
-  update_scrollbar(false);
-
-  viewport()->update();
-
-  unread_events_ += 1;
+  rebuild_blocks();
+  maybe_need_backwards();
 }
 
-void TimelineView::end_batch(const matrix::TimelineCursor &token) {
-  if(batches_.empty()) {
-    prev_batch_ = token;
+void TimelineView::append(const matrix::TimelineCursor &begin, const matrix::RoomState &state, const matrix::event::Room &evt) {
+  if(!batches_.empty() && batches_.back().begin == begin) {
+    batches_.back().events.emplace_back(state, evt);
   } else {
-    batches_.back().token = token;
-    // Clobber empty batches
-    if(batches_.back().events.empty()) return;
+    batches_.emplace_back(begin, std::deque<EventLike>{EventLike{state, evt}});
   }
-  batches_.emplace_back();  // Next batch
+
+  if(auto txid = evt.transaction_id()) {
+    pending_.erase(std::remove_if(pending_.begin(), pending_.end(),
+                                  [&](const Pending &p) { return p.transaction == *txid; }),
+                   pending_.end());
+  }
+
+  rebuild_blocks();
+  maybe_need_forwards();
 }
 
-int TimelineView::scrollback_trigger_size() const {
-  return viewport()->contentsRect().height()*2;
-}
-int TimelineView::scrollback_status_size() const {
-  auto metrics = fontMetrics();
-  return metrics.height() * 4;
-}
-BlockRenderInfo TimelineView::block_info() const {
-  return BlockRenderInfo(room_.session().user_id(), palette(), font(), viewport()->contentsRect().width());
+void TimelineView::redact(const matrix::event::room::Redaction &redaction) {
+  bool done = false;
+  for(auto &batch : batches_) {
+    for(auto &existing_event : batch.events) {
+      if(existing_event.event->id() == redaction.redacts()) {
+        existing_event.redact(redaction);
+        done = true;
+      }
+      if(done) break;
+    }
+    if(done) break;
+  }
+
+  rebuild_blocks();
+  maybe_need_forwards();
+  maybe_need_backwards();
 }
 
-void TimelineView::update_scrollbar(bool grew_upward) {
-  const auto view_height = viewport()->contentsRect().height();
-  auto &scroll = *verticalScrollBar();
-  const int fake_height = content_height_ + scrollback_status_size();
-  const bool was_at_bottom = scroll.value() == scroll.maximum();
-  const int old_wrt_bottom = scroll.maximum() - scroll.value();
-  scroll.setMaximum(view_height > fake_height ? 0 : fake_height - view_height);
-  if(was_at_bottom) {
-    // Always remain at the bottom if we started there
-    scroll.setValue(scroll.maximum());
-  } else if(grew_upward) {
-    // Stay fixed relative to bottom if the top grew
-    scroll.setValue(old_wrt_bottom > scroll.maximum() ? 0 : scroll.maximum() - old_wrt_bottom);
-  }
-  // Otherwise we want to stay fixed relative to the top, i.e. do nothing
+void TimelineView::set_at_bottom(bool value) {
+  at_bottom_ = value;
+}
+
+void TimelineView::resizeEvent(QResizeEvent *) {
+  update_layout();
 }
 
 void TimelineView::paintEvent(QPaintEvent *) {
-  const QRectF view_rect = viewport()->contentsRect();
+  const qreal spacing = block_spacing(*this);
+  const qreal half_spacing = std::round(spacing * 0.5);
+  const qreal padding = block_padding(*this);
+  const auto view = view_rect();
+
   QPainter painter(viewport());
-  painter.fillRect(view_rect, palette().color(QPalette::Dark));
+  painter.fillRect(viewport()->contentsRect(), palette().color(QPalette::Dark));
   painter.setPen(palette().color(QPalette::Text));
-  auto &scroll = *verticalScrollBar();
-  QPointF offset(0, view_rect.height() - (scroll.value() - scroll.maximum()));
-  const float half_spacing = block_info().spacing()/2.0;
-  bool alternate = head_color_alternate_;
-  const int margin = block_info().margin();
-  visible_blocks_.clear();
-  SelectionScanner ss(selection_);
-  for(auto it = blocks_.rbegin(); it != blocks_.rend(); ++it) {
-    ss.advance(&*it);
-    const auto bounds = it->bounding_rect(block_info());
-    offset.ry() -= bounds.height() + half_spacing;
-    if((offset.y() + bounds.height() + half_spacing) < view_rect.top()) {
-      // No further drawing possible
-      break;
-    }
-    if(offset.y() - half_spacing < view_rect.bottom()) {
-      visible_blocks_.push_back(VisibleBlock{&*it, bounds.translated(offset)});
-      {
-        const QRectF outline(offset.x(), offset.y() - half_spacing,
-                             view_rect.width(), bounds.height() + block_info().spacing() + 0.5 / devicePixelRatioF());
-        painter.save();
-        painter.setRenderHint(QPainter::Antialiasing);
-        QPainterPath path;
-        path.addRoundedRect(outline, margin*2, margin*2);
-        painter.fillPath(path, palette().color(alternate ? QPalette::AlternateBase : QPalette::Base));
-        painter.restore();
-      }
-      QPixmap avatar_pixmap;
-      const auto av_size = block_info().avatar_size();
-      if(it->avatar()) {
-        auto a = avatars_.at(*it->avatar());
-        if(a.pixmap.isNull()) {
-          avatar_pixmap = avatar_loading_.pixmap(av_size, av_size);
-        } else {
-          avatar_pixmap = a.pixmap;
-        }
-      } else {
-        avatar_pixmap = avatar_unset_.pixmap(av_size, av_size);
-      }
-      it->draw(block_info(), painter, offset, avatar_pixmap, hasFocus(), ss.fully_selected(&*it), ss.start_point(), ss.end_point());
-    }
-    offset.ry() -= half_spacing;
-    alternate = !alternate;
+  painter.translate(QPointF(0, -view.top()));
+
+  bool animating = false;
+  if(view.bottom() > 0 && !at_bottom_) {
+    draw_spinner(painter, 0);
+    animating = true;
   }
-  if(backlog_growing_ && offset.y() > view_rect.top()) {
-    painter.save();
-    painter.setRenderHint(QPainter::SmoothPixmapTransform);
-    const qreal extent = spinner_.width() / spinner_.devicePixelRatio();
-    painter.translate(view_rect.width() / 2., offset.y() - view_rect.top() - (extent/2. + half_spacing));
-    auto t = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now());
-    const qreal rotation_seconds = 2;
-    const qreal angle = 360. * static_cast<qreal>(t.time_since_epoch().count() % static_cast<uint64_t>(1000 * rotation_seconds)) / (1000 * rotation_seconds);
-    painter.rotate(angle);
-    painter.drawPixmap(QPointF(-extent/2., -extent/2.), spinner_);
-    painter.restore();
+
+  for(auto block = blocks_.crbegin(); block != blocks_.crend(); ++block) {
+    const auto &bounds = block->bounds();
+    painter.translate(QPointF(0, -std::round(spacing + bounds.height())));
+    const auto block_top = painter.worldTransform().m32() + view.top();
+    if(block_top > view.bottom()) continue;
+
+    {
+      const QRectF outline(0, 0, view.width(), bounds.height() + spacing);
+      painter.save();
+      painter.setRenderHint(QPainter::Antialiasing);
+      QPainterPath path;
+      path.addRoundedRect(outline, padding*2, padding*2);
+      painter.fillPath(path, palette().color(QPalette::Base));
+      painter.restore();
+    }
+
+    {
+      painter.save();
+      painter.translate(QPointF(padding, half_spacing));
+      block->draw(painter, nullptr);
+      painter.restore();
+    }
+
+    if(block_top < view.top()) break;
+  }
+
+  const auto top = painter.worldTransform().m32() + view.top();
+  if(view.top() < top && !at_top()) {
+    draw_spinner(painter, -spinner_space());
+    animating = true;
+  }
+
+  if(animating) {
     QTimer::singleShot(30, viewport(), static_cast<void (QWidget::*)()>(&QWidget::update));
   }
+
 }
 
-void TimelineView::resizeEvent(QResizeEvent *e) {
-  verticalScrollBar()->setPageStep(viewport()->contentsRect().height() * 0.75);
-
-  if(e->size().width() != e->oldSize().width()) {
-    // Linebreaks may have changed, so we need to lay everything out again
-    content_height_ = 0;
-    const auto s = block_info().spacing();
-    for(auto &batch : batches_) {
-      for(auto &event : batch.events) {
-        event.update_layout(block_info());
-      }
-    }
-    for(auto &block : blocks_) {
-      block.update_layout(block_info());
-      content_height_ += block.bounding_rect(block_info()).height() + s;
-    }
-  }
-
-  update_scrollbar(false);
-  // Required uncondtionally since height *and* width matter due to text wrapping. Placed after content_height_ changes
-  // to ensure they're accounted for.
-
-  grow_backlog();  // In case we can newly see the end
-}
-
-void TimelineView::showEvent(QShowEvent *e) {
-  (void)e;
-  grow_backlog();  // Make sure we have something to display ASAP
-}
-
-void TimelineView::grow_backlog() {
-  if(verticalScrollBar()->value() >= scrollback_trigger_size() || backlog_growing_ || !backlog_growable_ || !prev_batch_) return;
-  backlog_growing_ = true;
-  auto reply = room_.get_messages(matrix::Direction::BACKWARD, *prev_batch_, BACKLOG_BATCH_SIZE);
-  connect(reply, &matrix::MessageFetch::finished, this, &TimelineView::prepend_batch);
-  connect(reply, &matrix::MessageFetch::error, &room_, &matrix::Room::error);
-  connect(reply, &matrix::MessageFetch::error, this, &TimelineView::backlog_grow_error);
-}
-
-void TimelineView::backlog_grow_error() {
-  backlog_growing_ = false;
-  if(backlog_grow_cancelled_) {
-    backlog_grow_cancelled_ = false;
-  }
-}
-
-void TimelineView::prepend_batch(const matrix::TimelineCursor &start, const matrix::TimelineCursor &end, gsl::span<const matrix::event::Room> events) {
-  backlog_growing_ = false;
-  if(backlog_grow_cancelled_) {
-    backlog_grow_cancelled_ = false;
-    grow_backlog();
-    return;
-  }
-
-  prev_batch_ = end;
-  batches_.emplace_front();
-  auto &batch = batches_.front();
-  batch.token = start;
-  for(const auto &e : events) {  // Events is in reverse order
-    if(e.redacted()) continue;
-    try {
-      if(e.type() == matrix::event::room::Member::tag()) {
-        // Make sure a just-departed member is accounted for in e.g. display name and disambiguation lookups
-        initial_state_.ensure_member(matrix::event::room::Member(matrix::event::room::State(e))); 
-      }
-      batch.events.emplace_front(block_info(), initial_state_, e);
-    } catch(const matrix::malformed_event &ex) {
-      initial_state_.prune_departed();
-
-      qDebug() << "WARNING: Skipping malformed event:" << ex.what();
-      qDebug() << e.json();
-
-      continue;
-    }
-    auto &internal = batch.events.front();
-    if(!blocks_.empty()
-       && blocks_.front().sender_id() == e.sender()
-       && blocks_.front().events().front()->time - internal.time <= BLOCK_MERGE_INTERVAL) {
-      content_height_ -= blocks_.front().bounding_rect(block_info()).height();
-      blocks_.front().events().emplace_front(&internal);
-      optional<matrix::Content> original_avatar = blocks_.front().avatar();
-      blocks_.front().update_header(block_info(), initial_state_);  // Updates timestamp, disambig. display name, and avatar if necessary
-      const optional<matrix::Content> &new_avatar = blocks_.front().avatar();
-      if(new_avatar != original_avatar) {
-        if(original_avatar) {
-          unref_avatar(*original_avatar);
-        }
-        if(new_avatar) {
-          ref_avatar(*new_avatar);
-        }
-      }
-      content_height_ += blocks_.front().bounding_rect(block_info()).height();
-    } else {
-      blocks_.emplace_front(block_info(), initial_state_, internal);
-      const auto &av = blocks_.front().avatar();
-      if(av) ref_avatar(*av);
-      content_height_ += blocks_.front().bounding_rect(block_info()).height() + block_info().spacing();
-    }
-    if(auto s = e.to_state())
-      initial_state_.revert(*s);
-    backlog_growable_ &= e.type() != matrix::event::room::Create::tag();
-  }
-
-  total_events_ += events.size();
-
-  update_scrollbar(true);
-
-  grow_backlog();  // Check if the user is still seeing blank space.
-  viewport()->update();
-}
-
-void TimelineView::prune_backlog() {
-  // Only prune if the user's looking the bottom.
-  const auto &scroll = *verticalScrollBar();
-  const int scroll_pos = scroll.value();
-  if(scroll_pos != verticalScrollBar()->maximum()) return;
-  const auto view_rect = viewport()->contentsRect();
-
-  // We prune at least 2 events to ensure we don't hit a steady-state above the target
-  size_t events_removed = 0;
-  while(events_removed < 2) {
-    auto &batch = batches_.front();  // Candidate for removal
-    if(total_events_ - batch.size() < min_backlog_size_) return;
-
-    // Determine the first batch that cannot be removed, i.e. the first to overlap the scrollback trigger area
-    QPointF offset(0, view_rect.height() - (scroll_pos - scroll.maximum()));
-    const Block *limit_block;
-    for(auto it = blocks_.rbegin(); it != blocks_.rend(); ++it) {
-      limit_block = &*it;
-      const auto bounds = it->bounding_rect(block_info());
-      offset.ry() -= bounds.height();
-      if((offset.y() + bounds.height()) < view_rect.top() - scrollback_trigger_size()) {
-        break;
-      }
-      offset.ry() -= block_info().spacing();
-    }
-
-    // Find the block containing the last event to be removed
-    Block *end_block = nullptr;
-    for(auto it = blocks_.begin(); &*it != limit_block; ++it) {
-      for(const auto event : it->events()) {
-        if(event == &batch.events.back()) goto done;
-      }
-      continue;
-      done:
-      end_block = &*it;
-      break;
-    }
-    if(!end_block) break;  // Batch overlaps with viewport, bail out
-
-    int height_lost = 0;
-    // Free blocks
-    while(&blocks_.front() != end_block) {
-      auto &block = blocks_.front();
-      height_lost += block.bounding_rect(block_info()).height() + block_info().spacing();
-      if(block.avatar()) unref_avatar(*block.avatar());
-      pop_front_block();
-    }
-
-    // Excise to-be-removed events from end_block, now the first block
-    int original_first_block_height = blocks_.front().bounding_rect(block_info()).height() + block_info().spacing();
-    while(blocks_.front().events().front() != &batch.events.back()) {
-      blocks_.front().events().pop_front();
-    }
-    blocks_.front().events().pop_front();  // Remove final event
-
-    // Free end_block if necessary, and compute final height change
-    int final_first_block_height;
-    if(blocks_.front().events().empty()) {
-      if(blocks_.front().avatar()) unref_avatar(*blocks_.front().avatar());
-      pop_front_block();
-      final_first_block_height = 0;
-    } else {
-      final_first_block_height = blocks_.front().bounding_rect(block_info()).height() + block_info().spacing();
-    }
-    height_lost += original_first_block_height - final_first_block_height;
-
-    events_removed += batch.size();
-    total_events_ -= batch.size();
-    content_height_ -= height_lost;
-    batches_.pop_front();
-    backlog_growable_ = true;
-  }
-}
-
-void TimelineView::pop_front_block() {
-  if(selection_) {
-    if(blocks_.size() == 1) {
-      selection_ = {};
-    } else {
-      if(selection_->end == &blocks_[0])
-        selection_->end = &blocks_[1];
-      if(selection_->start == &blocks_[0])
-        selection_->start = &blocks_[1];
-    }
-  }
-  blocks_.pop_front();
-}
-
-void TimelineView::set_avatar(const matrix::Content &content, const QString &type, const QString &disposition,
-                              const QByteArray &data) {
-  (void)disposition;
-  auto it = avatars_.find(content);
-  if(it == avatars_.end()) return;  // Avatar is no longer necessary
-
-  QPixmap pixmap;
-  pixmap.loadFromData(data, QMimeDatabase().mimeTypeForName(type.toUtf8()).preferredSuffix().toUtf8().constData());
-  if(pixmap.isNull()) pixmap.loadFromData(data);
-
-  const auto size = block_info().avatar_size() * devicePixelRatioF();
-  if(pixmap.width() > size || pixmap.height() > size)
-    pixmap = pixmap.scaled(size, size, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-  pixmap.setDevicePixelRatio(devicePixelRatioF());
-  avatars_.at(content).pixmap = pixmap;
-  viewport()->update();
-}
-
-void TimelineView::unref_avatar(const matrix::Content &content) {
-  auto it = avatars_.find(content);
-  --it->second.references;
-  if(it->second.references == 0) {
-    avatars_.erase(it);
-  }
-}
-
-void TimelineView::reset() {
-  batches_.clear();
-  blocks_.clear();
-  avatars_.clear();
-  initial_state_ = room_.initial_state();
-  total_events_ = 0;
-  backlog_growable_ = true;
-  content_height_ = 0;
-  prev_batch_ = {};  // Should be filled in again before control returns to the main loop
-  if(backlog_growing_) backlog_grow_cancelled_ = true;
+void TimelineView::changeEvent(QEvent *) {
+  // Optimization: Block lifecycle could be refactored to construct/polish/flow instead of construct/flow to reduce CPU use
+  rebuild_blocks();
 }
 
 void TimelineView::mousePressEvent(QMouseEvent *event) {
-  auto b = dispatch_event(event->localPos(), event);
-  if(event->button() == Qt::LeftButton) {
+  // TODO
 
-    QApplication::setOverrideCursor(Qt::IBeamCursor);
-    if(b) {
-      grabbed_focus_ = b->block;
-      const auto rel_pos = event->localPos() - b->bounds.topLeft();
-      selection_ = Selection{b->block, rel_pos, b->block, rel_pos};
-    } else {
-      selection_ = {};
-    }
+  if(event->button() == Qt::LeftButton) {
+    QGuiApplication::setOverrideCursor(Qt::IBeamCursor);
+    selection_.begin = event->localPos();
+    selection_.end = selection_.begin;
     viewport()->update();
   }
-
-  read_events();
 }
 
 void TimelineView::mouseMoveEvent(QMouseEvent *event) {
-  viewport()->setCursor(Qt::ArrowCursor);
-  auto b = dispatch_event(event->localPos(), event);
-  if(b && event->buttons() & Qt::LeftButton) {
-    // Update selection
-    // TODO: Start auto-scrolling if cursor out of viewport
-    const auto rel_pos = event->localPos() - b->bounds.topLeft();
-    if(!selection_) {
-      selection_ = Selection{};
-      selection_->end = b->block;
-      selection_->end_pos = rel_pos;
-    }
-    selection_->end = b->block;
-    selection_->end_pos = rel_pos;
+  // TODO
+
+  if(event->buttons() & Qt::LeftButton) {
+    selection_.end = event->localPos();
+    viewport()->update();
+
     QString t = selection_text();
     if(!t.isEmpty())
-      QApplication::clipboard()->setText(selection_text(), QClipboard::Selection);
-
-    viewport()->update();
+      QGuiApplication::clipboard()->setText(selection_text(), QClipboard::Selection);
   }
-
-  read_events();
 }
 
 void TimelineView::mouseReleaseEvent(QMouseEvent *event) {
-  dispatch_event(event->localPos(), event);
-  grabbed_focus_ = nullptr;
+  // TODO
+
   if(event->button() == Qt::LeftButton) {
-    QApplication::restoreOverrideCursor();
+    QGuiApplication::restoreOverrideCursor();
   }
-}
-
-void TimelineView::copy() {
-  QString t = selection_text();
-  if(!t.isEmpty()) {
-    QApplication::clipboard()->setText(t);
-    QApplication::clipboard()->setText(t, QClipboard::Selection);
-  }
-}
-
-static float point_rect_dist(const QPointF &p, const QRectF &r) {
-  auto cx = std::max(std::min(p.x(), r.right()), r.left());
-  auto cy = std::max(std::min(p.y(), r.bottom()), r.top());
-  auto dx = p.x() - cx;
-  auto dy = p.y() - cy;
-  return std::sqrt(dx*dx + dy*dy);
-}
-
-TimelineView::VisibleBlock *TimelineView::block_near(const QPointF &p) {
-  float minimum_distance = std::numeric_limits<float>::max();
-  VisibleBlock *closest = nullptr;
-  for(auto &x : visible_blocks_) {
-    float dist = point_rect_dist(p, x.bounds);
-    if(dist > minimum_distance) return closest;
-    closest = &x;
-    minimum_distance = dist;
-  }
-  return closest;
-}
-
-QString TimelineView::selection_text() const {
-  QString result;
-  SelectionScanner ss(selection_);
-  for(auto block = blocks_.crbegin(); block != blocks_.crend(); ++block) {
-    ss.advance(&*block);
-    result = block->selection_text(fontMetrics(), ss.fully_selected(&*block), ss.start_point(), ss.end_point())
-      + (result.isEmpty() ? "" : "\n") + result;
-
-    if(ss.ending_selection()) {
-      return result;
-    }
-  }
-
-  qDebug() << "Couldn't find selection end!";
-
-  return result;
-}
-
-QSize TimelineView::sizeHint() const {
-  auto metrics = fontMetrics();
-  return QSize(metrics.width('x')*80 + block_info().avatar_size() + verticalScrollBar()->sizeHint().width(), 2*metrics.lineSpacing());
-}
-
-QSize TimelineView::minimumSizeHint() const {
-  auto metrics = fontMetrics();
-  return QSize(metrics.width('x')*20 + block_info().avatar_size() + verticalScrollBar()->sizeHint().width(), 2*metrics.lineSpacing());
 }
 
 void TimelineView::focusOutEvent(QFocusEvent *e) {
-  dispatch_event({}, e);
-  grabbed_focus_ = nullptr;
-
   // Taken from QWidgetTextControl
   if(e->reason() != Qt::ActiveWindowFocusReason
      && e->reason() != Qt::PopupFocusReason) {
-    selection_ = {};
+    selection_ = {QPointF(), QPointF()};
     viewport()->update();
   }
 }
 
 void TimelineView::contextMenuEvent(QContextMenuEvent *event) {
-  dispatch_event(QPointF(event->pos()), event);
+  // TODO
 }
 
 bool TimelineView::viewportEvent(QEvent *e) {
   if(e->type() == QEvent::ToolTip) {
     auto help = static_cast<QHelpEvent*>(e);
-    dispatch_event(QPointF(help->pos()), help);
+    // TODO
     if(!help->isAccepted()) {
       QToolTip::hideText();
     }
@@ -574,73 +684,113 @@ bool TimelineView::viewportEvent(QEvent *e) {
   return QAbstractScrollArea::viewportEvent(e);
 }
 
-void TimelineView::ref_avatar(const matrix::Content &content) {
-  auto result = avatars_.emplace(std::piecewise_construct,
-                                 std::forward_as_tuple(content),
-                                 std::forward_as_tuple());
-  if(result.second) {
-    // New avatar, download it
-    const auto size = block_info().avatar_size();
-    auto reply = room_.session().get_thumbnail(result.first->first, devicePixelRatioF() * QSize(size, size));
-    connect(reply, &matrix::ContentFetch::finished, this, &TimelineView::set_avatar);
-    connect(reply, &matrix::ContentFetch::error, &room_, &matrix::Room::error);
+QString TimelineView::selection_text() const {
+  return "TODO";
+}
+
+void TimelineView::copy() const {
+  QString t = selection_text();
+  if(!t.isEmpty()) {
+    QGuiApplication::clipboard()->setText(t);
+    QGuiApplication::clipboard()->setText(t, QClipboard::Selection);
   }
-  ++result.first->second.references;
 }
 
-TimelineView::VisibleBlock *TimelineView::dispatch_event(const optional<QPointF> &p, QEvent *e) {
-  VisibleBlock *b = p ? block_near(*p) : nullptr;
-  if(grabbed_focus_) {
-    grabbed_focus_->event(room_, *viewport(), block_info(),
-                          (p && b->block == grabbed_focus_) ? *p - b->bounds.topLeft() : optional<QPointF>{},
-                          e);
-  } else if(b && b->bounds.contains(*p)) {
-    b->block->event(room_, *viewport(), block_info(), *p - b->bounds.topLeft(), e);
-  }
-
-  return b;
+QRectF TimelineView::view_rect() const {
+  const auto &r = viewport()->contentsRect();
+  return r.translated(0, -r.height() - (verticalScrollBar()->maximum() - verticalScrollBar()->value()) + !at_bottom_ * spinner_space());
 }
 
-void TimelineView::push_error(const QString &msg) {
-  qDebug() << "ERROR:" << room_.pretty_name() << msg;
+void TimelineView::update_scrollbar(int content_height) {
+  auto &scroll = *verticalScrollBar();
+  const bool was_at_bottom = scroll.value() == scroll.maximum();
+  const auto view_height = viewport()->contentsRect().height();
+
+  content_height += (!at_bottom_ + !at_top()) * spinner_space();
+
+  scroll.setMaximum(content_height > view_height ? content_height - view_height : 0);
+  scroll.setPageStep(viewport()->contentsRect().height());
 }
 
-void TimelineView::read_events() {
-  if(blocks_.empty() || unread_events_ == 0) return; // Nothing to have read
+// Whether two events should be assigned to distinct blocks
+static bool block_border(const EventLike &a, const EventLike &b) {
+  return b.sender != a.sender || !b.time || !a.time || *b.time - *a.time > BLOCK_MERGE_INTERVAL;
+}
 
-  optional<matrix::EventID> id;
-  if(verticalScrollBar()->value() == verticalScrollBar()->maximum()) {
-    // Shortcut for the common case; also ensures accuracy when being called after a message is added but before a
-    // repaint
-    if(!blocks_.empty()) {
-      id = blocks_.back().events().back()->data.id();
-      unread_events_ = 0;
-    }
-  } else {
-    const QRectF view_rect = viewport()->contentsRect();
-    const auto &front = visible_blocks_.front();
-    size_t hidden_events = 0;
-    for(auto it = blocks_.crbegin(); &*it != front.block; ++it) {
-      hidden_events += it->events().size();
-    }
-    qreal offset = front.bounds.top() + front.block->header_height();
-    optional<size_t> visible_index;
-    for(const auto event : front.block->events()) {
-      if(view_rect.contains(event->bounding_rect().translated(0, offset))) {
-        visible_index = visible_index ? *visible_index + 1 : 0;
+void TimelineView::rebuild_blocks() {
+  // Optimization: defer until visible
+  blocks_.clear();
+  std::vector<const EventLike *> block_events;
+  for(const auto &batch : batches_) {
+    for(const auto &event : batch.events) {
+      if(!block_events.empty() && block_border(*block_events.back(), event)) {
+        blocks_.emplace_back(*this, thumbnail_cache_, block_events);
+        block_events.clear();
       }
+      block_events.emplace_back(&event);
     }
-    if(visible_index) {
-      id = front.block->events()[*visible_index]->data.id();
-      hidden_events += front.block->events().size() - (1 + *visible_index);
-    } else if(visible_blocks_.size() > 1) {
-      id = visible_blocks_[1].block->events().back()->data.id();
-      hidden_events += front.block->events().size();
+  }
+  if(at_bottom_) {
+    for(const auto &event : pending_) {
+      if(!block_events.empty() && block_border(*block_events.back(), event.event)) {
+        blocks_.emplace_back(*this, thumbnail_cache_, block_events);
+        block_events.clear();
+      }
+      block_events.emplace_back(&event.event);
     }
-    if(hidden_events >= unread_events_) return; // Don't re-issue redundant receipts
-    unread_events_ = hidden_events;
   }
-  if(id) {
-    room_.send_read_receipt(*id);
+  if(!block_events.empty()) {
+    blocks_.emplace_back(*this, thumbnail_cache_, block_events);
+    block_events.clear();
   }
+  update_layout();
+}
+
+void TimelineView::update_layout() {
+  ensurePolished();
+
+  qreal content_height = blocks_.size() * block_spacing(*this);
+
+  const auto width = viewport()->contentsRect().width() - 2*block_padding(*this);
+  for(auto &block : blocks_) {
+    block.update_layout(width);
+    content_height += block.bounds().height();
+  }
+
+  update_scrollbar(content_height);
+
+  viewport()->update();
+}
+
+void TimelineView::maybe_need_backwards() {
+  if(at_top()) return;
+  need_backwards();
+}
+
+void TimelineView::maybe_need_forwards() {
+  if(at_bottom_) return;
+  need_forwards();
+}
+
+bool TimelineView::at_top() const {
+  return !batches_.empty() && batches_.front().events.front().type == matrix::event::room::Create::tag();
+}
+
+qreal TimelineView::spinner_space() const {
+  return fontMetrics().lineSpacing() * 4;
+}
+
+void TimelineView::draw_spinner(QPainter &painter, qreal top) const {
+  const qreal extent = spinner_.width() / spinner_.devicePixelRatio();
+  painter.save();
+
+  painter.setRenderHint(QPainter::SmoothPixmapTransform);
+  painter.translate(view_rect().width() * 0.5, top + spinner_space() * 0.5);
+  auto t = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now());
+  constexpr qreal rotation_seconds = 2;
+  const qreal angle = 360. * static_cast<qreal>(t.time_since_epoch().count() % static_cast<uint64_t>(1000 * rotation_seconds)) / (1000 * rotation_seconds);
+  painter.rotate(angle);
+  painter.drawPixmap(QPointF(-extent * 0.5, -extent * 0.5), spinner_);
+
+  painter.restore();
 }

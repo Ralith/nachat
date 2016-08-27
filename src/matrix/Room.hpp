@@ -29,6 +29,7 @@ class Session;
 
 namespace proto {
 struct JoinedRoom;
+struct Timeline;
 }
 
 class RoomState {
@@ -61,7 +62,7 @@ public:
   QString pretty_name(const UserID &own_id) const;
   // Matrix r0.1.0 11.2.2.5 ish (like vector-web)
 
-  QString member_disambiguation(const Member &member) const;
+  std::experimental::optional<QString> member_disambiguation(const Member &member) const;
   QString member_name(const Member &member) const;
   // Matrix r0.1.0 11.2.2.3
 
@@ -194,6 +195,8 @@ signals:
   void discontinuity();
   void typing_changed();
   void receipts_changed();
+
+  void batch(const proto::Timeline &);
 
   void prev_batch(const TimelineCursor &);
   void message(const event::Room &);

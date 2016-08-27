@@ -70,7 +70,12 @@ private:
   QJsonObject json_;
 };
 
+namespace room {
+class Redaction;
 }
+
+}
+
 
 class Event {
 public:
@@ -80,6 +85,8 @@ public:
 
   event::Content content() const noexcept { return event::Content(json()["content"].toObject()); }
   EventType type() const noexcept { return EventType(json()["type"].toString()); }
+
+  void redact(const event::room::Redaction &because);
 
 private:
   QJsonObject json_;
@@ -91,7 +98,7 @@ class Receipt : public Event {
 public:
   explicit Receipt(Event);
 
-  static const EventType tag() { return EventType("m.receipt"); }
+  static EventType tag() { return EventType("m.receipt"); }
 };
 
 class Typing : public Event {
@@ -100,7 +107,7 @@ public:
 
   std::vector<UserID> user_ids() const;
 
-  static const EventType tag() { return EventType("m.typing"); }
+  static EventType tag() { return EventType("m.typing"); }
 };
 
 class Identifiable : public Event {
@@ -111,21 +118,31 @@ public:
 };
 
 namespace room {
-
 class State;
-
 }
 
 class Room : public Identifiable {
 public:
   explicit Room(Identifiable);
 
-  std::experimental::optional<QJsonObject> redacted() const noexcept {
+  std::experimental::optional<QString> redacted_because() const noexcept {
     auto u = unsigned_data();
     if(!u) return {};
     auto it = u->find("redacted_because");
     if(it == u->end()) return {};
-    return it->toObject();
+    return it->toString();
+  }
+  bool redacted() const {
+    auto u = unsigned_data();
+    return u && u->contains("redacted_because");
+  }
+
+  std::experimental::optional<QString> transaction_id() const noexcept {
+    auto u = unsigned_data();
+    if(!u) return {};
+    auto it = u->find("transaction_id");
+    if(it == u->end()) return {};
+    return it->toString();
   }
 
   UserID sender() const noexcept { return UserID(json()["sender"].toString()); }
@@ -154,7 +171,7 @@ class Message : public Room {
 public:
   explicit Message(Room);
 
-  static const EventType tag() { return EventType("m.room.message"); }
+  static EventType tag() { return EventType("m.room.message"); }
 
   const MessageContent &content() const { return content_; }
 
@@ -164,11 +181,25 @@ private:
 
 namespace message {
 
+class Text : public MessageContent {
+public:
+  explicit Text(MessageContent m) : MessageContent(std::move(m)) { if(type() != tag()) throw type_mismatch(); }
+
+  static MessageType tag() { return MessageType("m.text"); }
+};
+
 class Emote : public MessageContent {
 public:
   explicit Emote(MessageContent m) : MessageContent(std::move(m)) { if(type() != tag()) throw type_mismatch(); }
 
-  static const MessageType tag() { return MessageType("m.emote"); }
+  static MessageType tag() { return MessageType("m.emote"); }
+};
+
+class Notice : public MessageContent {
+public:
+  explicit Notice(MessageContent m) : MessageContent(std::move(m)) { if(type() != tag()) throw type_mismatch(); }
+
+  static MessageType tag() { return MessageType("m.notice"); }
 };
 
 class FileLike : public MessageContent {
@@ -197,28 +228,28 @@ public:
 
   QString filename() const { return json()["filename"].toString(); }
 
-  static const MessageType tag() { return MessageType("m.file"); }
+  static MessageType tag() { return MessageType("m.file"); }
 };
 
 class Image : public FileLike {
 public:
   explicit Image(FileLike m) : FileLike(std::move(m)) { if(type() != tag()) throw type_mismatch(); }
 
-  static const MessageType tag() { return MessageType("m.image"); }
+  static MessageType tag() { return MessageType("m.image"); }
 };
 
 class Video : public FileLike {
 public:
   explicit Video(FileLike m) : FileLike(std::move(m)) { if(type() != tag()) throw type_mismatch(); }
 
-  static const MessageType tag() { return MessageType("m.video"); }
+  static MessageType tag() { return MessageType("m.video"); }
 };
 
 class Audio : public FileLike {
 public:
   explicit Audio(FileLike m) : FileLike(std::move(m)) { if(type() != tag()) throw type_mismatch(); }
 
-  static const MessageType tag() { return MessageType("m.audio"); }
+  static MessageType tag() { return MessageType("m.audio"); }
 };
 
 }
@@ -259,7 +290,7 @@ class Member : public State {
 public:
   explicit Member(State);
 
-  static const EventType tag() { return EventType("m.room.member"); }
+  static EventType tag() { return EventType("m.room.member"); }
 
   UserID user() const noexcept { return UserID(state_key()); }
   const MemberContent &content() const { return content_; }
@@ -270,33 +301,37 @@ private:
   std::experimental::optional<MemberContent> prev_content_;
 };
 
-class Name : public State {
+class NameContent : public Content {
 public:
-  explicit Name(State);
+  explicit NameContent(Content c) : Content{std::move(c)} {}
 
   std::experimental::optional<QString> name() const noexcept {
-    auto c = content();
-    auto it = c.json().find("name");
-    if(it == c.json().end() || it->isNull() || it->toString() == "") return {};
+    auto it = json().find("name");
+    if(it == json().end() || it->isNull() || it->toString() == "") return {};
     return it->toString();
   }
-  std::experimental::optional<QString> prev_name() const noexcept {
-    if(auto c = prev_content()) {
-      auto it = c->json().find("name");
-      if(it == c->json().end() || it->isNull() || it->toString() == "") return {};
-      return it->toString();
+};
+
+class Name : public State {
+public:
+  explicit Name(State s) : State(std::move(s)) {}
+
+  NameContent content() const noexcept { return NameContent(State::content()); }
+  std::experimental::optional<NameContent> prev_content() const noexcept {
+    if(auto c = State::prev_content()) {
+      return NameContent(*c);
     }
     return {};
   }
 
-  static const EventType tag() { return EventType("m.room.name"); }
+  static EventType tag() { return EventType("m.room.name"); }
 };
 
 class Aliases : public State {
 public:
   explicit Aliases(State);
   
-  static const EventType tag() { return EventType("m.room.aliases"); }
+  static EventType tag() { return EventType("m.room.aliases"); }
 
   QJsonArray aliases() const { return content().json()["aliases"].toArray(); }
   std::experimental::optional<QJsonArray> prev_aliases() const noexcept {
@@ -324,7 +359,7 @@ public:
     return {};
   }
 
-  static const EventType tag() { return EventType("m.room.canonical_alias"); }
+  static EventType tag() { return EventType("m.room.canonical_alias"); }
 };
 
 class Topic : public State {
@@ -337,7 +372,7 @@ public:
     return {};
   }
 
-  static const EventType tag() { return EventType("m.room.topic"); }
+  static EventType tag() { return EventType("m.room.topic"); }
 };
 
 class Avatar : public State {
@@ -350,7 +385,7 @@ public:
     return {};
   }
 
-  static const EventType tag() { return EventType("m.room.avatar"); }
+  static EventType tag() { return EventType("m.room.avatar"); }
 };
 
 class Create : public State {
@@ -363,7 +398,37 @@ public:
     return {};
   }
 
-  static const EventType tag() { return EventType("m.room.create"); }
+  static EventType tag() { return EventType("m.room.create"); }
+};
+
+class JoinRules : public State {
+public:
+  explicit JoinRules(State);
+
+  static EventType tag() { return EventType("m.room.join_rules"); }
+};
+
+class PowerLevels : public State {
+public:
+  explicit PowerLevels(State);
+
+  static EventType tag() { return EventType("m.room.power_levels"); }
+};
+
+
+class Redaction : public Room {
+public:
+  explicit Redaction(Room);
+
+  EventID redacts() const noexcept { return EventID{json()["redacts"].toString()}; }
+  std::experimental::optional<QString> reason() const noexcept {
+    auto c = content().json();
+    auto it = c.find("reason");
+    if(it == c.end() || it->isNull() || it->toString() == "") return {};
+    return it->toString();
+  }
+
+  static EventType tag() { return EventType("m.room.redaction"); }
 };
 
 }

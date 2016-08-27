@@ -10,6 +10,7 @@ add_library(matrix
   proto.cpp
   Content.cpp
   Event.cpp
+  TimelineWindow.cpp
   )
 
 target_include_directories(matrix

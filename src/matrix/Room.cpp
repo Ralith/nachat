@@ -84,33 +84,33 @@ QString RoomState::pretty_name(const UserID &own_id) const {
                       });
   }
   switch(ms.size()) {
-  case 0: return QObject::tr("Empty room");
+  case 0: return Room::tr("Empty room");
   case 1: return ms[0]->pretty_name();
-  case 2: return QObject::tr("%1 and %2").arg(member_name(*ms[0])).arg(member_name(*ms[1]));
-  default: return QObject::tr("%1 and %2 others").arg(member_name(*ms[0])).arg(ms.size() - 1);
+  case 2: return Room::tr("%1 and %2").arg(member_name(*ms[0])).arg(member_name(*ms[1]));
+  default: return Room::tr("%1 and %2 others").arg(member_name(*ms[0])).arg(ms.size() - 1);
   }
 }
 
-QString RoomState::member_disambiguation(const Member &member) const {
+optional<QString> RoomState::member_disambiguation(const Member &member) const {
   if(!member.displayname()) {
     if(members_by_displayname_.find(member.id().value()) != members_by_displayname_.end()) {
       return member.id().value();
     } else {
-      return "";
+      return {};
     }
   } else if(members_named(*member.displayname()).size() > 1
             || (member.displayname() && member_from_id(UserID(member.displayname()->normalized(QString::NormalizationForm_C))))) {
     return member.id().value();
   } else {
-    return "";
+    return {};
   }
 }
 
 QString RoomState::member_name(const Member &member) const {
   auto result = member.pretty_name();
   auto disambig = member_disambiguation(member);
-  if(disambig.isEmpty()) return result;
-  return result % " (" % disambig % ")";
+  if(!disambig) return result;
+  return result % " (" % *disambig % ")";
 }
 
 std::vector<UserID> &RoomState::members_named(QString displayname) {
@@ -140,7 +140,7 @@ void RoomState::forget_displayname(const UserID &id, const QString &old_name_in,
     if(existing_mxid) other_member = existing_mxid;
   }
   if(other_member) {
-    other_disambiguation = member_disambiguation(*other_member);
+    other_disambiguation = *member_disambiguation(*other_member);
   }
   const auto before = vec.size();
   vec.erase(std::remove(vec.begin(), vec.end(), id), vec.end());
@@ -326,6 +326,8 @@ bool Room::dispatch(lmdb::txn &txn, const proto::JoinedRoom &joined) {
     }
   }
 
+  batch(joined.timeline);
+
   for(const auto &evt : joined.ephemeral.events) {
     if(evt.type() == event::Receipt::tag()) {
       const auto content = evt.content().json();
@@ -440,7 +442,7 @@ bool RoomState::dispatch(const event::room::State &state, Room *room, lmdb::dbi 
   if(state.type() == event::room::Name::tag()) {
     event::room::Name n{state};
     auto old = std::move(name_);
-    name_ = n.name();
+    name_ = n.content().name();
     if(room && name_ != old) room->name_changed();
     return true;
   }
@@ -479,7 +481,12 @@ void RoomState::revert(const event::room::State &state) {
     return;
   }
   if(state.type() == event::room::Name::tag()) {
-    name_ = event::room::Name(state).prev_name();
+    auto c = event::room::Name(state).prev_content();
+    if(c) {
+      name_ = c->name();
+    } else {
+      name_ = {};
+    }
     return;
   }
   if(state.type() == event::room::Topic::tag()) {
