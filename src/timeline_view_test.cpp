@@ -35,17 +35,6 @@ int main(int argc, char *argv[]) {
   matrix::TimelineCursor cursor1{"1"};
   const char *somebody = "@somebody:example.com";
   
-  tv.append(cursor1, rs, matrix::event::room::Create{matrix::event::room::State{room_evt(QJsonObject{
-            {"type", "m.room.create"},
-            {"event_id", "1"},
-            {"sender", somebody},
-            {"origin_server_ts", 42},
-            {"state_key", ""},
-            {"content", QJsonObject{
-                {"creator", "you"}
-              }}
-          })}});
-  
   auto join_evt = member_evt(QJsonObject{
         {"type", "m.room.member"},
         {"event_id", "2"},
@@ -113,6 +102,17 @@ int main(int argc, char *argv[]) {
   tv.append(cursor1, rs, leave_evt);
 
   rs.apply(leave_evt);
+
+  tv.prepend(cursor1, matrix::RoomState(), matrix::event::room::Create{matrix::event::room::State{room_evt(QJsonObject{
+            {"type", "m.room.create"},
+            {"event_id", "1"},
+            {"sender", somebody},
+            {"origin_server_ts", 42},
+            {"state_key", ""},
+            {"content", QJsonObject{
+                {"creator", "you"}
+              }}
+          })}});
 
   return a.exec();
 }

@@ -4,9 +4,13 @@
 #include <memory>
 #include <cstddef>
 #include <iterator>
+#include <type_traits>
 
 template<typename T>
 class FixedVector {
+private:
+  using storage_type = std::aligned_storage_t<sizeof(T), alignof(T)>;
+
 public:
   using value_type = T;
   using size_type = std::size_t;
@@ -20,37 +24,68 @@ public:
   using reverse_iterator = std::reverse_iterator<iterator>;
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
-  FixedVector() : size_{0} {}
-  explicit FixedVector(size_type size) : size_{size}, data_{new T[size]} {}
+  explicit FixedVector(size_type capacity) : size_{0}, capacity_{capacity}, data_{new storage_type[capacity]} {}
+  FixedVector() noexcept : FixedVector{0} {}
+  ~FixedVector() noexcept(std::is_nothrow_destructible<T>::value) {
+    for(auto &x : *this) {
+      x.~T();
+    }
+  }
 
-  iterator begin() { return data_.get(); }
-  iterator end() { return data_.get() + size_; }
-  const_iterator begin() const { return data_.get(); }
-  const_iterator end() const { return data_.get() + size_; }
-  const_iterator cbegin() const { return begin(); }
-  const_iterator cend() const { return end(); }
-  
-  reverse_iterator rbegin() { return std::reverse_iterator<iterator>(begin()); }
-  reverse_iterator rend() { return std::reverse_iterator<iterator>(end()); }
-  const_reverse_iterator rbegin() const { return std::reverse_iterator<const_iterator>(begin()); }
-  const_reverse_iterator rend() const { return std::reverse_iterator<const_iterator>(end()); }
-  const_reverse_iterator crbegin() const { return std::reverse_iterator<const_iterator>(begin()); }
-  const_reverse_iterator crend() const { return std::reverse_iterator<const_iterator>(end()); }
+  FixedVector(FixedVector &&other) noexcept : size_{other.size}, capacity_{other.capacity}, data_{std::move(other.data_)} {
+    other.size_ = 0;
+    other.capacity_ = 0;
+  }
 
-  reference operator[](size_type i) { return data_[i]; }
-  const_reference operator[](size_type i) const { return data_[i]; }
+  FixedVector &operator=(FixedVector &&other) {
+    size_ = other.size_;
+    capacity_ = other.capacity_;
+    data_ = std::move(other.data_);
+    other.size_ = 0;
+    other.capacity_ = 0;
+    return *this;
+  }
 
-  reference front() { return data_[0]; }
-  const_reference front() const { return data_[0]; }
+  template<typename ...Ts>
+  void emplace_back(Ts &&...ts) noexcept(std::is_nothrow_constructible<T, Ts...>::value) {
+    new (data_.get() + size_) T(std::forward<Ts>(ts)...);
+    ++size_;
+  }
 
-  reference back() { return data_[size_-1]; }
-  const_reference back() const { return data_[size_-1]; }
+  void pop_back() noexcept(std::is_nothrow_destructible<T>::value) {
+    (*this)[size_ - 1].~T();
+    --size_;
+  }
 
-  size_type size() const { return size_; }
+  iterator begin() noexcept { return reinterpret_cast<pointer>(data_.get()); }
+  iterator end() noexcept { return reinterpret_cast<pointer>(data_.get()) + size_; }
+  const_iterator begin() const noexcept { return reinterpret_cast<const_pointer>(data_.get()); }
+  const_iterator end() const noexcept { return reinterpret_cast<const_pointer>(data_.get()) + size_; }
+  const_iterator cbegin() const noexcept { return begin(); }
+  const_iterator cend() const noexcept { return end(); }
+
+  reverse_iterator rbegin() noexcept { return std::reverse_iterator<iterator>(end()); }
+  reverse_iterator rend() noexcept { return std::reverse_iterator<iterator>(begin()); }
+  const_reverse_iterator rbegin() const noexcept { return std::reverse_iterator<const_iterator>(end()); }
+  const_reverse_iterator rend() const noexcept { return std::reverse_iterator<const_iterator>(begin()); }
+  const_reverse_iterator crbegin() const noexcept { return rbegin(); }
+  const_reverse_iterator crend() const noexcept { return rend(); }
+
+  reference operator[](size_type i) noexcept { return reinterpret_cast<reference>(data_[i]); }
+  const_reference operator[](size_type i) const noexcept { return reinterpret_cast<const_reference>(data_[i]); }
+
+  reference front() noexcept { return reinterpret_cast<reference>(data_[0]); }
+  const_reference front() const noexcept { return reinterpret_cast<const_reference>(data_[0]); }
+
+  reference back() noexcept { return reinterpret_cast<reference>(data_[size_-1]); }
+  const_reference back() const noexcept { return reinterpret_cast<const_reference>(data_[size_-1]); }
+
+  size_type size() const noexcept { return size_; }
+  size_type capacity() const noexcept { return capacity_; }
 
 private:
-  size_type size_;
-  std::unique_ptr<T[]> data_;
+  size_type size_, capacity_;
+  std::unique_ptr<storage_type[]> data_;
 };
 
 #endif

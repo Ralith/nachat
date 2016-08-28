@@ -587,7 +587,6 @@ static int cursor_near(const QTextLayout &layout, const QPointF &p) {
     if(p.y() > rect.bottom()) {
       cursor = line.xToCursor(rect.right());
     }
-    // TODO: Special handling for right-to-left text?
   }
   return cursor;
 }

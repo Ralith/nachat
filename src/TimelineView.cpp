@@ -114,15 +114,16 @@ optional<matrix::EventID> get_redacts(const matrix::event::Room &e) {
 
 }
 
-EventLike::EventLike(const matrix::RoomState &state, matrix::event::Room real)
-  : EventLike(state, real.sender(), to_time_point(real.origin_server_ts()), real.type(), real.content(), get_affected_user(real), get_redacts(real))
+EventLike::EventLike(TimelineEventID id, const matrix::RoomState &state, matrix::event::Room real)
+  : EventLike(id, state, real.sender(), to_time_point(real.origin_server_ts()), real.type(), real.content(), get_affected_user(real), get_redacts(real))
 {
   event = std::move(real);
 }
 
-EventLike::EventLike(const matrix::RoomState &state, const matrix::UserID &sender, Time time, matrix::EventType type, matrix::event::Content content,
+EventLike::EventLike(TimelineEventID id, const matrix::RoomState &state,
+                     const matrix::UserID &sender, Time time, matrix::EventType type, matrix::event::Content content,
                      optional<matrix::UserID> affected_user, optional<matrix::EventID> redacts)
-  : type{std::move(type)}, time{time}, sender{sender}, redacts{redacts}, content{std::move(content)}
+  : id{id}, type{std::move(type)}, time{time}, sender{sender}, redacts{redacts}, content{std::move(content)}
 {
   if(affected_user) {
     auto m = state.member_from_id(*affected_user);
@@ -200,8 +201,8 @@ EventBlock::EventBlock(TimelineView &parent, ThumbnailCache &thumbnail_cache, gs
     timestamp_.setCacheEnabled(true);
   }
 
-  for(std::size_t i = 0; i < events_.size(); ++i) {
-    events_[i].init(parent, *this, *events[i]);
+  for(std::size_t i = 0; i < static_cast<size_t>(events.size()); ++i) {
+    events_.emplace_back(parent, *this, *events[i]);
   }
 }
 
@@ -285,30 +286,111 @@ QRectF EventBlock::bounds() const {
   return QRectF(0, 0, name_.boundingRect().width(), (std::max<size_t>(2, lines) - 1) * parent_.fontMetrics().lineSpacing() + parent_.fontMetrics().ascent());
 }
 
-void EventBlock::draw(QPainter &p, Selection *selection) const {
+struct TextRange {
+  int start, length;
+};
+
+QTextLayout::FormatRange to_selection_format(const TextRange &range, const QPalette &palette, bool focused = true) {
+  QTextCharFormat selected;
+  {
+    const auto state = focused ? QPalette::Active : QPalette::Inactive;
+    selected.setBackground(palette.brush(state, QPalette::Highlight));
+    selected.setForeground(palette.brush(state, QPalette::HighlightedText));
+  }
+
+  QTextLayout::FormatRange result;
+  result.format = selected;
+  result.start = range.start;
+  result.length = range.length;
+  return result;
+}
+
+struct SelectionResult {
+  bool continues;
+  TextRange affected;
+};
+
+static bool cursor_in(const Cursor &c, TimelineEventID id, Cursor::Type type, size_t paragraph) {
+  return c.event() == id && c.type() == type && c.paragraph() == paragraph;
+}
+
+static optional<SelectionResult> selection_for(TimelineEventID id, Cursor::Type type, const QTextLayout &layout, bool bottom_selected, const Selection &selection, size_t paragraph = 0) {
+  SelectionResult result;
+
+  const bool begin_applies = cursor_in(selection.begin, id, type, paragraph);
+  const bool end_applies = cursor_in(selection.end, id, type, paragraph);
+  if(begin_applies && end_applies) {
+    result.affected.start = std::min(selection.begin.pos(), selection.end.pos());
+    result.affected.length = std::max(selection.begin.pos(), selection.end.pos()) - result.affected.start;
+    result.continues = false;
+    return result;
+  } else if(begin_applies || end_applies) {
+    const int endpoint = (begin_applies ? selection.begin : selection.end).pos();
+    if(bottom_selected) {
+      result.affected.start = std::max(0, endpoint);
+      result.affected.length = layout.text().size() - result.affected.start;
+      result.continues = false;
+    } else {
+      result.affected.start = 0;
+      result.affected.length = std::min(layout.text().size(), endpoint);
+      result.continues = true;
+    }
+    return result;
+  } else if(bottom_selected) {
+    result.affected.start = 0;
+    result.affected.length = layout.text().size();
+    result.continues = true;
+    return result;
+  }
+
+  return {};
+}
+
+bool EventBlock::draw(QPainter &p, bool bottom_selected, const Selection &selection) const {
+  const auto &parent = *static_cast<QWidget *>(p.device());
   if(avatar_) {
     if(const auto &pixmap = **avatar_) {
       const QSize logical_size = pixmap->size() / pixmap->devicePixelRatio();
-      p.drawPixmap(QPointF((avatar_extent() - logical_size.width()) / 2.,
-                           (avatar_extent() - logical_size.height()) / 2.),
+      p.drawPixmap(QPointF((avatar_extent() - logical_size.width()) * 0.5,
+                           (avatar_extent() - logical_size.height()) * 0.5),
                    *pixmap);
     } else {
-      // TODO: Draw loading indicator
+      // TODO: Draw loading or error indicator
     }
   } else {
     // TODO: Draw default avatar
   }
 
   const static QPointF origin{0, 0};
-
-  name_.draw(&p, origin);
-  timestamp_.draw(&p, origin);
-
-  for(const auto &event : events_) {
-    for(const auto &paragraph : event.paragraphs) {
-      paragraph.draw(&p, origin);
+  
+  QVector<QTextLayout::FormatRange> selections;
+  for(auto event = events_.rbegin(); event != events_.rend(); ++event) {
+    size_t index = event->paragraphs.size();
+    for(auto paragraph = event->paragraphs.rbegin(); paragraph != event->paragraphs.rend(); ++paragraph) {
+      index -= 1;
+      if(auto s = selection_for(event->id, Cursor::Type::BODY, *paragraph, bottom_selected, selection, index)) {
+        selections.push_back(to_selection_format(s->affected, parent.palette(), parent.hasFocus()));
+        bottom_selected = s->continues;
+      }
+      paragraph->draw(&p, origin, selections);
+      selections.clear();
     }
   }
+
+  if(auto s = selection_for(events_.front().id, Cursor::Type::TIMESTAMP, timestamp_, bottom_selected, selection)) {
+    selections.push_back(to_selection_format(s->affected, parent.palette(), parent.hasFocus()));
+    bottom_selected = s->continues;
+  }
+  timestamp_.draw(&p, origin, selections);
+  selections.clear();
+
+  if(auto s = selection_for(events_.front().id, Cursor::Type::NAME, name_, bottom_selected, selection)) {
+    selections.push_back(to_selection_format(s->affected, parent.palette(), parent.hasFocus()));
+    bottom_selected = s->continues;
+  }
+  name_.draw(&p, origin, selections);
+  selections.clear();
+  return bottom_selected;
 }
 
 qreal EventBlock::avatar_extent() const {
@@ -321,8 +403,64 @@ qreal EventBlock::horizontal_padding() const {
   return std::round(parent_.fontMetrics().lineSpacing() * 0.33);
 }
 
-void EventBlock::Event::init(const TimelineView &view, const EventBlock &block, const EventLike &e) {
-  source = e.event;
+static optional<int> cursor_near(const QTextLayout &layout, const QPointF &p, bool exact) {
+  for(int i = 0; i < layout.lineCount(); ++i) {
+    const auto line = layout.lineAt(i);
+    const auto rect = line.rect();
+    if(p.y() < rect.top()) {
+      if(exact) return {};
+      return line.xToCursor(rect.left());
+    }
+    if(p.y() >= rect.top() && p.y() <= rect.bottom()) {
+      if(exact && (p.x() < line.x() || p.x() > (line.x() + line.naturalTextWidth()))) return {};
+      return line.xToCursor(p.x());
+    }
+  }
+
+  if(exact) return {};
+  auto line = layout.lineAt(layout.lineCount()-1);
+  return line.xToCursor(line.rect().right());
+}
+
+optional<Cursor> EventBlock::get_cursor(const QPointF &point, bool exact) const {
+  auto header_rect = name_.boundingRect();
+  if(point.y() < header_rect.bottom()) {
+    if(timestamp_.lineCount() != 0) {
+      const auto line = timestamp_.lineAt(0);
+      const auto rect = line.naturalTextRect();
+      if(point.x() > rect.left() && point.y() > rect.top() && point.y() < rect.bottom()) { // TODO: LTR support?
+        return Cursor{Cursor::Type::TIMESTAMP, events_.front().id, timestamp_.lineAt(0).xToCursor(point.x())};
+      }
+    } 
+    if(auto c = cursor_near(name_, point, exact)) {
+      return Cursor{Cursor::Type::NAME, events_.front().id, *c};
+    }
+  }
+
+  for(const auto &event : events_) {
+    size_t index = 0;
+    for(const auto &paragraph : event.paragraphs) {
+      const auto paragraph_rect = paragraph.boundingRect();
+
+      if(point.y() <= paragraph_rect.bottom()) {
+        if(auto c = cursor_near(paragraph, point, exact)) {
+          return Cursor{event.id, index, *c};
+        }
+      }
+
+      ++index;
+    }
+  }
+
+  if(exact) return {};
+
+  const auto &paragraph = events_.back().paragraphs.back();
+  const auto line = paragraph.lineAt(paragraph.lineCount()-1);
+  return Cursor{events_.back().id, events_.back().paragraphs.size() - 1, line.xToCursor(line.x() + line.width())};
+}
+
+EventBlock::Event::Event(const TimelineView &view, const EventBlock &block, const EventLike &e)
+  : id{e.id}, source{e.event} {
 
   const auto &&tr = [](const char *s) { return TimelineView::tr(s); };
 
@@ -476,11 +614,10 @@ void EventBlock::Event::init(const TimelineView &view, const EventBlock &block, 
   paragraphs = FixedVector<QTextLayout>(lines.size());
   size_t start = 0;
   for(int i = 0; i < lines.size(); ++i) {
-    auto &paragraph = paragraphs[i];
+    paragraphs.emplace_back(lines[i], view.font());
+    auto &paragraph = paragraphs.back();
 
-    paragraph.setText(lines[i]);
     paragraph.setFormats(format_view(formats, start, lines[i].length()));
-    paragraph.setFont(view.font());
     paragraph.setTextOption(body_options);
     paragraph.setCacheEnabled(true);
 
@@ -490,7 +627,7 @@ void EventBlock::Event::init(const TimelineView &view, const EventBlock &block, 
 
 TimelineView::TimelineView(ThumbnailCache &cache, QWidget *parent)
   : QAbstractScrollArea{parent}, thumbnail_cache_{cache}, copy_{new QShortcut(QKeySequence::Copy, this)},
-    at_bottom_{false} {
+    at_bottom_{false}, id_counter_{0} {
   setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
   verticalScrollBar()->setSingleStep(20);  // Taken from QScrollArea
@@ -520,9 +657,9 @@ TimelineView::TimelineView(ThumbnailCache &cache, QWidget *parent)
 
 void TimelineView::prepend(const matrix::TimelineCursor &begin, const matrix::RoomState &state, const matrix::event::Room &evt) {
   if(!batches_.empty() && batches_.front().begin == begin) {
-    batches_.front().events.emplace_front(state, evt);
+    batches_.front().events.emplace_front(get_id(), state, evt);
   } else {
-    batches_.emplace_front(begin, std::deque<EventLike>{EventLike{state, evt}});
+    batches_.emplace_front(begin, std::deque<EventLike>{EventLike{get_id(), state, evt}});
   }
 
   if(auto u = evt.unsigned_data()) {
@@ -539,9 +676,9 @@ void TimelineView::prepend(const matrix::TimelineCursor &begin, const matrix::Ro
 
 void TimelineView::append(const matrix::TimelineCursor &begin, const matrix::RoomState &state, const matrix::event::Room &evt) {
   if(!batches_.empty() && batches_.back().begin == begin) {
-    batches_.back().events.emplace_back(state, evt);
+    batches_.back().events.emplace_back(get_id(), state, evt);
   } else {
-    batches_.emplace_back(begin, std::deque<EventLike>{EventLike{state, evt}});
+    batches_.emplace_back(begin, std::deque<EventLike>{EventLike{get_id(), state, evt}});
   }
 
   if(auto u = evt.unsigned_data()) {
@@ -599,7 +736,9 @@ void TimelineView::paintEvent(QPaintEvent *) {
     animating = true;
   }
 
-  for(auto block = blocks_.crbegin(); block != blocks_.crend(); ++block) {
+  visible_blocks_.clear();
+  bool selecting = false;
+  for(auto block = blocks_.rbegin(); block != blocks_.rend(); ++block) {
     const auto &bounds = block->bounds();
     painter.translate(QPointF(0, -std::round(spacing + bounds.height())));
     const auto block_top = painter.worldTransform().m32() + view.top();
@@ -618,7 +757,8 @@ void TimelineView::paintEvent(QPaintEvent *) {
     {
       painter.save();
       painter.translate(QPointF(padding, half_spacing));
-      block->draw(painter, nullptr);
+      visible_blocks_.emplace_back(*block, painter.worldTransform().m32());
+      selecting = block->draw(painter, selecting, selection_);
       painter.restore();
     }
 
@@ -647,22 +787,25 @@ void TimelineView::mousePressEvent(QMouseEvent *event) {
 
   if(event->button() == Qt::LeftButton) {
     QGuiApplication::setOverrideCursor(Qt::IBeamCursor);
-    selection_.begin = event->localPos();
-    selection_.end = selection_.begin;
+    selection_.click(*get_cursor(event->localPos(), false));
     viewport()->update();
   }
 }
 
 void TimelineView::mouseMoveEvent(QMouseEvent *event) {
-  // TODO
-
   if(event->buttons() & Qt::LeftButton) {
-    selection_.end = event->localPos();
+    selection_.drag(*get_cursor(event->localPos(), false));
     viewport()->update();
 
     QString t = selection_text();
     if(!t.isEmpty())
       QGuiApplication::clipboard()->setText(selection_text(), QClipboard::Selection);
+  } else {
+    if(auto exact = get_cursor(event->localPos(), true)) {
+      setCursor(Qt::IBeamCursor);
+    } else {
+      setCursor(Qt::ArrowCursor);
+    }
   }
 }
 
@@ -678,7 +821,7 @@ void TimelineView::focusOutEvent(QFocusEvent *e) {
   // Taken from QWidgetTextControl
   if(e->reason() != Qt::ActiveWindowFocusReason
      && e->reason() != Qt::PopupFocusReason) {
-    selection_ = {QPointF(), QPointF()};
+    selection_ = Selection{};
     viewport()->update();
   }
 }
@@ -809,4 +952,23 @@ void TimelineView::draw_spinner(QPainter &painter, qreal top) const {
   painter.drawPixmap(QPointF(-extent * 0.5, -extent * 0.5), spinner_);
 
   painter.restore();
+}
+
+void TimelineView::dispatch_input(const QPointF &point, QEvent *input) {
+  
+}
+
+TimelineEventID TimelineView::get_id() { return TimelineEventID{id_counter_++}; }
+
+QRectF TimelineView::VisibleBlock::bounds(const TimelineView &v) const {
+  return block_.bounds().translated(block_padding(v), top_);
+}
+
+optional<Cursor> TimelineView::get_cursor(const QPointF &point, bool exact) const {
+  for(auto vb = visible_blocks_.rbegin(); vb != visible_blocks_.rend(); ++vb) {
+    auto rect = vb->bounds(*this);
+    if(point.y() <= rect.bottom()) return vb->block().get_cursor(point - rect.topLeft(), exact);
+  }
+  if(exact) return {};
+  return visible_blocks_.front().block().get_cursor(point - visible_blocks_.front().bounds(*this).topLeft());
 }

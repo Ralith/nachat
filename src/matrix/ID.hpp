@@ -9,35 +9,36 @@ namespace matrix {
 
 enum class Direction { FORWARD, BACKWARD };
 
+template<typename T>
 class ID {
 public:
-  explicit ID(QString value) : s(std::move(value)) {}
-  explicit operator const QString &() const noexcept { return s; }
-  explicit operator QString &() noexcept { return s; }
-  QString &value() noexcept { return s; }
-  const QString &value() const noexcept { return s; }
+  explicit ID(T value) : s(std::move(value)) {}
+  explicit operator const T &() const noexcept { return s; }
+  explicit operator T &() noexcept { return s; }
+  T &value() noexcept { return s; }
+  const T &value() const noexcept { return s; }
 private:
-  QString s;
+  T s;
 };
 
-inline bool operator==(const ID &x, const ID &y) noexcept { return x.value() == y.value(); }
-inline bool operator!=(const ID &x, const ID &y) noexcept { return x.value() != y.value(); }
-inline bool operator<(const ID &x, const ID &y) noexcept { return x.value() < y.value(); }
+template<typename T> inline bool operator==(const ID<T> &x, const ID<T> &y) noexcept { return x.value() == y.value(); }
+template<typename T> inline bool operator!=(const ID<T> &x, const ID<T> &y) noexcept { return x.value() != y.value(); }
+template<typename T> inline bool operator<(const ID<T> &x, const ID<T> &y) noexcept { return x.value() < y.value(); }
 
-struct TimelineCursor : public ID { using ID::ID; };
-struct SyncCursor : public ID { using ID::ID; };
+struct TimelineCursor : public ID<QString> { using ID::ID; };
+struct SyncCursor : public ID<QString> { using ID::ID; };
 
-struct EventID : public ID { using ID::ID; };
-struct RoomID : public ID { using ID::ID; };
+struct EventID : public ID<QString> { using ID::ID; };
+struct RoomID : public ID<QString> { using ID::ID; };
 
-struct EventType : public ID { using ID::ID; };
-struct MessageType : public ID { using ID::ID; };
+struct EventType : public ID<QString> { using ID::ID; };
+struct MessageType : public ID<QString> { using ID::ID; };
 
-struct StateKey : public ID { using ID::ID; };
+struct StateKey : public ID<QString> { using ID::ID; };
 
-struct UserID : public ID {
+struct UserID : public ID<QString> {
   using ID::ID;
-  UserID(const StateKey &key) : ID(key.value()) {}
+  explicit UserID(const StateKey &key) : ID(key.value()) {}
 };
 
 struct StateID {
