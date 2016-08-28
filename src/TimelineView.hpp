@@ -153,13 +153,14 @@ private:
 
   qreal avatar_extent() const;
   qreal horizontal_padding() const;
+  const Event *event_at(const QPointF &) const;
 };
 
 class TimelineView : public QAbstractScrollArea {
   Q_OBJECT
 
 public:
-  TimelineView(ThumbnailCache &cache, QWidget *parent = nullptr);
+  TimelineView(const QUrl &homeserver, ThumbnailCache &cache, QWidget *parent = nullptr);
 
   void prepend(const matrix::TimelineCursor &begin, const matrix::RoomState &state, const matrix::event::Room &evt);
   void append(const matrix::TimelineCursor &begin, const matrix::RoomState &state, const matrix::event::Room &evt);
@@ -170,6 +171,8 @@ public:
 
   void set_at_bottom(bool);
 
+  const QUrl &homeserver() const { return homeserver_; }
+
 signals:
   void need_backwards();
   void need_forwards();
@@ -177,6 +180,7 @@ signals:
   void redact_requested(const matrix::EventID &id, const QString &reason);
   void event_read(const matrix::EventID &id);
   void href_activated(const QString &);
+  void view_user_profile(const matrix::UserID &user);
 
 protected:
   void paintEvent(QPaintEvent *event) override;
@@ -221,6 +225,7 @@ private:
     QPointF origin_;
   };
 
+  QUrl homeserver_;
   ThumbnailCache &thumbnail_cache_;
   std::deque<Pending> pending_;
   std::deque<Batch> batches_;

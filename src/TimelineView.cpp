@@ -15,12 +15,15 @@
 #include <QClipboard>
 #include <QToolTip>
 #include <QStyleHints>
+#include <QMenu>
 
 #include <QDebug>
 
 #include "matrix/Room.hpp"
 
 #include "Spinner.hpp"
+#include "RedactDialog.hpp"
+#include "EventSourceView.hpp"
 
 using std::experimental::optional;
 
@@ -111,6 +114,44 @@ optional<matrix::EventID> get_redacts(const matrix::event::Room &e) {
   if(e.type() != matrix::event::room::Redaction::tag()) return {};
   matrix::event::room::Redaction re{e};
   return re.redacts();
+}
+
+void populate_menu_href(QMenu &menu, const QUrl &homeserver, const QString &href) {
+  menu.addSection(TimelineView::tr("Link"));
+  const QUrl url(href);
+  if(url.scheme() == "mxc") {
+    auto http_action = menu.addAction(QIcon::fromTheme("edit-copy"), TimelineView::tr("&Copy link HTTP address"));
+    auto hurl = matrix::Content(url).url_on(homeserver).toString(QUrl::FullyEncoded);
+    QObject::connect(http_action, &QAction::triggered, [=]() {
+        QGuiApplication::clipboard()->setText(hurl);
+        QGuiApplication::clipboard()->setText(hurl, QClipboard::Selection);
+      });
+  }
+  auto copy_action = menu.addAction(QIcon::fromTheme("edit-copy"), url.scheme() == "mxc" ? TimelineView::tr("Copy link &MXC address") : TimelineView::tr("&Copy link address"));
+  QObject::connect(copy_action, &QAction::triggered, [=]() {
+      QGuiApplication::clipboard()->setText(href);
+      QGuiApplication::clipboard()->setText(href, QClipboard::Selection);
+    });
+}
+
+void populate_menu_event(QMenu &menu, TimelineView &view, const matrix::event::Room &event) {
+  menu.addSection(TimelineView::tr("Event"));
+  auto redact_action = menu.addAction(QIcon::fromTheme("edit-delete"), TimelineView::tr("&Redact..."));
+  const auto event_id = event.id();
+  QObject::connect(redact_action, &QAction::triggered, [&view, event_id]() {
+      auto dialog = new RedactDialog(&view);
+      dialog->setAttribute(Qt::WA_DeleteOnClose);
+      QObject::connect(dialog, &QDialog::accepted, [&view, dialog, event_id]() {
+          view.redact_requested(event_id, dialog->reason());
+        });
+      dialog->open();
+    });
+
+  auto source_action = menu.addAction(TimelineView::tr("&View source..."));
+  const QJsonObject source = event.json();
+  QObject::connect(source_action, &QAction::triggered, [source]() {
+      (new EventSourceView(source))->show();
+    });
 }
 
 }
@@ -408,6 +449,8 @@ bool EventBlock::draw(QPainter &p, bool bottom_selected, const Selection &select
 }
 
 void EventBlock::handle_input(const QPointF &point, QEvent *input) {
+  const QRectF avatar_rect(0, 0, avatar_extent(), avatar_extent());
+
   switch(input->type()) {
   case QEvent::MouseButtonPress: {
     const auto cursor = get_cursor(point, true);
@@ -442,6 +485,33 @@ void EventBlock::handle_input(const QPointF &point, QEvent *input) {
     }
     break;
   }
+  case QEvent::ContextMenu: {
+    auto menu = new QMenu(&parent_);
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+
+    const auto event = event_at(point);
+    if(event && event->source) {
+      populate_menu_event(*menu, parent_, *event->source);
+    }
+
+    if(avatar_ && avatar_rect.contains(point)) {
+      populate_menu_href(*menu, parent_.homeserver(), avatar_->content().content().url().toString(QUrl::FullyEncoded));
+    } else {
+      const auto cursor = get_cursor(point, true);
+      if(cursor && cursor->href) {
+        populate_menu_href(*menu, parent_.homeserver(), *cursor->href);
+      }
+    }
+
+    menu->addSection(TimelineView::tr("User"));
+    auto profile_action = menu->addAction(QIcon::fromTheme("user-available"), TimelineView::tr("View &profile..."));
+    QObject::connect(profile_action, &QAction::triggered, [this]() {
+        parent_.view_user_profile(sender_);
+      });
+
+    menu->popup(static_cast<QContextMenuEvent*>(input)->globalPos());
+    break;
+  }
   default:
     input->ignore();
     break;
@@ -456,6 +526,17 @@ qreal EventBlock::avatar_extent() const {
 
 qreal EventBlock::horizontal_padding() const {
   return std::round(parent_.fontMetrics().lineSpacing() * 0.33);
+}
+
+const EventBlock::Event *EventBlock::event_at(const QPointF &point) const {
+  for(const auto &event : events_) {
+    QRectF bounds;
+    for(const auto &paragraph : event.paragraphs) {
+      bounds |= paragraph.boundingRect();
+    }
+    if(bounds.contains(point)) return &event;
+  }
+  return nullptr;
 }
 
 static optional<int> cursor_near(const QTextLayout &layout, const QPointF &p, bool exact) {
@@ -726,9 +807,9 @@ EventBlock::Event::Event(const TimelineView &view, const EventBlock &block, cons
   }
 }
 
-TimelineView::TimelineView(ThumbnailCache &cache, QWidget *parent)
-  : QAbstractScrollArea{parent}, thumbnail_cache_{cache}, selection_updating_{false}, click_count_{0}, copy_{new QShortcut(QKeySequence::Copy, this)},
-    at_bottom_{false}, id_counter_{0} {
+TimelineView::TimelineView(const QUrl &homeserver, ThumbnailCache &cache, QWidget *parent)
+  : QAbstractScrollArea{parent}, homeserver_{homeserver}, thumbnail_cache_{cache}, selection_updating_{false}, click_count_{0},
+    copy_{new QShortcut(QKeySequence::Copy, this)}, at_bottom_{false}, id_counter_{0} {
   setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
   verticalScrollBar()->setSingleStep(20);  // Taken from QScrollArea

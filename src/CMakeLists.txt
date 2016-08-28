@@ -61,6 +61,9 @@ add_executable(timeline-view-test WIN32
   TimelineView.cpp
   ContentCache.cpp
   Spinner.cpp
+  RedactDialog.cpp
+  EventSourceView.cpp
+  ${UI_HEADERS}
   )
 
 target_link_libraries(timeline-view-test

@@ -30,7 +30,7 @@ int main(int argc, char *argv[]) {
       c.set(thumb, pixmap);
     });
 
-  TimelineView tv(c);
+  TimelineView tv(QUrl("https://example.com/"), c);
 
   QObject::connect(&tv, &TimelineView::href_activated, [](const QString &href) {
       std::cout << "clicked: " << href.toStdString() << std::endl;
