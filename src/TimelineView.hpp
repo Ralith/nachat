@@ -95,9 +95,6 @@ struct Selection {
 
   Selection() : begin{TimelineEventID{0}, 0, 0}, end{begin} {}
 
-  void click(const Cursor &c) { begin = c; end = c; }
-  void drag(const Cursor &c) { end = c; }
-
   explicit operator bool() const { return begin != end; }
 };
 
@@ -114,6 +111,13 @@ public:
   void handle_input(const QPointF &point, QEvent *input);
 
   std::experimental::optional<Cursor> get_cursor(const QPointF &, bool exact = false) const;
+
+  struct SelectionTextResult {
+    QString fragment;
+    bool continues;
+  };
+
+  SelectionTextResult selection_text(bool bottom_selected, const Selection &selection) const;
 
 private:
   struct Event {
@@ -194,15 +198,15 @@ private:
 
   class VisibleBlock {
   public:
-    VisibleBlock(EventBlock &b, qreal t) : block_{b}, top_{t} {}
+    VisibleBlock(EventBlock &block, const QPointF &origin) : block_{block}, origin_{origin} {}
 
     EventBlock &block() { return block_; }
     const EventBlock &block() const { return block_; }
-    QRectF bounds(const TimelineView &) const;
+    QRectF bounds() const;
 
   private:
     EventBlock &block_;
-    qreal top_;
+    QPointF origin_;
   };
 
   ThumbnailCache &thumbnail_cache_;

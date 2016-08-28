@@ -459,6 +459,42 @@ optional<Cursor> EventBlock::get_cursor(const QPointF &point, bool exact) const 
   return Cursor{events_.back().id, events_.back().paragraphs.size() - 1, line.xToCursor(line.x() + line.width())};
 }
 
+EventBlock::SelectionTextResult EventBlock::selection_text(bool bottom_selected, const Selection &selection) const {
+  QString result;
+  for(auto event = events_.rbegin(); event != events_.rend(); ++event) {
+    size_t index = event->paragraphs.size();
+    for(auto paragraph = event->paragraphs.rbegin(); paragraph != event->paragraphs.rend(); ++paragraph) {
+      index -= 1;
+      if(auto s = selection_for(event->id, Cursor::Type::BODY, *paragraph, bottom_selected, selection, index)) {
+        result = " " % paragraph->text().mid(s->affected.start, s->affected.length) % "\n" % result;
+        bottom_selected = s->continues;
+      }
+    }
+  }
+
+  QString timestamp;
+  if(auto s = selection_for(events_.front().id, Cursor::Type::TIMESTAMP, timestamp_, bottom_selected, selection)) {
+    timestamp = timestamp_.text().mid(s->affected.start, s->affected.length);
+    bottom_selected = s->continues;
+  }
+
+  QString name;
+  if(auto s = selection_for(events_.front().id, Cursor::Type::NAME, name_, bottom_selected, selection)) {
+    name = name_.text().mid(s->affected.start, s->affected.length);
+    bottom_selected = s->continues;
+  }
+
+  if(!timestamp.isEmpty()) {
+    result = timestamp + (result.isEmpty() ? "" : "\n" + result);
+  }
+
+  if(!name.isEmpty()) {
+    result = name + (result.isEmpty() ? "" : " - " + result);
+  }
+
+  return SelectionTextResult{std::move(result), bottom_selected};
+}
+
 EventBlock::Event::Event(const TimelineView &view, const EventBlock &block, const EventLike &e)
   : id{e.id}, source{e.event} {
 
@@ -535,7 +571,7 @@ EventBlock::Event::Event(const TimelineView &view, const EventBlock &block, cons
               text = tr("removed display name");
             }
           } else {
-            text = "sent a no-op join";
+            text = tr("sent a no-op join");
           }
           break;
         default:
@@ -741,7 +777,7 @@ void TimelineView::paintEvent(QPaintEvent *) {
   for(auto block = blocks_.rbegin(); block != blocks_.rend(); ++block) {
     const auto &bounds = block->bounds();
     painter.translate(QPointF(0, -std::round(spacing + bounds.height())));
-    const auto block_top = painter.worldTransform().m32() + view.top();
+    const auto block_top = painter.worldTransform().dy() + view.top();
     if(block_top > view.bottom()) continue;
 
     {
@@ -757,7 +793,7 @@ void TimelineView::paintEvent(QPaintEvent *) {
     {
       painter.save();
       painter.translate(QPointF(padding, half_spacing));
-      visible_blocks_.emplace_back(*block, painter.worldTransform().m32());
+      visible_blocks_.emplace_back(*block, QPointF(painter.worldTransform().dx(), painter.worldTransform().dy()));
       selecting = block->draw(painter, selecting, selection_);
       painter.restore();
     }
@@ -787,15 +823,21 @@ void TimelineView::mousePressEvent(QMouseEvent *event) {
 
   if(event->button() == Qt::LeftButton) {
     QGuiApplication::setOverrideCursor(Qt::IBeamCursor);
-    selection_.click(*get_cursor(event->localPos(), false));
-    viewport()->update();
+    const bool had_selection = static_cast<bool>(selection_);
+    selection_.begin = *get_cursor(event->localPos(), false);
+    selection_.end = selection_.begin;
+    if(had_selection)
+      viewport()->update();
   }
 }
 
 void TimelineView::mouseMoveEvent(QMouseEvent *event) {
   if(event->buttons() & Qt::LeftButton) {
-    selection_.drag(*get_cursor(event->localPos(), false));
-    viewport()->update();
+    auto new_end = *get_cursor(event->localPos(), false);
+    if(selection_.end != new_end) {
+      selection_.end = new_end;
+      viewport()->update();
+    }
 
     QString t = selection_text();
     if(!t.isEmpty())
@@ -844,7 +886,22 @@ bool TimelineView::viewportEvent(QEvent *e) {
 }
 
 QString TimelineView::selection_text() const {
-  return "TODO";
+  QString result;
+
+  bool selecting = false;
+  for(auto block = blocks_.rbegin(); block != blocks_.rend(); ++block) {
+    auto r = block->selection_text(selecting, selection_);
+    selecting = r.continues;
+    if(!r.fragment.isEmpty()) {
+      if(result.isEmpty()) {
+        result = std::move(r.fragment);
+      } else {
+        result = std::move(r.fragment) % "\n" % std::move(result);
+      }
+    }
+  }
+
+  return result;
 }
 
 void TimelineView::copy() const {
@@ -960,15 +1017,15 @@ void TimelineView::dispatch_input(const QPointF &point, QEvent *input) {
 
 TimelineEventID TimelineView::get_id() { return TimelineEventID{id_counter_++}; }
 
-QRectF TimelineView::VisibleBlock::bounds(const TimelineView &v) const {
-  return block_.bounds().translated(block_padding(v), top_);
+QRectF TimelineView::VisibleBlock::bounds() const {
+  return block_.bounds().translated(origin_);
 }
 
 optional<Cursor> TimelineView::get_cursor(const QPointF &point, bool exact) const {
   for(auto vb = visible_blocks_.rbegin(); vb != visible_blocks_.rend(); ++vb) {
-    auto rect = vb->bounds(*this);
+    auto rect = vb->bounds();
     if(point.y() <= rect.bottom()) return vb->block().get_cursor(point - rect.topLeft(), exact);
   }
   if(exact) return {};
-  return visible_blocks_.front().block().get_cursor(point - visible_blocks_.front().bounds(*this).topLeft());
+  return visible_blocks_.front().block().get_cursor(point - visible_blocks_.front().bounds().topLeft());
 }
