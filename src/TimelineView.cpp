@@ -14,6 +14,7 @@
 #include <QGuiApplication>
 #include <QClipboard>
 #include <QToolTip>
+#include <QStyleHints>
 
 #include <QDebug>
 
@@ -315,35 +316,49 @@ static bool cursor_in(const Cursor &c, TimelineEventID id, Cursor::Type type, si
 }
 
 static optional<SelectionResult> selection_for(TimelineEventID id, Cursor::Type type, const QTextLayout &layout, bool bottom_selected, const Selection &selection, size_t paragraph = 0) {
-  SelectionResult result;
+  optional<SelectionResult> result;
 
   const bool begin_applies = cursor_in(selection.begin, id, type, paragraph);
   const bool end_applies = cursor_in(selection.end, id, type, paragraph);
   if(begin_applies && end_applies) {
-    result.affected.start = std::min(selection.begin.pos(), selection.end.pos());
-    result.affected.length = std::max(selection.begin.pos(), selection.end.pos()) - result.affected.start;
-    result.continues = false;
-    return result;
+    result = SelectionResult{};
+    result->affected.start = std::min(selection.begin.pos(), selection.end.pos());
+    result->affected.length = std::max(selection.begin.pos(), selection.end.pos()) - result->affected.start;
+    result->continues = false;
   } else if(begin_applies || end_applies) {
+    result = SelectionResult{};
     const int endpoint = (begin_applies ? selection.begin : selection.end).pos();
     if(bottom_selected) {
-      result.affected.start = std::max(0, endpoint);
-      result.affected.length = layout.text().size() - result.affected.start;
-      result.continues = false;
+      result->affected.start = std::max(0, endpoint);
+      result->affected.length = layout.text().size() - result->affected.start;
+      result->continues = false;
     } else {
-      result.affected.start = 0;
-      result.affected.length = std::min(layout.text().size(), endpoint);
-      result.continues = true;
+      result->affected.start = 0;
+      result->affected.length = std::min(layout.text().size(), endpoint);
+      result->continues = true;
     }
-    return result;
   } else if(bottom_selected) {
-    result.affected.start = 0;
-    result.affected.length = layout.text().size();
-    result.continues = true;
-    return result;
+    result = SelectionResult{};
+    result->affected.start = 0;
+    result->affected.length = layout.text().size();
+    result->continues = true;
   }
 
-  return {};
+  if(result) {
+    switch(selection.mode) {
+    case Selection::Mode::CHARACTER: break;
+    case Selection::Mode::WORD:
+      result->affected.length = layout.nextCursorPosition(result->affected.start + result->affected.length, QTextLayout::SkipWords);
+      result->affected.start = layout.previousCursorPosition(result->affected.start, QTextLayout::SkipWords);
+      break;
+    case Selection::Mode::PARAGRAPH:
+      result->affected.start = 0;
+      result->affected.length = layout.text().size();
+      break;
+    }
+  }
+
+  return result;
 }
 
 bool EventBlock::draw(QPainter &p, bool bottom_selected, const Selection &selection) const {
@@ -662,7 +677,7 @@ EventBlock::Event::Event(const TimelineView &view, const EventBlock &block, cons
 }
 
 TimelineView::TimelineView(ThumbnailCache &cache, QWidget *parent)
-  : QAbstractScrollArea{parent}, thumbnail_cache_{cache}, copy_{new QShortcut(QKeySequence::Copy, this)},
+  : QAbstractScrollArea{parent}, thumbnail_cache_{cache}, click_count_{0}, copy_{new QShortcut(QKeySequence::Copy, this)},
     at_bottom_{false}, id_counter_{0} {
   setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
@@ -820,15 +835,27 @@ void TimelineView::changeEvent(QEvent *) {
 
 void TimelineView::mousePressEvent(QMouseEvent *event) {
   // TODO
-
   if(event->button() == Qt::LeftButton) {
     QGuiApplication::setOverrideCursor(Qt::IBeamCursor);
     const bool had_selection = static_cast<bool>(selection_);
+    auto now = std::chrono::steady_clock::now();
+    if(now - last_click_ <= std::chrono::milliseconds(QGuiApplication::styleHints()->mouseDoubleClickInterval())) {
+      click_count_ += 1;
+    } else {
+      click_count_ = 0;
+    }
+    constexpr Selection::Mode selection_modes[] = {Selection::Mode::CHARACTER, Selection::Mode::WORD, Selection::Mode::PARAGRAPH};
+    selection_.mode = selection_modes[std::min<size_t>(2, click_count_)];
     selection_.begin = *get_cursor(event->localPos(), false);
     selection_.end = selection_.begin;
     if(had_selection)
       viewport()->update();
+    last_click_ = now;
   }
+}
+
+void TimelineView::mouseDoubleClickEvent(QMouseEvent *event) {
+  mousePressEvent(event);
 }
 
 void TimelineView::mouseMoveEvent(QMouseEvent *event) {

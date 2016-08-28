@@ -90,10 +90,15 @@ inline bool operator==(const Cursor &a, const Cursor &b) {
 inline bool operator!=(const Cursor &a, const Cursor &b) { return !(a == b); }
 
 struct Selection {
+  enum class Mode {
+    CHARACTER, WORD, PARAGRAPH
+  };
+
+  Mode mode;
   Cursor begin;
   Cursor end;
 
-  Selection() : begin{TimelineEventID{0}, 0, 0}, end{begin} {}
+  Selection() : mode{Mode::CHARACTER}, begin{TimelineEventID{0}, 0, 0}, end{begin} {}
 
   explicit operator bool() const { return begin != end; }
 };
@@ -171,6 +176,7 @@ protected:
   void paintEvent(QPaintEvent *event) override;
   void resizeEvent(QResizeEvent *event) override;
   void mousePressEvent(QMouseEvent *event) override;
+  void mouseDoubleClickEvent(QMouseEvent *event) override;
   void mouseReleaseEvent(QMouseEvent *event) override;
   void mouseMoveEvent(QMouseEvent *event) override;
   void focusOutEvent(QFocusEvent *event) override;
@@ -215,6 +221,8 @@ private:
   std::deque<EventBlock> blocks_;
   std::vector<VisibleBlock> visible_blocks_;
   Selection selection_;
+  std::chrono::steady_clock::time_point last_click_;
+  size_t click_count_;
   QShortcut *copy_;
   QPixmap spinner_;
   bool at_bottom_;
