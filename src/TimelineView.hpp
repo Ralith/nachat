@@ -105,6 +105,11 @@ struct Selection {
 
 class TimelineView;
 
+struct CursorWithHref {
+  Cursor cursor;
+  std::experimental::optional<QString> href;
+};
+
 class EventBlock {
 public:
   EventBlock(TimelineView &parent, ThumbnailCache &cache, gsl::span<const EventLike *const> events); // All events should have same sender
@@ -115,7 +120,7 @@ public:
   bool draw(QPainter &painter, bool bottom_selected, const Selection &selection) const; // returns true iff selection began but did not end
   void handle_input(const QPointF &point, QEvent *input);
 
-  std::experimental::optional<Cursor> get_cursor(const QPointF &, bool exact = false) const;
+  std::experimental::optional<CursorWithHref> get_cursor(const QPointF &, bool exact = false) const;
 
   struct SelectionTextResult {
     QString fragment;
@@ -171,6 +176,7 @@ signals:
 
   void redact_requested(const matrix::EventID &id, const QString &reason);
   void event_read(const matrix::EventID &id);
+  void href_activated(const QString &);
 
 protected:
   void paintEvent(QPaintEvent *event) override;
@@ -221,6 +227,7 @@ private:
   std::deque<EventBlock> blocks_;
   std::vector<VisibleBlock> visible_blocks_;
   Selection selection_;
+  bool selection_updating_;
   std::chrono::steady_clock::time_point last_click_;
   size_t click_count_;
   QShortcut *copy_;

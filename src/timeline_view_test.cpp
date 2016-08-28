@@ -1,3 +1,5 @@
+#include <iostream>
+
 #include <QApplication>
 
 #include "matrix/Room.hpp"
@@ -29,6 +31,11 @@ int main(int argc, char *argv[]) {
     });
 
   TimelineView tv(c);
+
+  QObject::connect(&tv, &TimelineView::href_activated, [](const QString &href) {
+      std::cout << "clicked: " << href.toStdString() << std::endl;
+    });
+
   tv.show();
 
   matrix::RoomState rs;

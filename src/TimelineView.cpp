@@ -362,7 +362,6 @@ static optional<SelectionResult> selection_for(TimelineEventID id, Cursor::Type 
 }
 
 bool EventBlock::draw(QPainter &p, bool bottom_selected, const Selection &selection) const {
-  const auto &parent = *static_cast<QWidget *>(p.device());
   if(avatar_) {
     if(const auto &pixmap = **avatar_) {
       const QSize logical_size = pixmap->size() / pixmap->devicePixelRatio();
@@ -384,7 +383,7 @@ bool EventBlock::draw(QPainter &p, bool bottom_selected, const Selection &select
     for(auto paragraph = event->paragraphs.rbegin(); paragraph != event->paragraphs.rend(); ++paragraph) {
       index -= 1;
       if(auto s = selection_for(event->id, Cursor::Type::BODY, *paragraph, bottom_selected, selection, index)) {
-        selections.push_back(to_selection_format(s->affected, parent.palette(), parent.hasFocus()));
+        selections.push_back(to_selection_format(s->affected, parent_.palette(), parent_.hasFocus()));
         bottom_selected = s->continues;
       }
       paragraph->draw(&p, origin, selections);
@@ -393,19 +392,60 @@ bool EventBlock::draw(QPainter &p, bool bottom_selected, const Selection &select
   }
 
   if(auto s = selection_for(events_.front().id, Cursor::Type::TIMESTAMP, timestamp_, bottom_selected, selection)) {
-    selections.push_back(to_selection_format(s->affected, parent.palette(), parent.hasFocus()));
+    selections.push_back(to_selection_format(s->affected, parent_.palette(), parent_.hasFocus()));
     bottom_selected = s->continues;
   }
   timestamp_.draw(&p, origin, selections);
   selections.clear();
 
   if(auto s = selection_for(events_.front().id, Cursor::Type::NAME, name_, bottom_selected, selection)) {
-    selections.push_back(to_selection_format(s->affected, parent.palette(), parent.hasFocus()));
+    selections.push_back(to_selection_format(s->affected, parent_.palette(), parent_.hasFocus()));
     bottom_selected = s->continues;
   }
   name_.draw(&p, origin, selections);
   selections.clear();
   return bottom_selected;
+}
+
+void EventBlock::handle_input(const QPointF &point, QEvent *input) {
+  switch(input->type()) {
+  case QEvent::MouseButtonPress: {
+    const auto cursor = get_cursor(point, true);
+    if(cursor && cursor->href) {
+      input->accept();
+    } else {
+      input->ignore();
+    }
+    break;
+  }
+  case QEvent::MouseButtonRelease: {
+    const auto cursor = get_cursor(point, true);
+    if(cursor && cursor->href) {
+      input->accept();
+      parent_.href_activated(*cursor->href);
+    } else {
+      input->ignore();
+    }
+    break;
+  }
+  case QEvent::MouseMove: {
+    const auto cursor = get_cursor(point, true);
+    if(cursor) {
+      if(cursor->href) {
+        parent_.setCursor(Qt::PointingHandCursor);
+        input->accept();
+      } else {
+        parent_.setCursor(Qt::IBeamCursor);
+      }
+    } else {
+      parent_.setCursor(Qt::ArrowCursor);
+    }
+    break;
+  }
+  default:
+    input->ignore();
+    break;
+  }
 }
 
 qreal EventBlock::avatar_extent() const {
@@ -437,18 +477,27 @@ static optional<int> cursor_near(const QTextLayout &layout, const QPointF &p, bo
   return line.xToCursor(line.rect().right());
 }
 
-optional<Cursor> EventBlock::get_cursor(const QPointF &point, bool exact) const {
+static optional<QString> href_at(const QTextLayout &layout, int cursor) {
+  for(auto &format : layout.formats()) {
+    if(format.start <= cursor && format.start + format.length > cursor && format.format.isAnchor()) {
+      return format.format.anchorHref();
+    }
+  }
+  return {};
+}
+
+optional<CursorWithHref> EventBlock::get_cursor(const QPointF &point, bool exact) const {
   auto header_rect = name_.boundingRect();
   if(point.y() < header_rect.bottom()) {
     if(timestamp_.lineCount() != 0) {
       const auto line = timestamp_.lineAt(0);
       const auto rect = line.naturalTextRect();
       if(point.x() > rect.left() && point.y() > rect.top() && point.y() < rect.bottom()) { // TODO: LTR support?
-        return Cursor{Cursor::Type::TIMESTAMP, events_.front().id, timestamp_.lineAt(0).xToCursor(point.x())};
+        return CursorWithHref{Cursor{Cursor::Type::TIMESTAMP, events_.front().id, timestamp_.lineAt(0).xToCursor(point.x())}, {}};
       }
     } 
     if(auto c = cursor_near(name_, point, exact)) {
-      return Cursor{Cursor::Type::NAME, events_.front().id, *c};
+      return CursorWithHref{Cursor{Cursor::Type::NAME, events_.front().id, *c}, {}};
     }
   }
 
@@ -459,7 +508,7 @@ optional<Cursor> EventBlock::get_cursor(const QPointF &point, bool exact) const 
 
       if(point.y() <= paragraph_rect.bottom()) {
         if(auto c = cursor_near(paragraph, point, exact)) {
-          return Cursor{event.id, index, *c};
+          return CursorWithHref{Cursor{event.id, index, *c}, href_at(paragraph, *c)};
         }
       }
 
@@ -471,7 +520,8 @@ optional<Cursor> EventBlock::get_cursor(const QPointF &point, bool exact) const 
 
   const auto &paragraph = events_.back().paragraphs.back();
   const auto line = paragraph.lineAt(paragraph.lineCount()-1);
-  return Cursor{events_.back().id, events_.back().paragraphs.size() - 1, line.xToCursor(line.x() + line.width())};
+  auto c = line.xToCursor(line.x() + line.width());
+  return CursorWithHref{Cursor{events_.back().id, events_.back().paragraphs.size() - 1, c}, href_at(paragraph, c)};
 }
 
 EventBlock::SelectionTextResult EventBlock::selection_text(bool bottom_selected, const Selection &selection) const {
@@ -677,7 +727,7 @@ EventBlock::Event::Event(const TimelineView &view, const EventBlock &block, cons
 }
 
 TimelineView::TimelineView(ThumbnailCache &cache, QWidget *parent)
-  : QAbstractScrollArea{parent}, thumbnail_cache_{cache}, click_count_{0}, copy_{new QShortcut(QKeySequence::Copy, this)},
+  : QAbstractScrollArea{parent}, thumbnail_cache_{cache}, selection_updating_{false}, click_count_{0}, copy_{new QShortcut(QKeySequence::Copy, this)},
     at_bottom_{false}, id_counter_{0} {
   setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
@@ -834,9 +884,10 @@ void TimelineView::changeEvent(QEvent *) {
 }
 
 void TimelineView::mousePressEvent(QMouseEvent *event) {
-  // TODO
+  dispatch_input(event->localPos(), event);
+  if(event->isAccepted()) return;
+
   if(event->button() == Qt::LeftButton) {
-    QGuiApplication::setOverrideCursor(Qt::IBeamCursor);
     const bool had_selection = static_cast<bool>(selection_);
     auto now = std::chrono::steady_clock::now();
     if(now - last_click_ <= std::chrono::milliseconds(QGuiApplication::styleHints()->mouseDoubleClickInterval())) {
@@ -848,9 +899,13 @@ void TimelineView::mousePressEvent(QMouseEvent *event) {
     selection_.mode = selection_modes[std::min<size_t>(2, click_count_)];
     selection_.begin = *get_cursor(event->localPos(), false);
     selection_.end = selection_.begin;
+
     if(had_selection)
       viewport()->update();
+
+    QGuiApplication::setOverrideCursor(Qt::IBeamCursor);
     last_click_ = now;
+    selection_updating_ = true;
   }
 }
 
@@ -859,7 +914,14 @@ void TimelineView::mouseDoubleClickEvent(QMouseEvent *event) {
 }
 
 void TimelineView::mouseMoveEvent(QMouseEvent *event) {
-  if(event->buttons() & Qt::LeftButton) {
+  dispatch_input(event->localPos(), event);
+
+  if(!event->isAccepted()) {
+    setCursor(Qt::ArrowCursor);
+    event->accept();
+  }
+
+  if(selection_updating_ && event->buttons() & Qt::LeftButton) {
     auto new_end = *get_cursor(event->localPos(), false);
     if(selection_.end != new_end) {
       selection_.end = new_end;
@@ -869,20 +931,15 @@ void TimelineView::mouseMoveEvent(QMouseEvent *event) {
     QString t = selection_text();
     if(!t.isEmpty())
       QGuiApplication::clipboard()->setText(selection_text(), QClipboard::Selection);
-  } else {
-    if(auto exact = get_cursor(event->localPos(), true)) {
-      setCursor(Qt::IBeamCursor);
-    } else {
-      setCursor(Qt::ArrowCursor);
-    }
   }
 }
 
 void TimelineView::mouseReleaseEvent(QMouseEvent *event) {
-  // TODO
+  dispatch_input(event->localPos(), event);
 
   if(event->button() == Qt::LeftButton) {
     QGuiApplication::restoreOverrideCursor();
+    selection_updating_ = false;
   }
 }
 
@@ -896,13 +953,13 @@ void TimelineView::focusOutEvent(QFocusEvent *e) {
 }
 
 void TimelineView::contextMenuEvent(QContextMenuEvent *event) {
-  // TODO
+  dispatch_input(QPointF(event->pos()), event);
 }
 
 bool TimelineView::viewportEvent(QEvent *e) {
   if(e->type() == QEvent::ToolTip) {
     auto help = static_cast<QHelpEvent*>(e);
-    // TODO
+    dispatch_input(QPointF(help->pos()), help);
     if(!help->isAccepted()) {
       QToolTip::hideText();
     }
@@ -953,6 +1010,7 @@ void TimelineView::update_scrollbar(int content_height) {
 
   scroll.setMaximum(content_height > view_height ? content_height - view_height : 0);
   scroll.setPageStep(viewport()->contentsRect().height());
+  if(was_at_bottom) scroll.setValue(scroll.maximum());
 }
 
 // Whether two events should be assigned to distinct blocks
@@ -1039,7 +1097,14 @@ void TimelineView::draw_spinner(QPainter &painter, qreal top) const {
 }
 
 void TimelineView::dispatch_input(const QPointF &point, QEvent *input) {
-  
+  for(auto &vb : visible_blocks_) {
+    const auto rect = vb.bounds();
+    if(rect.contains(point)) {
+      vb.block().handle_input(point - rect.topLeft(), input);
+      return;
+    }
+  }
+  input->ignore();
 }
 
 TimelineEventID TimelineView::get_id() { return TimelineEventID{id_counter_++}; }
@@ -1050,9 +1115,15 @@ QRectF TimelineView::VisibleBlock::bounds() const {
 
 optional<Cursor> TimelineView::get_cursor(const QPointF &point, bool exact) const {
   for(auto vb = visible_blocks_.rbegin(); vb != visible_blocks_.rend(); ++vb) {
-    auto rect = vb->bounds();
-    if(point.y() <= rect.bottom()) return vb->block().get_cursor(point - rect.topLeft(), exact);
+    const auto rect = vb->bounds();
+    if(point.y() <= rect.bottom()) {
+      auto x = vb->block().get_cursor(point - rect.topLeft(), exact);
+      if(x) return x->cursor;
+      return {};
+    }
   }
   if(exact) return {};
-  return visible_blocks_.front().block().get_cursor(point - visible_blocks_.front().bounds().topLeft());
+  auto x = visible_blocks_.front().block().get_cursor(point - visible_blocks_.front().bounds().topLeft());
+  if(x) return x->cursor;
+  return {};
 }
