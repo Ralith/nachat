@@ -512,6 +512,33 @@ void EventBlock::handle_input(const QPointF &point, QEvent *input) {
     menu->popup(static_cast<QContextMenuEvent*>(input)->globalPos());
     break;
   }
+  case QEvent::ToolTip: {
+    auto help = static_cast<QHelpEvent*>(input);
+    QString message;
+    if(timestamp_.lineCount() != 0 && timestamp_.lineAt(0).naturalTextRect().contains(point)) {
+      const auto &event = events_.front();
+      if(event.source && !event.source->redacted()) {
+        message = to_timestamp("%Y-%m-%d %H:%M:%S", to_time_point(event.source->origin_server_ts()));
+      }
+    } else if(name_.boundingRect().contains(point)) {
+      message = sender_.value();
+    } else {
+      const auto event = event_at(point);
+      if(event && event->source) {
+        if(!event->source->redacted()) {
+          message = to_timestamp("%Y-%m-%d %H:%M:%S", to_time_point(event->source->origin_server_ts()));
+        }
+      } else if(event) {
+        message = TimelineView::tr("Sending...");
+      }
+    }
+    if(!message.isEmpty()) {
+      QToolTip::showText(help->globalPos(), message);
+    } else {
+      input->ignore();
+    }
+    break;
+  }
   default:
     input->ignore();
     break;
