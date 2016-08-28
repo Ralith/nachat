@@ -325,7 +325,9 @@ QRectF EventBlock::bounds() const {
       lines += paragraph.lineCount();
     }
   }
-  return QRectF(0, 0, name_.boundingRect().width(), (std::max<size_t>(2, lines) - 1) * parent_.fontMetrics().lineSpacing() + parent_.fontMetrics().ascent());
+  return QRectF(0, 0,
+                avatar_extent() + horizontal_padding() + name_.boundingRect().width(),
+                std::max<qreal>(avatar_extent(), (std::max<size_t>(2, lines) - 1) * parent_.fontMetrics().lineSpacing() + parent_.fontMetrics().ascent()));
 }
 
 struct TextRange {
