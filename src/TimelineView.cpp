@@ -478,10 +478,10 @@ void EventBlock::handle_input(const QPointF &point, QEvent *input) {
     if(cursor) {
       if(cursor->href) {
         parent_.setCursor(Qt::PointingHandCursor);
-        input->accept();
       } else {
         parent_.setCursor(Qt::IBeamCursor);
       }
+      input->accept();
     } else {
       parent_.setCursor(Qt::ArrowCursor);
     }
