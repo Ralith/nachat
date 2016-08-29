@@ -64,25 +64,25 @@ bool TimelineWindow::at_end() const {
   return batches_.empty() || *batches_end_ == latest_batch_.begin;
 }
 
-void TimelineWindow::append_batch(const TimelineCursor &start, const TimelineCursor &end, gsl::span<const event::Room> events,
+void TimelineWindow::append_batch(const TimelineCursor &batch_start, const TimelineCursor &batch_end, gsl::span<const event::Room> events,
                                   TimelineManager *mgr) {
-  if(!this->end() || start != *this->end()) {
+  if(!end() || batch_start != *this->end()) {
     mgr->grow(Direction::FORWARD);
     return;
   }
-  batches_.emplace_back(start, std::vector<event::Room>(events.begin(), events.end()));
-  batches_end_ = end;
+  batches_.emplace_back(batch_start, std::vector<event::Room>(events.begin(), events.end()));
+  batches_end_ = batch_end;
 
   for(const auto &evt : batches_.back().events) {
-    mgr->grew(Direction::FORWARD, start, final_state_, evt);
+    mgr->grew(Direction::FORWARD, batch_start, final_state_, evt);
     if(auto s = evt.to_state()) {
       final_state_.apply(*s);
     }
   }
 
-  if(latest_batch_.begin == end) {
+  if(latest_batch_.begin == batch_end) {
     for(const auto &evt : latest_batch_.events) {
-      mgr->grew(Direction::FORWARD, start, final_state_, evt);
+      mgr->grew(Direction::FORWARD, batch_start, final_state_, evt);
       if(auto s = evt.to_state()) {
         final_state_.apply(*s);
       }
@@ -90,17 +90,20 @@ void TimelineWindow::append_batch(const TimelineCursor &start, const TimelineCur
   }
 }
 
-void TimelineWindow::prepend_batch(const TimelineCursor &start, const TimelineCursor &end, gsl::span<const event::Room> events,
+void TimelineWindow::prepend_batch(const TimelineCursor &batch_start, const TimelineCursor &batch_end, gsl::span<const event::Room> reversed_events,
                                    TimelineManager *mgr) {
-  if(end != begin()) {
+  if(batch_start != begin()) {  // we compare begin to begin here because start/end are reversed for backwards fetches
     mgr->grow(Direction::BACKWARD);
     return;
   }
-  batches_.emplace_front(start, std::vector<event::Room>(events.rbegin(), events.rend()));
+  batches_.emplace_front(batch_start, std::vector<event::Room>(reversed_events.rbegin(), reversed_events.rend()));
+  if(batches_.size() == 1) {
+    batches_end_ = batch_start;
+  }
 
   for(auto it = batches_.front().events.crbegin(); it != batches_.front().events.crend(); ++it) {
     if(auto s = it->to_state()) initial_state_.revert(*s);
-    mgr->grew(Direction::BACKWARD, start, initial_state_, *it);
+    mgr->grew(Direction::BACKWARD, batch_start, initial_state_, *it);
   }
 }
 
