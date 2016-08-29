@@ -935,8 +935,10 @@ void TimelineView::append(const matrix::TimelineCursor &begin, const matrix::Roo
           break;
         }
       }
-      existing_id = it->event.id;
-      pending_.erase(it);
+      if(it != pending_.cend()) {
+        existing_id = it->event.id;
+        pending_.erase(it);
+      }
     }
   }
 
