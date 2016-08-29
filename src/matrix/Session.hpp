@@ -3,8 +3,8 @@
 
 #include <unordered_map>
 #include <chrono>
-#include <memory>
 #include <experimental/optional>
+#include <vector>
 
 #include <QObject>
 #include <QString>
@@ -64,14 +64,13 @@ signals:
   void error(const QString &msg);
 };
 
+struct SessionInit;
+
 class Session : public QObject {
   Q_OBJECT
 
 public:
-  Session(Matrix& universe, QUrl homeserver, UserID user_id, QString access_token,
-          lmdb::env &&env, lmdb::dbi &&state_db, lmdb::dbi &&room_db);
-
-  static std::unique_ptr<Session> create(Matrix& universe, QUrl homeserver, UserID user_id, QString access_token);
+  Session(Matrix& universe, QUrl homeserver, UserID user_id, QString access_token);
 
   Session(const Session &) = delete;
   Session &operator=(const Session &) = delete;
@@ -117,8 +116,6 @@ public:
   QUrl ensure_http(const QUrl &) const;
   // Converts mxc URLs to http URLs on this homeserver, otherwise passes through
 
-  void cache_state(const Room &room);
-
 signals:
   void logged_out();
   void error(QString message);
@@ -136,22 +133,25 @@ private:
   lmdb::dbi state_db_, room_db_;
   size_t buffer_size_;
   std::unordered_map<RoomID, Room> rooms_;
+  std::unordered_map<RoomID, lmdb::dbi> member_dbs_;
   bool synced_;
   std::experimental::optional<SyncCursor> next_batch_;
-  lmdb::txn *active_txn_ = nullptr;
   QNetworkReply *sync_reply_;
   QTimer sync_retry_timer_;
+  std::unordered_map<RoomID, std::vector<Member>> changed_members_;
 
   std::chrono::steady_clock::time_point last_sync_error_;
   // Last time a sync failed. Used to ensure we don't spin if errors happen quickly.
+
+  Session(Matrix& universe, QUrl homeserver, UserID user_id, QString access_token, SessionInit &&init);
 
   QNetworkRequest request(const QString &path, QUrlQuery query = QUrlQuery(), const QString &content_type = "application/json");
 
   void sync();
   void sync(QUrlQuery query);
   void handle_sync_reply();
-  void dispatch(lmdb::txn &txn, proto::Sync sync);
-  void cache_state(lmdb::txn &txn, const Room &room);
+  void dispatch(const proto::Sync &sync);
+  void update_cache(const proto::Sync &sync);
 };
 
 }

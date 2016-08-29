@@ -6,7 +6,6 @@ add_library(matrix
   Matrix.cpp
   Session.cpp
   Room.cpp
-  Member.cpp
   proto.cpp
   Content.cpp
   Event.cpp

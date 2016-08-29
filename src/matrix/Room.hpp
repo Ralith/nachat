@@ -6,8 +6,6 @@
 #include <deque>
 #include <chrono>
 
-#include <lmdb++.h>
-
 #include <QString>
 #include <QObject>
 #include <QUrl>
@@ -17,7 +15,6 @@
 
 #include "../QStringHash.hpp"
 
-#include "Member.hpp"
 #include "Event.hpp"
 
 class QNetworkReply;
@@ -26,19 +23,26 @@ namespace matrix {
 
 class Matrix;
 class Session;
+class Room;
 
 namespace proto {
 struct JoinedRoom;
 struct Timeline;
 }
 
+inline QString pretty_name(const UserID &user, const event::room::MemberContent profile) {
+  return profile.displayname() ? *profile.displayname() : user.value();
+}
+
+using Member = std::pair<const UserID, event::room::MemberContent>;
+
 class RoomState {
 public:
   RoomState() = default;  // New, empty room
-  RoomState(const QJsonObject &state, lmdb::txn &txn, lmdb::dbi &members);  // Load from db
+  RoomState(const QJsonObject &state, gsl::span<const Member> members);  // Loaded from db
 
   void apply(const event::room::State &e) {
-    dispatch(e, nullptr, nullptr, nullptr);
+    dispatch(e, nullptr);
   }
   void revert(const event::room::State &e);  // Reverts an event that, if a state event, has prev_content
 
@@ -47,7 +51,7 @@ public:
   // e. Useful for allowing name disambiguation of departed members,
   // e.g. when stepping backwards.
 
-  bool dispatch(const event::room::State &e, Room *room, lmdb::dbi *member_db, lmdb::txn *txn);
+  bool dispatch(const event::room::State &e, Room *room);
   // Returns true if changes were made. Emits state change events on room if supplied.
 
   const std::experimental::optional<QString> &name() const { return name_; }
@@ -57,13 +61,13 @@ public:
   const QUrl &avatar() const { return avatar_; }
 
   std::vector<const Member *> members() const;
-  const Member *member_from_id(const UserID &id) const;
+  const event::room::MemberContent *member_from_id(const UserID &id) const;
 
   QString pretty_name(const UserID &own_id) const;
   // Matrix r0.1.0 11.2.2.5 ish (like vector-web)
 
-  std::experimental::optional<QString> member_disambiguation(const Member &member) const;
-  QString member_name(const Member &member) const;
+  std::experimental::optional<QString> member_disambiguation(const UserID &member) const;
+  QString member_name(const UserID &member) const;
   // Matrix r0.1.0 11.2.2.3
 
   void prune_departed(Room *room = nullptr);
@@ -75,7 +79,7 @@ private:
   std::experimental::optional<QString> name_, canonical_alias_, topic_;
   std::vector<QString> aliases_;
   QUrl avatar_;
-  std::unordered_map<UserID, Member> members_by_id_;
+  std::unordered_map<UserID, event::room::MemberContent> members_by_id_;
   std::unordered_map<QString, std::vector<UserID>, QStringHash> members_by_displayname_;
   std::experimental::optional<UserID> departed_;
 
@@ -84,7 +88,7 @@ private:
   std::vector<UserID> &members_named(QString displayname);
   const std::vector<UserID> &members_named(QString displayname) const;
 
-  bool update_membership(const UserID &user_id, const event::room::MemberContent &content, Room *room, lmdb::dbi *member_db, lmdb::txn *txn);
+  bool update_membership(const UserID &user_id, const event::room::MemberContent &content, Room *room);
 };
 
 class MessageFetch : public QObject {
@@ -114,10 +118,13 @@ class Room : public QObject {
 
 public:
   struct Batch {
+    TimelineCursor begin;
     std::vector<event::Room> events;
-    TimelineCursor prev_batch;
 
-    explicit Batch(TimelineCursor prev) : prev_batch(prev) {}
+    Batch(TimelineCursor begin, std::vector<event::Room> events) : begin{begin}, events{std::move(events)} {}
+    Batch(const QJsonObject &o);
+
+    QJsonObject to_json() const;
   };
 
   struct Receipt {
@@ -131,7 +138,8 @@ public:
   };
 
   Room(Matrix &universe, Session &session, RoomID id, const QJsonObject &initial,
-       lmdb::env &env, lmdb::txn &init_txn, lmdb::dbi &&member_db);
+       gsl::span<const Member> members);
+  Room(Matrix &universe, Session &session, const proto::JoinedRoom &joined_room);
 
   Room(const Room &) = delete;
   Room &operator=(const Room &) = delete;
@@ -142,7 +150,6 @@ public:
   uint64_t highlight_count() const { return highlight_count_; }
   uint64_t notification_count() const { return notification_count_; }
 
-  const RoomState &initial_state() const { return initial_state_; }
   const RoomState &state() const { return state_; }
 
   QString pretty_name() const;
@@ -150,11 +157,8 @@ public:
     return pretty_name() + (highlight_count() != 0 ? " (" + QString::number(highlight_count()) + ")" : "");
   }
 
-  void load_state(lmdb::txn &txn, gsl::span<const event::room::State>);
-  bool dispatch(lmdb::txn &txn, const proto::JoinedRoom &);
-
-  const std::deque<Batch> &buffer() const { return buffer_; }
-  size_t buffer_size() const;
+  void load_state(gsl::span<const event::room::State>);
+  bool dispatch(const proto::JoinedRoom &);
 
   QJsonObject to_json() const;
 
@@ -171,8 +175,6 @@ public:
 
   void send_read_receipt(const EventID &event);
 
-  bool has_unread() const;
-
   gsl::span<const UserID> typing() const { return typing_; }
   gsl::span<const Receipt * const> receipts_for(const EventID &id) const;
   const Receipt *receipt_from(const UserID &id) const;
@@ -180,10 +182,13 @@ public:
   const std::deque<PendingEvent> &pending_events() const { return pending_events_; }
   // Events that have not yet been successfully transmitted
 
+  const Batch &last_batch() const { return last_batch_; }
+
 signals:
-  void membership_changed(const Member &, Membership old);
-  void member_disambiguation_changed(const Member &, const QString &old);
-  void member_name_changed(const Member &, const QString &old); // Assume disambiguation changed as well
+  void member_changed(const UserID &, const event::room::MemberContent &);
+  void membership_changed(const UserID &, Membership old);
+  void member_disambiguation_changed(const UserID &, const QString &old);
+  void member_name_changed(const UserID &, const QString &old); // Assume disambiguation changed as well
   void state_changed();
   void highlight_count_changed(uint64_t old);
   void notification_count_changed(uint64_t old);
@@ -208,12 +213,9 @@ private:
   Matrix &universe_;
   Session &session_;
   const RoomID id_;
-  lmdb::env &db_env_;
-  lmdb::dbi member_db_;
 
-  RoomState initial_state_;
-  std::deque<Batch> buffer_;
   RoomState state_;
+  Batch last_batch_;
 
   uint64_t highlight_count_ = 0, notification_count_ = 0;
 

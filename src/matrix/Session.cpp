@@ -12,7 +12,7 @@
 
 namespace matrix {
 
-constexpr uint64_t CACHE_FORMAT_VERSION = 2;
+constexpr uint64_t CACHE_FORMAT_VERSION = 3;
 // Bumped every time a backwards-incompatible format change is made, a
 // corruption bug is fixed, or a previously ignored class of state is
 // persisted
@@ -39,7 +39,13 @@ constexpr void to_little_endian(T v, uint8_t *x) {
   }
 }
 
-std::unique_ptr<Session> Session::create(Matrix& universe, QUrl homeserver, UserID user_id, QString access_token) {
+struct SessionInit {
+  lmdb::env env;
+  lmdb::dbi state;
+  lmdb::dbi room;
+};
+
+static SessionInit session_init(const UserID &user_id) {
   auto env = lmdb::env::create();
   env.set_mapsize(128UL * 1024UL * 1024UL);  // 128MB should be enough for anyone!
   env.set_max_dbs(1024UL);                   // maximum rooms plus two
@@ -91,16 +97,18 @@ std::unique_ptr<Session> Session::create(Matrix& universe, QUrl homeserver, User
 
   txn.commit();
 
-  return std::make_unique<Session>(universe, std::move(homeserver), std::move(user_id), std::move(access_token),
-                                   std::move(env), std::move(state_db), std::move(room_db));
+  return SessionInit{std::move(env), std::move(state_db), std::move(room_db)};
 }
+
+Session::Session(Matrix& universe, QUrl homeserver, UserID user_id, QString access_token)
+  : Session{universe, homeserver, user_id, access_token, session_init(user_id)} {}
 
 static std::string room_dbname(const RoomID &room_id) { return ("r." + room_id.value()).toStdString(); }
 
 Session::Session(Matrix& universe, QUrl homeserver, UserID user_id, QString access_token,
-                 lmdb::env &&env, lmdb::dbi &&state_db, lmdb::dbi &&room_db)
+                 SessionInit &&init)
     : universe_(universe), homeserver_(homeserver), user_id_(user_id), access_token_(access_token),
-      env_(std::move(env)), state_db_(std::move(state_db)), room_db_(std::move(room_db)),
+      env_(std::move(init.env)), state_db_(std::move(init.state)), room_db_(std::move(init.room)),
       buffer_size_(50), synced_(false) {
   {
     auto txn = lmdb::txn::begin(env_, nullptr, MDB_RDONLY);
@@ -114,11 +122,25 @@ Session::Session(Matrix& universe, QUrl homeserver, UserID user_id, QString acce
       auto cursor = lmdb::cursor::open(txn, room_db_);
       while(cursor.get(room, state, MDB_NEXT)) {
         auto id = RoomID(QString::fromUtf8(room.data(), room.size()));
+        auto &member_db = member_dbs_.emplace(std::piecewise_construct,
+                                              std::forward_as_tuple(id),
+                                              std::forward_as_tuple(lmdb::dbi::open(txn, room_dbname(id).c_str(), MDB_CREATE))).first->second;
+        std::vector<Member> members;
+        {
+          auto member_cursor = lmdb::cursor::open(txn, member_db);
+          lmdb::val member_id;
+          lmdb::val member_content;
+          while(cursor.get(member_id, member_content, MDB_NEXT)) {
+            members.emplace_back(UserID{QString::fromUtf8(member_id.data(), member_id.size())},
+                                 event::room::MemberContent{event::Content{
+                                     QJsonDocument::fromBinaryData(QByteArray{member_content.data(), static_cast<int>(member_content.size())}).object()}});
+          }
+        }
         rooms_.emplace(std::piecewise_construct,
                        std::forward_as_tuple(id),
                        std::forward_as_tuple(universe_, *this, id,
                                              QJsonDocument::fromBinaryData(QByteArray(state.data(), state.size())).object(),
-                                             env_, txn, lmdb::dbi::open(txn, room_dbname(id).c_str())));
+                                             members));
       }
     } else {
       qDebug() << "starting from scratch";
@@ -171,28 +193,7 @@ void Session::handle_sync_reply() {
     synced_ = false;
     error(*r.error);
   } else {
-    auto current_batch = next_batch_;
-    try {
-      auto s = parse_sync(r.object);
-      auto txn = lmdb::txn::begin(env_);
-      active_txn_ = &txn;
-      try {
-        auto batch_utf8 = s.next_batch.value().toUtf8();
-        lmdb::dbi_put(txn, state_db_, next_batch_key, lmdb::val(batch_utf8.data(), batch_utf8.size()));
-        next_batch_ = s.next_batch;
-        dispatch(txn, std::move(s));
-        txn.commit();
-      } catch(...) {
-        active_txn_ = nullptr;
-        throw;
-      }
-      active_txn_ = nullptr;
-      synced_ = true;
-    } catch(lmdb::runtime_error &e) {
-      synced_ = false;
-      next_batch_ = current_batch;
-      error(e.what());
-    }
+    dispatch(parse_sync(r.object));
   }
   if(was_synced != synced_) synced_changed();
 
@@ -210,34 +211,96 @@ void Session::handle_sync_reply() {
   }
 }
 
-void Session::dispatch(lmdb::txn &txn, proto::Sync sync) {
-  // TODO: Exception-safety: copy all room states, update and them and db, commit, swap copy/orig, emit signals
+void Session::dispatch(const proto::Sync &sync) {
+  // TODO: Exception-safety: update rooms and emit signals, then separately write to db
+  next_batch_ = sync.next_batch;
   for(auto &joined_room : sync.rooms.join) {
     auto it = rooms_.find(joined_room.id);
-    bool new_room = false;
+    auto &changed_members = changed_members_[joined_room.id];
+    changed_members.clear();
     if(it == rooms_.end()) {
-      auto db = lmdb::dbi::open(txn, room_dbname(joined_room.id).c_str(), MDB_CREATE);
+      auto &room = rooms_.emplace(std::piecewise_construct,
+                                  std::forward_as_tuple(joined_room.id),
+                                  std::forward_as_tuple(universe_, *this, joined_room)).first->second;
+      const auto id = joined_room.id;
+      connect(&room, &Room::member_changed, [&changed_members](const UserID &id, const event::room::MemberContent &state) {
+          changed_members.emplace_back(id, state);
+        });
 
-      it = rooms_.emplace(std::piecewise_construct,
-                          std::forward_as_tuple(joined_room.id),
-                          std::forward_as_tuple(universe_, *this, joined_room.id, QJsonObject(),
-                                                env_, txn, std::move(db))).first;
-      new_room = true;
+      joined(room);
+    } else {
+      auto &room = it->second;
+      room.load_state(joined_room.state.events);
+      room.dispatch(joined_room);
     }
-    auto &room = it->second;
-    room.load_state(txn, joined_room.state.events);
-    room.dispatch(txn, joined_room);
-    // Mandatory write, since either the buffer or state has almost certainly changed
-    cache_state(txn, room);
-    if(new_room) joined(room);
   }
+
+  auto current_batch = next_batch_;
+
+  update_cache(sync);
+
+  synced_ = true;
+
   sync_complete();
 }
 
-void Session::cache_state(lmdb::txn &txn, const Room &room) {
-  auto data = QJsonDocument(room.to_json()).toBinaryData();
-  auto utf8 = room.id().value().toUtf8();
-  lmdb::dbi_put(txn, room_db_, lmdb::val(utf8.data(), utf8.size()), lmdb::val(data.data(), data.size()));
+void Session::update_cache(const proto::Sync &sync) {
+  try {
+    std::vector<std::pair<const RoomID, lmdb::dbi>> new_member_dbs;
+
+    auto txn = lmdb::txn::begin(env_);
+
+    auto batch_utf8 = sync.next_batch.value().toUtf8();
+    lmdb::dbi_put(txn, state_db_, next_batch_key, lmdb::val(batch_utf8.data(), batch_utf8.size()));
+
+    for(auto &joined_room : sync.rooms.join) {
+      const auto &room = rooms_.at(joined_room.id);
+
+      lmdb::dbi *member_db;
+      {
+        auto it = member_dbs_.find(joined_room.id);
+        if(it == member_dbs_.end()) {
+          // We defer adding to member_dbs_ until after commit because the handle might be invalidated if the transaction fails
+          new_member_dbs.emplace_back(joined_room.id, lmdb::dbi::open(txn, room_dbname(joined_room.id).c_str(), MDB_CREATE));
+          member_db = &new_member_dbs.back().second;
+        } else {
+          member_db = &it->second;
+        }
+      }
+
+      {
+        auto data = QJsonDocument(room.to_json()).toBinaryData();
+        auto utf8 = room.id().value().toUtf8();
+        lmdb::dbi_put(txn, room_db_, lmdb::val(utf8.data(), utf8.size()), lmdb::val(data.data(), data.size()));
+      }
+
+      const auto &changed_members = changed_members_.at(joined_room.id);
+      for(const auto &m : changed_members) {
+        auto id_utf8 = m.first.value().toUtf8();
+        switch(m.second.membership()) {
+        case Membership::INVITE:
+        case Membership::JOIN: {
+          auto data = QJsonDocument(m.second.json()).toBinaryData();
+          lmdb::dbi_put(txn, *member_db, lmdb::val(id_utf8.data(), id_utf8.size()), lmdb::val(data.data(), data.size()));
+          break;
+        }
+        case Membership::LEAVE:
+        case Membership::BAN:
+          lmdb::dbi_del(txn, *member_db, lmdb::val(id_utf8.data(), id_utf8.size()), nullptr);
+          break;
+        }
+      }
+    }
+        
+    txn.commit();
+    
+    for(auto &db : new_member_dbs) {
+      member_dbs_.emplace(std::move(db));
+    }
+  } catch(lmdb::runtime_error &e) {
+    // TODO: Handle out of space/databases and retry
+    error(e.what());
+  }
 }
 
 void Session::log_out() {
@@ -365,13 +428,6 @@ QUrl Session::ensure_http(const QUrl &url) const {
     return matrix::Content(url).url_on(homeserver());
   }
   return url;
-}
-
-void Session::cache_state(const Room &room) {
-  if(active_txn_) return;       // State will be cached after sync processing completes
-  auto txn = lmdb::txn::begin(env_);
-  cache_state(txn, room);
-  txn.commit();
 }
 
 ContentPost *Session::upload(QIODevice &data, const QString &content_type, const QString &filename) {

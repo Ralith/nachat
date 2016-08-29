@@ -169,13 +169,13 @@ EventLike::EventLike(TimelineEventID id, const matrix::RoomState &state,
 {
   if(affected_user) {
     auto m = state.member_from_id(*affected_user);
-    affected_user_info = MemberInfo{*affected_user, m ? m->content() : matrix::event::room::MemberContent::leave};
+    affected_user_info = MemberInfo{*affected_user, m ? *m : matrix::event::room::MemberContent::leave};
   }
 
   auto member = state.member_from_id(sender);
   if(member) {
-    disambiguation = state.member_disambiguation(*member);
-    member_content = member->content();
+    disambiguation = state.member_disambiguation(sender);
+    member_content = *member;
   }
 }
 

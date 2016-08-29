@@ -18,7 +18,7 @@ using std::experimental::optional;
 
 namespace matrix {
 
-RoomState::RoomState(const QJsonObject &info, lmdb::txn &txn, lmdb::dbi &member_db) {
+RoomState::RoomState(const QJsonObject &info, gsl::span<const Member> members) {
   if(info["name"].isString()) {
     name_ = info["name"].toString();
   }
@@ -39,18 +39,11 @@ RoomState::RoomState(const QJsonObject &info, lmdb::txn &txn, lmdb::dbi &member_
                    return v.toString();
                  });
 
-  lmdb::val id_val;
-  lmdb::val state;
-  auto cursor = lmdb::cursor::open(txn, member_db);
-  while(cursor.get(id_val, state, MDB_NEXT)) {
-    const auto id_str = UserID(QString::fromUtf8(id_val.data(), id_val.size()));
-    event::room::MemberContent content(event::Content(QJsonDocument::fromBinaryData(QByteArray(state.data(), state.size())).object()));
-    auto &member = members_by_id_.emplace(
-      std::piecewise_construct,
-      std::forward_as_tuple(id_str),
-      std::forward_as_tuple(id_str, content)).first->second;
-    if(member.displayname())
-      record_displayname(member.id(), *member.displayname(), nullptr);
+  for(const auto &member : members) {
+    members_by_id_.insert(member);
+    if(member.second.displayname()) {
+      record_displayname(member.first, *member.second.displayname(), nullptr);
+    }
   }
 }
 
@@ -74,40 +67,42 @@ QString RoomState::pretty_name(const UserID &own_id) const {
   if(name_ && !name_->isEmpty()) return *name_;
   if(canonical_alias_) return *canonical_alias_;
   if(!aliases_.empty()) return aliases_[0];  // Non-standard, but matches vector-web
-  // FIXME: Maintain earliest two IDs as state!
   auto ms = members();
-  ms.erase(std::remove_if(ms.begin(), ms.end(), [&](const Member *m){ return m->id() == own_id; }), ms.end());
+  ms.erase(std::remove_if(ms.begin(), ms.end(), [&](const Member *m){
+        return m->first == own_id;
+      }), ms.end());
   if(ms.size() > 1) {
     std::partial_sort(ms.begin(), ms.begin() + 2, ms.end(),
                       [](const Member *a, const Member *b) {
-                        return a->id() < b->id();
+                        return a->first < b->first;
                       });
   }
   switch(ms.size()) {
   case 0: return Room::tr("Empty room");
-  case 1: return ms[0]->pretty_name();
-  case 2: return Room::tr("%1 and %2").arg(member_name(*ms[0])).arg(member_name(*ms[1]));
-  default: return Room::tr("%1 and %2 others").arg(member_name(*ms[0])).arg(ms.size() - 1);
+  case 1: return matrix::pretty_name(ms[0]->first, ms[0]->second);
+  case 2: return Room::tr("%1 and %2").arg(member_name(ms[0]->first)).arg(member_name(ms[1]->first));
+  default: return Room::tr("%1 and %2 others").arg(member_name(ms[0]->first)).arg(ms.size() - 1);
   }
 }
 
-optional<QString> RoomState::member_disambiguation(const Member &member) const {
+optional<QString> RoomState::member_disambiguation(const UserID &member_id) const {
+  const auto &member = members_by_id_.at(member_id);
   if(!member.displayname()) {
-    if(members_by_displayname_.find(member.id().value()) != members_by_displayname_.end()) {
-      return member.id().value();
+    if(members_by_displayname_.find(member_id.value()) != members_by_displayname_.end()) {
+      return member_id.value();
     } else {
       return {};
     }
   } else if(members_named(*member.displayname()).size() > 1
             || (member.displayname() && member_from_id(UserID(member.displayname()->normalized(QString::NormalizationForm_C))))) {
-    return member.id().value();
+    return member_id.value();
   } else {
     return {};
   }
 }
 
-QString RoomState::member_name(const Member &member) const {
-  auto result = member.pretty_name();
+QString RoomState::member_name(const UserID &member) const {
+  auto result = matrix::pretty_name(member, members_by_id_.at(member));
   auto disambig = member_disambiguation(member);
   if(!disambig) return result;
   return result % " (" % *disambig % ")";
@@ -124,7 +119,7 @@ std::vector<const Member *> RoomState::members() const {
   std::vector<const Member *> result;
   result.reserve(members_by_id_.size());
   std::transform(members_by_id_.begin(), members_by_id_.end(), std::back_inserter(result),
-                 [](auto &x) { return &x.second; });
+                 [](auto &x) { return &x; });
   return result;
 }
 
@@ -132,12 +127,12 @@ void RoomState::forget_displayname(const UserID &id, const QString &old_name_in,
   const QString old_name = old_name_in.normalized(QString::NormalizationForm_C);
   auto &vec = members_by_displayname_.at(old_name);
   QString other_disambiguation;
-  const Member *other_member = nullptr;
+  optional<UserID> other_member;
   const bool existing_displayname = vec.size() == 2;
-  const Member *const existing_mxid = member_from_id(UserID(old_name));
+  const bool existing_mxid = member_from_id(UserID(old_name));
   if(room && (!existing_displayname || !existing_mxid)) {
-    if(existing_displayname) other_member = &members_by_id_.at(vec[0] == id ? vec[1] : vec[0]);
-    if(existing_mxid) other_member = existing_mxid;
+    if(existing_displayname) other_member = vec[0] == id ? vec[1] : vec[0];
+    if(existing_mxid) other_member = UserID(old_name);
   }
   if(other_member) {
     other_disambiguation = *member_disambiguation(*other_member);
@@ -162,19 +157,19 @@ void RoomState::record_displayname(const UserID &id, const QString &name, Room *
   vec.push_back(id);
 
   if(room) {
-    const Member *other_member = nullptr;
+    optional<UserID> other_member;
     const bool existing_displayname = vec.size() == 2;
-    const Member *const existing_mxid = member_from_id(UserID(normalized));
+    const bool existing_mxid = member_from_id(UserID(normalized));
     if(!existing_displayname || !existing_mxid) {
       // If there's only one user with the name, they get newly disambiguated too
-      if(existing_displayname) other_member = &members_by_id_.at(vec[0]);
-      if(existing_mxid) other_member = existing_mxid;
+      if(existing_displayname) other_member = vec[0];
+      if(existing_mxid) other_member = UserID(normalized);
     }
     if(other_member) room->member_disambiguation_changed(*other_member, "");
   }
 }
 
-const Member *RoomState::member_from_id(const UserID &id) const {
+const event::room::MemberContent *RoomState::member_from_id(const UserID &id) const {
   auto it = members_by_id_.find(id);
   if(it == members_by_id_.end()) return nullptr;
   return &it->second;
@@ -184,50 +179,42 @@ static constexpr std::chrono::steady_clock::duration MINIMUM_BACKOFF(std::chrono
 // Default synapse seconds-per-message when throttled
 
 Room::Room(Matrix &universe, Session &session, RoomID id, const QJsonObject &initial,
-           lmdb::env &env, lmdb::txn &txn, lmdb::dbi &&member_db)
-    : universe_(universe), session_(session), id_(std::move(id)),
-      db_env_(env), member_db_(std::move(member_db)), transmitting_(nullptr), retry_backoff_(MINIMUM_BACKOFF)
+           gsl::span<const Member> members)
+    : universe_(universe), session_(session), id_(std::move(id)), state_{initial["state"].toObject(), members},
+      last_batch_{initial["last_batch"].toObject()},
+      highlight_count_{static_cast<uint64_t>(initial["highlight_count"].toDouble(0))},
+      notification_count_{static_cast<uint64_t>(initial["notification_count"].toDouble(0))},
+      transmitting_(nullptr), retry_backoff_(MINIMUM_BACKOFF)
 {
   transmit_retry_timer_.setSingleShot(true);
   connect(&transmit_retry_timer_, &QTimer::timeout, this, &Room::transmit_event);
 
-  if(!initial.isEmpty()) {
-    state_ = RoomState(initial["state"].toObject(), txn, member_db_);
-    initial_state_ = state_;
-
-    QJsonObject b = initial["buffer"].toObject();
-    if(!b.isEmpty()) {
-      buffer_.emplace_back(TimelineCursor{b["prev_batch"].toString()});
-      auto &batch = buffer_.back();
-      batch.events.reserve(b.size());
-      auto es = b["events"].toArray();
-      for(const auto &e : es) {
-        event::Room evt(event::Identifiable(Event(e.toObject())));
-        batch.events.emplace_back(evt);
-      }
-      for(auto it = batch.events.crbegin(); it != batch.events.crend(); ++it) {
-        if(auto s = it->to_state()) initial_state_.revert(*s);
-      }
-    }
-    highlight_count_ = initial["highlight_count"].toDouble(0);
-    notification_count_ = initial["notification_count"].toDouble(0);
-    auto receipts = initial["receipts"].toObject();
-    for(auto it = receipts.begin(); it != receipts.end(); ++it) {
-      update_receipt(UserID(it.key()), EventID(it.value().toObject()["event_id"].toString()), it.value().toObject()["ts"].toDouble());
-    }
+  auto receipts = initial["receipts"].toObject();
+  for(auto it = receipts.begin(); it != receipts.end(); ++it) {
+    update_receipt(UserID(it.key()), EventID(it.value().toObject()["event_id"].toString()), it.value().toObject()["ts"].toDouble());
   }
+}
+
+Room::Room(Matrix &universe, Session &session, const proto::JoinedRoom &joined_room)
+    : universe_(universe), session_(session), id_{joined_room.id},
+      last_batch_{joined_room.timeline.prev_batch, joined_room.timeline.events},
+      transmitting_(nullptr), retry_backoff_(MINIMUM_BACKOFF)
+{
+  transmit_retry_timer_.setSingleShot(true);
+  connect(&transmit_retry_timer_, &QTimer::timeout, this, &Room::transmit_event);
+
+  load_state(joined_room.state.events);
+  dispatch(joined_room);
 }
 
 QString Room::pretty_name() const {
   return state_.pretty_name(session_.user_id());
 }
 
-void Room::load_state(lmdb::txn &txn, gsl::span<const event::room::State> events) {
+void Room::load_state(gsl::span<const event::room::State> events) {
   for(auto &state : events) {
     try {
-      initial_state_.apply(state);
-      initial_state_.prune_departed();
-      state_.dispatch(state, this, &member_db_, &txn);
+      state_.dispatch(state, this);
       state_.prune_departed();
     } catch(malformed_event &e) {
       qDebug() << "WARNING:" << id().value() << "ignoring malformed state:" << e.what();
@@ -236,36 +223,41 @@ void Room::load_state(lmdb::txn &txn, gsl::span<const event::room::State> events
   }
 }
 
-size_t Room::buffer_size() const {
-  size_t r = 0;
-  for(auto &x : buffer_) { r += x.events.size(); }
-  return r;
+static std::vector<event::Room> parse_room_events(const QJsonArray &a) {
+  std::vector<event::Room> result;
+  result.reserve(a.size());
+  for(const auto &e : a) {
+    result.emplace_back(event::Room{event::Identifiable{Event{e.toObject()}}});
+  }
+  return result;
+}
+
+Room::Batch::Batch(const QJsonObject &o) : Batch{TimelineCursor{o["begin"].toString()}, parse_room_events(o["events"].toArray())} {}
+
+QJsonObject Room::Batch::to_json() const {
+  QJsonArray a;
+  for(const auto &e : events) {
+    a.push_back(e.json());
+  }
+  return QJsonObject{{"begin", begin.value()}, {"events", std::move(a)}};
 }
 
 QJsonObject Room::to_json() const {
   QJsonObject o;
-  if(!buffer_.empty()) {
-    o["prev_batch"] = buffer_.back().prev_batch.value();
-    QJsonArray es;
-    for(const auto &x : buffer_.back().events) {
-      es.push_back(x.json());
-    }
-    o["events"] = std::move(es);
-  }
   QJsonObject receipts;
   for(const auto &receipt : receipts_by_user_) {
     receipts[receipt.first.value()] = QJsonObject{{"event_id", receipt.second.event.value()}, {"ts", static_cast<qint64>(receipt.second.ts)}};
   }
   return QJsonObject{
     {"state", state_.to_json()},
-    {"buffer", std::move(o)},
     {"highlight_count", static_cast<double>(highlight_count_)},
     {"notification_count", static_cast<double>(notification_count_)},
-    {"receipts", receipts}
+    {"receipts", receipts},
+    {"last_batch", last_batch().to_json()}
   };
 }
 
-bool Room::dispatch(lmdb::txn &txn, const proto::JoinedRoom &joined) {
+bool Room::dispatch(const proto::JoinedRoom &joined) {
   bool state_touched = false;
 
   if(joined.unread_notifications.highlight_count != highlight_count_) {
@@ -281,48 +273,23 @@ bool Room::dispatch(lmdb::txn &txn, const proto::JoinedRoom &joined) {
   }
 
   if(joined.timeline.limited) {
-    buffer_.clear();
     discontinuity();
   }
 
   prev_batch(joined.timeline.prev_batch);
   // Must be called *after* discontinuity so that users can easily discard existing timeline events
 
-  // Ensure that only the first batch in the buffer can ever be empty
-  if(joined.timeline.events.empty() && !buffer_.empty()) {
-    buffer_.back().prev_batch = joined.timeline.prev_batch;
-  } else {
-    buffer_.emplace_back(joined.timeline.prev_batch);     // In-place so has_unread is always up to date
-    auto &batch = buffer_.back();
-    batch.events.reserve(joined.timeline.events.size());
-    for(auto &evt : joined.timeline.events) {
-      if(auto s = evt.to_state()) {
-        try {
-          state_touched |= state_.dispatch(*s, this, &member_db_, &txn);
-        } catch(const malformed_event &e) {
-          qDebug() << "WARNING:" << id().value() << "ignoring malformed state:" << e.what();
-          qDebug() << s->json();
-        }
+  for(auto &evt : joined.timeline.events) {
+    message(evt);
+
+    if(auto s = evt.to_state()) {
+      try {
+        state_touched |= state_.dispatch(*s, this);
+        state_.prune_departed(this);
+      } catch(const malformed_event &e) {
+        qDebug() << "WARNING:" << id().value() << "ignoring malformed state:" << e.what();
+        qDebug() << s->json();
       }
-
-      // Must be placed before `message` so resulting calls to `has_unread` return accurate results accounting for the
-      // message in question
-      batch.events.emplace_back(evt);
-
-      message(evt);
-
-      // Must happen after we dispatch the previous event but before we process the next one, to ensure display names are
-      // correct for leave/ban events as well as whatever follows
-      state_.prune_departed(this);
-    }
-
-    while(!buffer_.empty() && (buffer_size() - buffer_.front().events.size()) >= session_.buffer_size()) {
-      for(auto &evt : buffer_.front().events) {
-        if(auto s = evt.to_state())
-          initial_state_.apply(*s);
-        initial_state_.prune_departed();
-      }
-      buffer_.pop_front();
     }
   }
 
@@ -352,9 +319,8 @@ bool Room::dispatch(lmdb::txn &txn, const proto::JoinedRoom &joined) {
   return state_touched;
 }
 
-bool RoomState::update_membership(const UserID &user_id, const event::room::MemberContent &content, Room *room,
-                                  lmdb::dbi *member_db, lmdb::txn *txn) {
-  auto id_utf8 = user_id.value().toUtf8();
+bool RoomState::update_membership(const UserID &user_id, const event::room::MemberContent &content, Room *room) {
+  if(room) room->member_changed(user_id, content);
 
   switch(content.membership()) {
   case Membership::INVITE:
@@ -362,25 +328,20 @@ bool RoomState::update_membership(const UserID &user_id, const event::room::Memb
     auto &member = members_by_id_.emplace(
         std::piecewise_construct,
         std::forward_as_tuple(user_id),
-        std::forward_as_tuple(user_id)).first->second;
+        std::forward_as_tuple(event::room::MemberContent::leave)).first->second;
     auto old_membership = member.membership();
     auto old_displayname = member.displayname();
-    auto old_member_name = member_name(member);
-    member.update_membership(content);
+    auto old_member_name = member_name(user_id);
+    member = content;
     if(member.displayname() != old_displayname) {
       if(old_displayname)
-        forget_displayname(member.id(), *old_displayname, room);
+        forget_displayname(user_id, *old_displayname, room);
       if(member.displayname())
-        record_displayname(member.id(), *member.displayname(), room);
-      if(room && membership_displayable(old_membership)) room->member_name_changed(member, old_member_name);
+        record_displayname(user_id, *member.displayname(), room);
+      if(room && membership_displayable(old_membership)) room->member_name_changed(user_id, old_member_name);
     }
     if(room && member.membership() != old_membership) {
-      room->membership_changed(member, old_membership);
-    }
-    if(member_db) {
-      auto data = QJsonDocument(member.content().json()).toBinaryData();
-      lmdb::dbi_put(*txn, *member_db, lmdb::val(id_utf8.data(), id_utf8.size()),
-                    lmdb::val(data.data(), data.size()));
+      room->membership_changed(user_id, old_membership);
     }
     break;
   }
@@ -394,19 +355,16 @@ bool RoomState::update_membership(const UserID &user_id, const event::room::Memb
       auto &member = it->second;
       auto old_membership = member.membership();
       auto old_displayname = member.displayname();
-      member.update_membership(content);
+      member = content;
       if(member.displayname() != old_displayname) {
         if(old_displayname)
-          forget_displayname(member.id(), *old_displayname, room);
+          forget_displayname(user_id, *old_displayname, room);
         if(member.displayname())
-           record_displayname(member.id(), *member.displayname(), room);
+           record_displayname(user_id, *member.displayname(), room);
       }
-      if(room) room->membership_changed(member, old_membership);
+      if(room) room->membership_changed(user_id, old_membership);
       assert(!departed_);
-      departed_ = member.id();
-    }
-    if(member_db) {
-      lmdb::dbi_del(*txn, *member_db, lmdb::val(id_utf8.data(), id_utf8.size()), nullptr);
+      departed_ = user_id;
     }
     break;
   }
@@ -414,7 +372,7 @@ bool RoomState::update_membership(const UserID &user_id, const event::room::Memb
   return true;
 }
 
-bool RoomState::dispatch(const event::room::State &state, Room *room, lmdb::dbi *member_db, lmdb::txn *txn) {
+bool RoomState::dispatch(const event::room::State &state, Room *room) {
   // This function must not have any side effects if a refining event's constructor throws!
   if(state.type() == event::room::Aliases::tag()) {
     std::unordered_set<QString, QStringHash> all_aliases;
@@ -468,7 +426,7 @@ bool RoomState::dispatch(const event::room::State &state, Room *room, lmdb::dbi 
   }
   if(state.type() == event::room::Member::tag()) {
     event::room::Member member(state);
-    return update_membership(member.user(), member.content(), room, member_db, txn);
+    return update_membership(member.user(), member.content(), room);
   }
 
   qDebug() << "Unrecognized message type:" << state.type().value();
@@ -505,7 +463,7 @@ void RoomState::revert(const event::room::State &state) {
     event::room::Member member(state);
     update_membership(member.user(),
                       member.prev_content().value_or(event::room::MemberContent::leave),
-                      nullptr, nullptr, nullptr);
+                      nullptr);
     prune_departed();
     return;
   }
@@ -518,15 +476,10 @@ void RoomState::ensure_member(const event::room::Member &e) {
     auto r = members_by_id_.emplace(
       std::piecewise_construct,
       std::forward_as_tuple(e.user()),
-      std::forward_as_tuple(e.user()));
+      std::forward_as_tuple(event::room::MemberContent::leave));
     if(!r.second) break;
     auto &member = r.first->second;
-    if(e.prev_content()) {
-      // Ensure that we get display name and avatar, if available
-      member.update_membership(*e.prev_content());
-    }
-    member.update_membership(e.content());
-    if(member.displayname()) record_displayname(member.id(), *member.displayname(), nullptr);
+    member = e.content();
   }
   default:
     break;
@@ -675,19 +628,6 @@ const Room::Receipt *Room::receipt_from(const UserID &id) const {
   auto it = receipts_by_user_.find(id);
   if(it == receipts_by_user_.end()) return nullptr;
   return &it->second;
-}
-
-bool Room::has_unread() const {
-  if(buffer().empty() || buffer().back().events.empty()) return true;
-  auto r = receipt_from(session().user_id());
-  if(!r) return true;
-  for(auto batch = buffer().crbegin(); batch != buffer().crend(); ++batch) {
-    for(auto event = batch->events.crbegin(); event != batch->events.crend(); ++event) {
-      if(r->event == event->id()) return false;
-      if(event->type() == event::room::Message::tag() && event->sender() != session().user_id()) return true;
-    }
-  }
-  return true;
 }
 
 void Room::update_receipt(const UserID &user, const EventID &event, uint64_t ts) {
