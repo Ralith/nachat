@@ -522,7 +522,7 @@ void EventBlock::handle_input(const QPointF &point, QEvent *input) {
       if(event.source && !event.source->redacted()) {
         message = to_timestamp("%Y-%m-%d %H:%M:%S", to_time_point(event.source->origin_server_ts()));
       }
-    } else if(name_.boundingRect().contains(point)) {
+    } else if(avatar_rect.contains(point) || name_.boundingRect().contains(point)) {
       message = sender_.value();
     } else {
       const auto event = event_at(point);
