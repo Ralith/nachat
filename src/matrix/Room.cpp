@@ -8,7 +8,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonDocument>
-#include <QDebug>
+#include <QtDebug>
 
 #include "proto.hpp"
 #include "Session.hpp"
@@ -48,6 +48,8 @@ RoomState::RoomState(const QJsonObject &info, gsl::span<const Member> members) {
 }
 
 QJsonObject RoomState::to_json() const {
+  // Members are omitted because they're stored in a dedicated per-room database for efficient incremental update
+
   QJsonObject o;
   if(name_) o["name"] = *name_;
   if(canonical_alias_) o["canonical_alias"] = *canonical_alias_;
@@ -180,7 +182,8 @@ static constexpr std::chrono::steady_clock::duration MINIMUM_BACKOFF(std::chrono
 
 Room::Room(Matrix &universe, Session &session, RoomID id, const QJsonObject &initial,
            gsl::span<const Member> members)
-    : universe_(universe), session_(session), id_(std::move(id)), state_{initial["state"].toObject(), members},
+    : universe_(universe), session_(session), id_(std::move(id)),
+      initial_state_{initial["state"].toObject(), members}, state_{initial_state_},
       last_batch_{initial["last_batch"].toObject()},
       highlight_count_{static_cast<uint64_t>(initial["highlight_count"].toDouble(0))},
       notification_count_{static_cast<uint64_t>(initial["notification_count"].toDouble(0))},
@@ -188,6 +191,10 @@ Room::Room(Matrix &universe, Session &session, RoomID id, const QJsonObject &ini
 {
   transmit_retry_timer_.setSingleShot(true);
   connect(&transmit_retry_timer_, &QTimer::timeout, this, &Room::transmit_event);
+
+  for(auto it = last_batch_.events.crbegin(); it != last_batch_.events.crend(); ++it) {
+    if(auto s = it->to_state()) initial_state_.revert(*s);
+  }
 
   auto receipts = initial["receipts"].toObject();
   for(auto it = receipts.begin(); it != receipts.end(); ++it) {
@@ -214,11 +221,10 @@ QString Room::pretty_name() const {
 void Room::load_state(gsl::span<const event::room::State> events) {
   for(auto &state : events) {
     try {
+      initial_state_.apply(state);
       state_.dispatch(state, this);
-      state_.prune_departed();
     } catch(malformed_event &e) {
-      qDebug() << "WARNING:" << id().value() << "ignoring malformed state:" << e.what();
-      qDebug() << state.json();
+      qWarning() << "WARNING:" << id().value() << "ignoring malformed state" << e.what() << state.json();
     }
   }
 }
@@ -232,9 +238,10 @@ static std::vector<event::Room> parse_room_events(const QJsonArray &a) {
   return result;
 }
 
-Room::Batch::Batch(const QJsonObject &o) : Batch{TimelineCursor{o["begin"].toString()}, parse_room_events(o["events"].toArray())} {}
+Batch::Batch(const proto::Timeline &t) : Batch{t.prev_batch, t.events} {}
+Batch::Batch(const QJsonObject &o) : Batch{TimelineCursor{o["begin"].toString()}, parse_room_events(o["events"].toArray())} {}
 
-QJsonObject Room::Batch::to_json() const {
+QJsonObject Batch::to_json() const {
   QJsonArray a;
   for(const auto &e : events) {
     a.push_back(e.json());
@@ -285,10 +292,8 @@ bool Room::dispatch(const proto::JoinedRoom &joined) {
     if(auto s = evt.to_state()) {
       try {
         state_touched |= state_.dispatch(*s, this);
-        state_.prune_departed(this);
       } catch(const malformed_event &e) {
-        qDebug() << "WARNING:" << id().value() << "ignoring malformed state:" << e.what();
-        qDebug() << s->json();
+        qWarning() << "WARNING:" << id().value() << "ignoring malformed state:" << e.what() << s->json();
       }
     }
   }
@@ -316,6 +321,12 @@ bool Room::dispatch(const proto::JoinedRoom &joined) {
   if(state_touched) {
     state_changed();
   }
+
+  for(const auto &evt : last_batch_.events) {
+    if(auto s = evt.to_state()) initial_state_.apply(*s);
+  }
+  last_batch_ = Batch{joined.timeline};
+
   return state_touched;
 }
 
@@ -341,7 +352,7 @@ bool RoomState::update_membership(const UserID &user_id, const event::room::Memb
       if(room && membership_displayable(old_membership)) room->member_name_changed(user_id, old_member_name);
     }
     if(room && member.membership() != old_membership) {
-      room->membership_changed(user_id, old_membership);
+      room->membership_changed(user_id, old_membership, content.membership());
     }
     break;
   }
@@ -353,18 +364,11 @@ bool RoomState::update_membership(const UserID &user_id, const event::room::Memb
     auto it = members_by_id_.find(user_id);
     if(it != members_by_id_.end()) {
       auto &member = it->second;
-      auto old_membership = member.membership();
-      auto old_displayname = member.displayname();
-      member = content;
-      if(member.displayname() != old_displayname) {
-        if(old_displayname)
-          forget_displayname(user_id, *old_displayname, room);
-        if(member.displayname())
-           record_displayname(user_id, *member.displayname(), room);
+      if(member.displayname()) {
+        forget_displayname(user_id, *member.displayname(), room);
       }
-      if(room) room->membership_changed(user_id, old_membership);
-      assert(!departed_);
-      departed_ = user_id;
+      if(room) room->membership_changed(user_id, member.membership(), content.membership());
+      members_by_id_.erase(it);
     }
     break;
   }
@@ -464,34 +468,7 @@ void RoomState::revert(const event::room::State &state) {
     update_membership(member.user(),
                       member.prev_content().value_or(event::room::MemberContent::leave),
                       nullptr);
-    prune_departed();
     return;
-  }
-}
-
-void RoomState::ensure_member(const event::room::Member &e) {
-  switch(e.content().membership()) {
-  case Membership::LEAVE:
-  case Membership::BAN: {
-    auto r = members_by_id_.emplace(
-      std::piecewise_construct,
-      std::forward_as_tuple(e.user()),
-      std::forward_as_tuple(event::room::MemberContent::leave));
-    if(!r.second) break;
-    auto &member = r.first->second;
-    member = e.content();
-  }
-  default:
-    break;
-  }
-}
-
-void RoomState::prune_departed(Room *room) {
-  if(departed_) {
-    auto dn = members_by_id_.at(*departed_).displayname();
-    if(dn) forget_displayname(*departed_, *dn, room);
-    members_by_id_.erase(*departed_);
-    departed_ = {};
   }
 }
 

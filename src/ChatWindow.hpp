@@ -10,6 +10,7 @@
 
 class RoomView;
 class RoomViewList;
+class ThumbnailCache;
 
 namespace matrix {
 class Room;
@@ -24,7 +25,7 @@ class ChatWindow : public QWidget
   Q_OBJECT
 
 public:
-  explicit ChatWindow(QWidget *parent = 0);
+  explicit ChatWindow(ThumbnailCache &cache, QWidget *parent = 0);
   ~ChatWindow();
 
   void add(matrix::Room &r, RoomView *); // Takes ownership
@@ -49,6 +50,7 @@ private:
   Ui::ChatWindow *ui;
   RoomViewList *room_list_;
   std::unordered_map<matrix::RoomID, RoomView *> rooms_;
+  ThumbnailCache &cache_;
 
   void update_title();
   void current_changed(int i);

@@ -8,16 +8,16 @@
 #include "matrix/ID.hpp"
 
 namespace matrix {
-class Member;
 class RoomState;
+enum class Membership;
 }
 
 class MemberList : public QListWidget {
 public:
   MemberList(const matrix::RoomState &, QWidget *parent = nullptr);
 
-  void member_display_changed(const matrix::RoomState &, const matrix::Member &, const QString &old);
-  void membership_changed(const matrix::RoomState &, const matrix::Member &);
+  void member_display_changed(const matrix::RoomState &, const matrix::UserID &, const QString &old);
+  void membership_changed(const matrix::RoomState &, const matrix::UserID &, matrix::Membership old, matrix::Membership current);
 
   QSize sizeHint() const override;
 

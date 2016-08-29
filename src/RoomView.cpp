@@ -9,19 +9,33 @@
 #include <QDebug>
 
 #include "matrix/Room.hpp"
-#include "matrix/Member.hpp"
 #include "matrix/Session.hpp"
+#include "matrix/TimelineWindow.hpp"
 
 #include "TimelineView.hpp"
 #include "EntryBox.hpp"
 #include "RoomMenu.hpp"
 #include "MemberList.hpp"
 
-RoomView::RoomView(matrix::Room &room, QWidget *parent)
+RoomView::RoomView(ThumbnailCache &cache, matrix::Room &room, QWidget *parent)
   : QWidget(parent), ui(new Ui::RoomView),
-    timeline_view_(new TimelineView(room, this)), entry_(new EntryBox(this)), member_list_(new MemberList(room.state(), this)),
-    room_(room) {
+    timeline_view_(new TimelineView(room.session().homeserver(), cache, this)),
+    entry_(new EntryBox(this)), member_list_(new MemberList(room.state(), this)),
+    room_(room),
+    timeline_manager_{new matrix::TimelineManager(room, this)} {
   ui->setupUi(this);
+
+  connect(timeline_manager_, &matrix::TimelineManager::grew,
+          [this](matrix::Direction dir, const matrix::TimelineCursor &begin, const matrix::RoomState &state, const matrix::event::Room &evt) {
+            if(dir == matrix::Direction::BACKWARD) {
+              timeline_view_->prepend(begin, state, evt);
+            } else {
+              timeline_view_->append(begin, state, evt);
+              timeline_view_->set_at_bottom(timeline_manager_->window().at_end());
+            }
+          });
+  connect(timeline_view_, &TimelineView::need_backwards, [this]() { timeline_manager_->grow(matrix::Direction::BACKWARD); });
+  connect(timeline_view_, &TimelineView::need_forwards, [this]() { timeline_manager_->grow(matrix::Direction::FORWARD); });
 
   auto menu = new RoomMenu(room, this);
   connect(ui->menu_button, &QAbstractButton::clicked, [this, menu](bool) {
@@ -42,26 +56,9 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
   connect(entry_, &EntryBox::pageDown, [this]() {
       timeline_view_->verticalScrollBar()->triggerAction(QAbstractSlider::SliderPageStepAdd);
     });
-  connect(entry_, &EntryBox::activity, timeline_view_, &TimelineView::read_events);
-
-  connect(&room_, &matrix::Room::message, this, &RoomView::message);
-  connect(&room_, &matrix::Room::error, timeline_view_, &TimelineView::push_error);
 
   connect(&room_, &matrix::Room::membership_changed, this, &RoomView::membership_changed);
   connect(&room_, &matrix::Room::member_name_changed, this, &RoomView::member_name_changed);
-
-  connect(&room_, &matrix::Room::discontinuity, timeline_view_, &TimelineView::reset);
-  connect(&room_, &matrix::Room::prev_batch, timeline_view_, &TimelineView::end_batch);
-
-  auto replay_state = room_.initial_state();
-  for(const auto &batch : room_.buffer()) {
-    timeline_view_->end_batch(batch.prev_batch);
-    for(const auto &event : batch.events) {
-      if(auto s = event.to_state()) replay_state.apply(*s);
-      append_message(replay_state, event);
-      replay_state.prune_departed();
-    }
-  }
 
   connect(&room_, &matrix::Room::topic_changed, this, &RoomView::topic_changed);
   topic_changed();
@@ -69,26 +66,12 @@ RoomView::RoomView(matrix::Room &room, QWidget *parent)
 
 RoomView::~RoomView() { delete ui; }
 
-void RoomView::message(const matrix::event::Room &evt) {
-  append_message(room_.state(), evt);
-}
-
-void RoomView::member_name_changed(const matrix::Member &member, QString old) {
+void RoomView::member_name_changed(const matrix::UserID &member, QString old) {
   member_list_->member_display_changed(room_.state(), member, old);
 }
 
-void RoomView::membership_changed(const matrix::Member &member) {
-  member_list_->membership_changed(room_.state(), member);
-}
-
-void RoomView::append_message(const matrix::RoomState &state, const matrix::event::Room &msg) {
-  if(msg.redacted()) return;
-  try {
-    timeline_view_->push_back(state, msg);
-  } catch(const matrix::malformed_event &e) {
-    qDebug() << "WARNING:" << room_.pretty_name() << "discarding malformed event:" << e.what();
-    qDebug() << msg.json();
-  }
+void RoomView::membership_changed(const matrix::UserID &member, matrix::Membership old, matrix::Membership current) {
+  member_list_->membership_changed(room_.state(), member, old, current);
 }
 
 void RoomView::topic_changed() {
@@ -106,12 +89,12 @@ void RoomView::command(const QString &name, const QString &args) {
     room_.send_emote(args);
   } else if(name == "join") {
     auto req = room_.session().join(args);
-    connect(req, &matrix::JoinRequest::error, timeline_view_, &TimelineView::push_error);
+    connect(req, &matrix::JoinRequest::error, [=](const QString &msg) { qCritical() << tr("failed to join \"%1\": %2").arg(args).arg(msg); });
   } else {
-    timeline_view_->push_error(tr("Unrecognized command: %1").arg(name));
+    qCritical() << tr("Unrecognized command: %1").arg(name);
   }
 }
 
 void RoomView::selected() {
-  timeline_view_->read_events();
+  // TODO: Mark events read
 }

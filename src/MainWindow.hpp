@@ -9,6 +9,8 @@
 #include "matrix/Matrix.hpp"
 #include "matrix/ID.hpp"
 
+#include "ContentCache.hpp"
+
 class QProgressBar;
 class QLabel;
 class ChatWindow;
@@ -48,6 +50,7 @@ private:
   QProgressBar *progress_;
   QLabel *sync_label_;
   QPointer<ChatWindow> last_focused_;
+  ThumbnailCache thumbnail_cache_;
 
   std::unordered_map<matrix::RoomID, RoomInfo> rooms_;
 

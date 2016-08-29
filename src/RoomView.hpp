@@ -12,8 +12,9 @@ class RoomView;
 namespace matrix {
 class Room;
 class RoomState;
-class Member;
 enum class Membership;
+class TimelineManager;
+struct UserID;
 
 namespace event {
 class Room;
@@ -23,13 +24,14 @@ class Room;
 class TimelineView;
 class EntryBox;
 class MemberList;
+class ThumbnailCache;
 
 class RoomView : public QWidget
 {
   Q_OBJECT
 
 public:
-  explicit RoomView(matrix::Room &room, QWidget *parent = nullptr);
+  explicit RoomView(ThumbnailCache &cache, matrix::Room &room, QWidget *parent = nullptr);
   ~RoomView();
 
   const matrix::Room &room() const { return room_; }
@@ -44,12 +46,11 @@ private:
   EntryBox *entry_;
   MemberList *member_list_;
   matrix::Room &room_;
+  matrix::TimelineManager *timeline_manager_;
 
-  void message(const matrix::event::Room &);
-  void membership_changed(const matrix::Member &);
-  void member_name_changed(const matrix::Member &, QString);
+  void membership_changed(const matrix::UserID &, matrix::Membership, matrix::Membership);
+  void member_name_changed(const matrix::UserID &, QString);
   void topic_changed();
-  void append_message(const matrix::RoomState &, const matrix::event::Room &);
   void command(const QString &name, const QString &args);
 };
 

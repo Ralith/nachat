@@ -1,3 +1,5 @@
+#include <memory>
+
 #include <QtNetwork>
 #include <QApplication>
 #include <QSettings>
@@ -49,7 +51,7 @@ int main(int argc, char *argv[]) {
   };
 
   QObject::connect(&matrix, &matrix::Matrix::logged_in, [&](const matrix::UserID &user_id, const QString &access_token) {
-      session = matrix::Session::create(matrix, login.homeserver(), user_id, access_token);
+      session = std::make_unique<matrix::Session>(matrix, login.homeserver(), user_id, access_token);
       settings.setValue("login/username", login.username());
       settings.setValue("login/homeserver", login.homeserver());
       settings.setValue("session/access_token", access_token);
@@ -74,7 +76,7 @@ int main(int argc, char *argv[]) {
   if(access_token.isNull() || homeserver.isNull() || user_id.isNull()) {
     login.show();
   } else {
-    session = matrix::Session::create(matrix, homeserver.toString(), matrix::UserID(user_id.toString()), access_token.toString());
+    session = std::make_unique<matrix::Session>(matrix, homeserver.toString(), matrix::UserID(user_id.toString()), access_token.toString());
     session_established();
   }
 

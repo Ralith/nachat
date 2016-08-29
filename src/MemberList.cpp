@@ -16,26 +16,27 @@ QString MemberList::Compare::key(const QString &n) {
 MemberList::MemberList(const matrix::RoomState &s, QWidget *parent) : QListWidget(parent) {
   auto initial_members = s.members();
   for(const auto &member : initial_members) {
-    members_.insert(std::make_pair(s.member_name(*member), member->id()));
+    members_.emplace(s.member_name(member->first), member->first);
   }
   update_members();
 }
 
-void MemberList::member_display_changed(const matrix::RoomState &s, const matrix::Member &m, const QString &old) {
+void MemberList::member_display_changed(const matrix::RoomState &s, const matrix::UserID &id, const QString &old) {
   auto erased = members_.erase(old);
   if(!erased) {
-    QString msg = "member name changed from unknown name " + old + " to " + s.member_name(m);
+    QString msg = "member name changed from unknown name " + old + " to " + s.member_name(id);
     throw std::logic_error(msg.toStdString().c_str());
   }
-  members_.insert(std::make_pair(s.member_name(m), m.id()));
+  members_.emplace(s.member_name(id), id);
   update_members();
 }
 
-void MemberList::membership_changed(const matrix::RoomState &s, const matrix::Member &m) {
-  if(membership_displayable(m.membership())) {
-    members_.insert(std::make_pair(s.member_name(m), m.id()));
+void MemberList::membership_changed(const matrix::RoomState &s, const matrix::UserID &id, matrix::Membership old, matrix::Membership current) {
+  (void)old;
+  if(membership_displayable(current)) {
+    members_.emplace(s.member_name(id), id);
   } else {
-    members_.erase(s.member_name(m));
+    members_.erase(s.member_name(id));
   }
   update_members();
 }

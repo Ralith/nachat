@@ -21,16 +21,9 @@ struct Timeline;
 
 class TimelineManager;
 
-struct Batch {
-  TimelineCursor begin;
-  std::vector<event::Room> events;
-
-  Batch(TimelineCursor begin, std::vector<event::Room> events) : begin{std::move(begin)}, events{std::move(events)} {}
-};
-
 class TimelineWindow {
 public:
-  TimelineWindow(const RoomState &state, gsl::span<const Batch> batches);
+  TimelineWindow(const RoomState &initial_state, gsl::span<const Batch> batches, const RoomState &final_state);
 
   void discard(const TimelineCursor &, Direction dir);
 
@@ -76,7 +69,7 @@ class TimelineManager : public QObject {
   Q_OBJECT
 
 public:
-  explicit TimelineManager(Room &room, gsl::span<const Batch> batches);
+  explicit TimelineManager(Room &room, QObject *parent = nullptr);
 
   TimelineWindow &window() { return window_; }
   const TimelineWindow &window() const { return window_; }
@@ -85,7 +78,6 @@ public:
 
 signals:
   void grew(Direction dir, const TimelineCursor &begin, const RoomState &state, const event::Room &evt);
-  void updated(const EventID &);
 
   void discontinuity();
   // Gap between successive syncs; if latest batch is being displayed, user should discard it and proceed as if paging

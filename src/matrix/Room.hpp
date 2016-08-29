@@ -46,11 +46,6 @@ public:
   }
   void revert(const event::room::State &e);  // Reverts an event that, if a state event, has prev_content
 
-  void ensure_member(const event::room::Member &e);
-  // Recovers member whose membership is set to "leave" or "ban" by
-  // e. Useful for allowing name disambiguation of departed members,
-  // e.g. when stepping backwards.
-
   bool dispatch(const event::room::State &e, Room *room);
   // Returns true if changes were made. Emits state change events on room if supplied.
 
@@ -70,8 +65,6 @@ public:
   QString member_name(const UserID &member) const;
   // Matrix r0.1.0 11.2.2.3
 
-  void prune_departed(Room *room = nullptr);
-
   QJsonObject to_json() const;
   // For serialization
 
@@ -81,7 +74,6 @@ private:
   QUrl avatar_;
   std::unordered_map<UserID, event::room::MemberContent> members_by_id_;
   std::unordered_map<QString, std::vector<UserID>, QStringHash> members_by_displayname_;
-  std::experimental::optional<UserID> departed_;
 
   void forget_displayname(const UserID &member, const QString &old_name, Room *room);
   void record_displayname(const UserID &member, const QString &name, Room *room);
@@ -113,20 +105,21 @@ signals:
   void error(const QString &message);
 };
 
+struct Batch {
+  TimelineCursor begin;
+  std::vector<event::Room> events;
+
+  Batch(TimelineCursor begin, std::vector<event::Room> events) : begin{begin}, events{std::move(events)} {}
+  Batch(const proto::Timeline &t);
+  Batch(const QJsonObject &o);
+
+  QJsonObject to_json() const;
+};
+
 class Room : public QObject {
   Q_OBJECT
 
 public:
-  struct Batch {
-    TimelineCursor begin;
-    std::vector<event::Room> events;
-
-    Batch(TimelineCursor begin, std::vector<event::Room> events) : begin{begin}, events{std::move(events)} {}
-    Batch(const QJsonObject &o);
-
-    QJsonObject to_json() const;
-  };
-
   struct Receipt {
     EventID event;
     uint64_t ts;
@@ -150,7 +143,8 @@ public:
   uint64_t highlight_count() const { return highlight_count_; }
   uint64_t notification_count() const { return notification_count_; }
 
-  const RoomState &state() const { return state_; }
+  const RoomState &initial_state() const { return initial_state_; } // Before last_batch
+  const RoomState &state() const { return state_; }                 // After last_batch
 
   QString pretty_name() const;
   QString pretty_name_highlights() const {
@@ -186,7 +180,7 @@ public:
 
 signals:
   void member_changed(const UserID &, const event::room::MemberContent &);
-  void membership_changed(const UserID &, Membership old);
+  void membership_changed(const UserID &, Membership old, Membership current);
   void member_disambiguation_changed(const UserID &, const QString &old);
   void member_name_changed(const UserID &, const QString &old); // Assume disambiguation changed as well
   void state_changed();
@@ -214,7 +208,7 @@ private:
   Session &session_;
   const RoomID id_;
 
-  RoomState state_;
+  RoomState initial_state_, state_;
   Batch last_batch_;
 
   uint64_t highlight_count_ = 0, notification_count_ = 0;

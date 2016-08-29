@@ -9,8 +9,8 @@
 #include "RoomView.hpp"
 #include "RoomViewList.hpp"
 
-ChatWindow::ChatWindow(QWidget *parent)
-  : QWidget(parent), ui(new Ui::ChatWindow), room_list_(new RoomViewList(this)) {
+ChatWindow::ChatWindow(ThumbnailCache &cache, QWidget *parent)
+  : QWidget(parent), ui(new Ui::ChatWindow), room_list_(new RoomViewList(this)), cache_{cache} {
   ui->setupUi(this);
 
   setAttribute(Qt::WA_DeleteOnClose);
@@ -76,7 +76,7 @@ void ChatWindow::add(matrix::Room &r, RoomView *v) {
 void ChatWindow::add_or_focus(matrix::Room &room) {
   RoomView *view;
   if(rooms_.find(room.id()) == rooms_.end()) {
-    view = new RoomView(room, this);
+    view = new RoomView(cache_, room, this);
     add(room, view);
   } else {
     room_list_->activate(room.id());

@@ -136,7 +136,6 @@ void MainWindow::joined(matrix::Room &room) {
   ui->room_list->addItem(i.item);
   i.display_name = room.pretty_name_highlights();
   i.highlight_count = room.highlight_count() + room.notification_count();
-  i.has_unread = room.has_unread();
   update_room(i);
 
   connect(&room, &matrix::Room::highlight_count_changed, [this, &room](uint64_t old) {
@@ -157,13 +156,6 @@ void MainWindow::joined(matrix::Room &room) {
   connect(&room, &matrix::Room::aliases_changed, just_update);
   connect(&room, &matrix::Room::membership_changed, just_update);
   connect(&room, &matrix::Room::receipts_changed, just_update);
-  connect(&room, &matrix::Room::message, [this, &room]() {
-      if(room.has_unread()) {
-        auto &i = rooms_.at(room.id());
-        i.has_unread = true;
-        update_room(i);
-      }
-    });
 }
 
 void MainWindow::highlight(const matrix::RoomID &room) {
@@ -179,14 +171,13 @@ void MainWindow::update_room(matrix::Room &room) {
   auto &i = rooms_.at(room.id());
   i.display_name = room.pretty_name_highlights();
   i.highlight_count = room.highlight_count() + room.notification_count();
-  i.has_unread = room.has_unread();
   update_room(i);
 }
 
 void MainWindow::update_room(RoomInfo &info) {
   info.item->setText(info.display_name);
   auto f = font();
-  f.setBold(info.highlight_count != 0 || info.has_unread);
+  f.setBold(info.highlight_count != 0);
   info.item->setFont(f);
 }
 
@@ -224,7 +215,7 @@ void RoomWindowBridge::check_release(const matrix::RoomID &room) {
 
 ChatWindow *MainWindow::spawn_chat_window() {
   // We don't create these as children to prevent Qt from hinting to WMs that they should be floating
-  auto window = new ChatWindow;
+  auto window = new ChatWindow(thumbnail_cache_);
   connect(window, &ChatWindow::focused, [this, window]() {
       last_focused_ = window;
     });

@@ -130,7 +130,7 @@ Session::Session(Matrix& universe, QUrl homeserver, UserID user_id, QString acce
           auto member_cursor = lmdb::cursor::open(txn, member_db);
           lmdb::val member_id;
           lmdb::val member_content;
-          while(cursor.get(member_id, member_content, MDB_NEXT)) {
+          while(member_cursor.get(member_id, member_content, MDB_NEXT)) {
             members.emplace_back(UserID{QString::fromUtf8(member_id.data(), member_id.size())},
                                  event::room::MemberContent{event::Content{
                                      QJsonDocument::fromBinaryData(QByteArray{member_content.data(), static_cast<int>(member_content.size())}).object()}});
@@ -260,7 +260,7 @@ void Session::update_cache(const proto::Sync &sync) {
       {
         auto it = member_dbs_.find(joined_room.id);
         if(it == member_dbs_.end()) {
-          // We defer adding to member_dbs_ until after commit because the handle might be invalidated if the transaction fails
+          // We defer adding to member_dbs_ until after commit because the handle will be invalidated if the transaction fails
           new_member_dbs.emplace_back(joined_room.id, lmdb::dbi::open(txn, room_dbname(joined_room.id).c_str(), MDB_CREATE));
           member_db = &new_member_dbs.back().second;
         } else {

@@ -83,7 +83,6 @@ void RoomViewList::update_display(matrix::Room &room) {
   auto &i = items_.at(room.id());
   i.name = room.pretty_name_highlights();
   i.highlight_count = room.highlight_count() + room.notification_count();
-  i.has_unread = room.has_unread();
   update_item(i);
 }
 

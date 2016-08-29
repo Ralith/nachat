@@ -12,8 +12,8 @@ namespace matrix {
 
 static constexpr size_t BATCH_SIZE = 50;
 
-TimelineWindow::TimelineWindow(const RoomState &state, gsl::span<const Batch> batches)
-  : initial_state_{state}, final_state_{state},
+TimelineWindow::TimelineWindow(const RoomState &initial_state, gsl::span<const Batch> batches, const RoomState &final_state)
+  : initial_state_{initial_state}, final_state_{final_state},
     batches_(batches.begin(), batches.empty() ? throw std::invalid_argument("timeline window must be construct from at least one batch") : batches.end()-1),
     latest_batch_{*(batches.end()-1)} {}
 
@@ -40,7 +40,6 @@ void TimelineWindow::discard(const TimelineCursor &batch, Direction dir) {
     for(auto it = batches_.cbegin(); it != batches_.cend(); ++it) {
       for(const auto &evt : it->events) {
         if(auto s = evt.to_state()) initial_state_.apply(*s);
-        initial_state_.prune_departed();
       }
       if(it->begin == batch) {
         batches_.erase(batches_.cbegin(), it);
@@ -78,7 +77,6 @@ void TimelineWindow::append_batch(const TimelineCursor &start, const TimelineCur
     mgr->grew(Direction::FORWARD, start, final_state_, evt);
     if(auto s = evt.to_state()) {
       final_state_.apply(*s);
-      final_state_.prune_departed();
     }
   }
 
@@ -87,7 +85,6 @@ void TimelineWindow::append_batch(const TimelineCursor &start, const TimelineCur
       mgr->grew(Direction::FORWARD, start, final_state_, evt);
       if(auto s = evt.to_state()) {
         final_state_.apply(*s);
-        final_state_.prune_departed();
       }
     }
   }
@@ -124,7 +121,6 @@ void TimelineWindow::append_sync(const proto::Timeline &t, TimelineManager *mgr)
       mgr->grew(Direction::FORWARD, latest_batch_.begin, final_state_, evt);
       if(auto s = evt.to_state()) {
         final_state_.apply(*s);
-        final_state_.prune_departed();
       }
     }
   }
@@ -141,7 +137,9 @@ void TimelineWindow::reset(const RoomState &current_state) {
 }
 
 
-TimelineManager::TimelineManager(Room &room, gsl::span<const Batch> batches) : room_(room), window_{room.state(), batches}, forward_req_{nullptr}, backward_req_{nullptr} {
+TimelineManager::TimelineManager(Room &room, QObject *parent)
+  : QObject(parent), room_(room), window_{room.initial_state(), room.last_batch(), room.state()}, forward_req_{nullptr}, backward_req_{nullptr}
+{
   retry_timer_.setSingleShot(true);
   retry_timer_.setInterval(1000);
   connect(&retry_timer_, &QTimer::timeout, this, &TimelineManager::retry);
