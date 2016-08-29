@@ -36,6 +36,7 @@ int main(int argc, char *argv[]) {
   matrix::RoomState rs;
   matrix::TimelineCursor cursor1{"1"};
   const char *somebody = "@somebody:example.com";
+  const char *somebody_else = "@somebody_else:example.com";
   
   auto join_evt = member_evt(QJsonObject{
         {"type", "m.room.member"},
@@ -94,7 +95,7 @@ int main(int argc, char *argv[]) {
         {"type", "m.room.member"},
         {"event_id", "4"},
         {"sender", somebody},
-        {"origin_server_ts", 82000002LL},
+        {"origin_server_ts", 52000002LL},
         {"state_key", somebody},
         {"content", QJsonObject{
             {"membership", "leave"},
@@ -115,6 +116,11 @@ int main(int argc, char *argv[]) {
                 {"creator", "you"}
               }}
           })}});
+
+  tv.add_pending("txn", rs, matrix::UserID(somebody_else), Time{}, matrix::event::room::Message::tag(),
+                 matrix::event::Content{QJsonObject{{"msgtype", "m.text"}, {"body", "hello"}}});
+
+  tv.set_at_bottom(true);
 
   return a.exec();
 }

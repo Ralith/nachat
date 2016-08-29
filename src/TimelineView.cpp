@@ -893,18 +893,25 @@ void TimelineView::prepend(const matrix::TimelineCursor &begin, const matrix::Ro
 }
 
 void TimelineView::append(const matrix::TimelineCursor &begin, const matrix::RoomState &state, const matrix::event::Room &evt) {
-  if(!batches_.empty() && batches_.back().begin == begin) {
-    batches_.back().events.emplace_back(get_id(), state, evt);
-  } else {
-    batches_.emplace_back(begin, std::deque<EventLike>{EventLike{get_id(), state, evt}});
-  }
-
+  optional<TimelineEventID> existing_id;
   if(auto u = evt.unsigned_data()) {
     if(auto txid = u->transaction_id()) {
-      pending_.erase(std::remove_if(pending_.begin(), pending_.end(),
-                                    [&](const Pending &p) { return p.transaction == *txid; }),
-                     pending_.end());
+      std::deque<Pending>::const_iterator it;
+      for(it = pending_.cbegin(); it != pending_.cend(); ++it) {
+        if(it->transaction == *txid) {
+          break;
+        }
+      }
+      existing_id = it->event.id;
+      pending_.erase(it);
     }
+  }
+
+  const auto id = existing_id ? *existing_id : get_id();
+  if(!batches_.empty() && batches_.back().begin == begin) {
+    batches_.back().events.emplace_back(id, state, evt);
+  } else {
+    batches_.emplace_back(begin, std::deque<EventLike>{EventLike{id, state, evt}});
   }
 
   rebuild_blocks();
@@ -927,6 +934,13 @@ void TimelineView::redact(const matrix::event::room::Redaction &redaction) {
   rebuild_blocks();
   maybe_need_forwards();
   maybe_need_backwards();
+}
+
+void TimelineView::add_pending(const QString &transaction, const matrix::RoomState &state, const matrix::UserID &self, Time time,
+                               matrix::EventType type, matrix::event::Content content, std::experimental::optional<matrix::UserID> affected_user) {
+  pending_.emplace_back(transaction,
+                        EventLike{get_id(), state, self, time, type, content, affected_user});
+  rebuild_blocks();
 }
 
 void TimelineView::set_at_bottom(bool value) {

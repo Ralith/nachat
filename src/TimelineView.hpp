@@ -168,7 +168,7 @@ public:
   void redact(const matrix::event::room::Redaction &); // Call only on redaction events received from sync
 
   void add_pending(const QString &transaction, const matrix::RoomState &state, const matrix::UserID &self, Time time,
-                   matrix::EventType type, matrix::event::Content content, std::experimental::optional<matrix::UserID> member_target = {});
+                   matrix::EventType type, matrix::event::Content content, std::experimental::optional<matrix::UserID> affected_user = {});
 
   void set_at_bottom(bool);
 
@@ -205,6 +205,8 @@ private:
   struct Pending {
     QString transaction;
     EventLike event;
+
+    Pending(const QString &tx, EventLike e) : transaction{tx}, event{std::move(e)} {}
   };
 
   struct Position {
