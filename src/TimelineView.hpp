@@ -179,7 +179,6 @@ signals:
 
   void redact_requested(const matrix::EventID &id, const QString &reason);
   void event_read(const matrix::EventID &id);
-  void href_activated(const QString &);
   void view_user_profile(const matrix::UserID &user);
 
 protected:

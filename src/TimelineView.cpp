@@ -16,6 +16,7 @@
 #include <QToolTip>
 #include <QStyleHints>
 #include <QMenu>
+#include <QDesktopServices>
 
 #include <QDebug>
 
@@ -467,7 +468,13 @@ void EventBlock::handle_input(const QPointF &point, QEvent *input) {
     const auto cursor = get_cursor(point, true);
     if(cursor && cursor->href) {
       input->accept();
-      parent_.href_activated(*cursor->href);
+      QUrl url(*cursor->href);
+      if(url.scheme() == "mxc") {
+        url = matrix::Content{url}.url_on(parent_.homeserver());
+      }
+      if(!QDesktopServices::openUrl(url)) {
+        qDebug() << "failed to open URL" << url.toString(QUrl::FullyEncoded);
+      }
     } else {
       input->ignore();
     }
