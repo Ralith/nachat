@@ -132,6 +132,7 @@ public:
 private:
   struct Event {
     TimelineEventID id;
+    std::experimental::optional<Time> time;
     std::experimental::optional<matrix::event::Room> source;
     FixedVector<QTextLayout> paragraphs;
 

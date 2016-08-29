@@ -526,8 +526,8 @@ void EventBlock::handle_input(const QPointF &point, QEvent *input) {
     QString message;
     if(timestamp_.lineCount() != 0 && timestamp_.lineAt(0).naturalTextRect().contains(point)) {
       const auto &event = events_.front();
-      if(event.source && !event.source->redacted()) {
-        message = to_timestamp("%Y-%m-%d %H:%M:%S", to_time_point(event.source->origin_server_ts()));
+      if(event.time) {
+        message = to_timestamp("%Y-%m-%d %H:%M:%S", *event.time);
       }
     } else if(avatar_rect.contains(point) || name_.boundingRect().contains(point)) {
       message = sender_.value();
@@ -678,7 +678,7 @@ EventBlock::SelectionTextResult EventBlock::selection_text(bool bottom_selected,
 }
 
 EventBlock::Event::Event(const TimelineView &view, const EventBlock &block, const EventLike &e)
-  : id{e.id}, source{e.event} {
+  : id{e.id}, time{e.time}, source{e.event} {
 
   const auto &&tr = [](const char *s) { return TimelineView::tr(s); };
 
