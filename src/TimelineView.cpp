@@ -59,6 +59,15 @@ QString pretty_size(double n) {
   return QString::number(n / std::pow<double>(1024, idx), 'g', 4) + " " + units[idx];
 }
 
+QTextCharFormat href_format(const QPalette &palette, const QString &href) {
+  QTextCharFormat format;
+  format.setAnchor(true);
+  format.setAnchorHref(href);
+  format.setForeground(palette.link());
+  format.setFontUnderline(true);
+  return format;
+}
+
 void href_urls(const QPalette &palette, QVector<QTextLayout::FormatRange> &formats, const QString &text, int offset = 0) {
   const static QRegularExpression regex(
     R"(\b()"
@@ -80,12 +89,7 @@ void href_urls(const QPalette &palette, QVector<QTextLayout::FormatRange> &forma
     QTextLayout::FormatRange range;
     range.start = candidate.capturedStart();
     range.length = candidate.capturedLength();
-    QTextCharFormat format;
-    format.setAnchor(true);
-    format.setAnchorHref(url.toString(QUrl::FullyEncoded));
-    format.setForeground(palette.link());
-    format.setFontUnderline(true);
-    range.format = format;
+    range.format = href_format(palette, url.toString(QUrl::FullyEncoded));
     formats.push_back(range);
   }
 }
@@ -716,6 +720,35 @@ EventBlock::Event::Event(const TimelineView &view, const EventBlock &block, cons
     } else if(msg.type() == message::Emote::tag()) {
       text = QString("* %1 %2").arg(block.name_.text()).arg(msg.body());
       href_urls(view.palette(), formats, text, block.name_.text().size() + 3);
+    } else if(msg.type() == matrix::event::room::message::File::tag()
+              || msg.type() == matrix::event::room::message::Image::tag()
+              || msg.type() == matrix::event::room::message::Video::tag()
+              || msg.type() == matrix::event::room::message::Audio::tag()) {
+      matrix::event::room::message::FileLike file(msg);
+      if(msg.type() == matrix::event::room::message::File::tag() && msg.body() == "") {
+        text = matrix::event::room::message::File(file).filename();
+      } else {
+        text = file.body();
+      }
+      {
+        QTextLayout::FormatRange range;
+        range.start = 0;
+        range.length = text.length();
+        range.format = href_format(view.palette(), file.url());
+        formats.push_back(range);
+      }
+      auto type = file.mimetype();
+      auto size = file.size();
+      if(type || size)
+        text += " (";
+      if(size)
+        text += pretty_size(*size);
+      if(type) {
+        if(size) text += " ";
+        text += *type;
+      }
+      if(type || size)
+        text += ")";
     } else {
       qDebug() << "displaying fallback for unrecognized msgtype:" << msg.type().value();
       text = msg.body();
