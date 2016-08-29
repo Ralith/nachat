@@ -1151,12 +1151,12 @@ static bool block_border(const EventLike &a, const EventLike &b) {
 
 void TimelineView::rebuild_blocks() {
   // Optimization: defer until visible
-  blocks_.clear();
+  std::deque<EventBlock> new_blocks;
   std::vector<const EventLike *> block_events;
   for(const auto &batch : batches_) {
     for(const auto &event : batch.events) {
       if(!block_events.empty() && block_border(*block_events.back(), event)) {
-        blocks_.emplace_back(*this, thumbnail_cache_, block_events);
+        new_blocks.emplace_back(*this, thumbnail_cache_, block_events);
         block_events.clear();
       }
       block_events.emplace_back(&event);
@@ -1165,16 +1165,17 @@ void TimelineView::rebuild_blocks() {
   if(at_bottom_) {
     for(const auto &event : pending_) {
       if(!block_events.empty() && block_border(*block_events.back(), event.event)) {
-        blocks_.emplace_back(*this, thumbnail_cache_, block_events);
+        new_blocks.emplace_back(*this, thumbnail_cache_, block_events);
         block_events.clear();
       }
       block_events.emplace_back(&event.event);
     }
   }
   if(!block_events.empty()) {
-    blocks_.emplace_back(*this, thumbnail_cache_, block_events);
+    new_blocks.emplace_back(*this, thumbnail_cache_, block_events);
     block_events.clear();
   }
+  std::swap(blocks_, new_blocks);
   update_layout();
 }
 
