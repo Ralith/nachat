@@ -427,6 +427,10 @@ bool EventBlock::draw(QPainter &p, bool bottom_selected, const Selection &select
   
   QVector<QTextLayout::FormatRange> selections;
   for(auto event = events_.rbegin(); event != events_.rend(); ++event) {
+    p.save();
+    if(event->type != matrix::event::room::Message::tag()) {
+      p.setPen(parent_.palette().color(QPalette::Dark));
+    }
     size_t index = event->paragraphs.size();
     for(auto paragraph = event->paragraphs.rbegin(); paragraph != event->paragraphs.rend(); ++paragraph) {
       index -= 1;
@@ -437,21 +441,27 @@ bool EventBlock::draw(QPainter &p, bool bottom_selected, const Selection &select
       paragraph->draw(&p, origin, selections);
       selections.clear();
     }
+    p.restore();
   }
 
-  if(auto s = selection_for(events_.front().id, Cursor::Type::TIMESTAMP, timestamp_, bottom_selected, selection)) {
-    selections.push_back(to_selection_format(s->affected, parent_.palette(), parent_.hasFocus()));
-    bottom_selected = s->continues;
-  }
-  timestamp_.draw(&p, origin, selections);
-  selections.clear();
+  {
+    p.save();
+    p.setPen(parent_.palette().color(QPalette::Dark));
+    if(auto s = selection_for(events_.front().id, Cursor::Type::TIMESTAMP, timestamp_, bottom_selected, selection)) {
+      selections.push_back(to_selection_format(s->affected, parent_.palette(), parent_.hasFocus()));
+      bottom_selected = s->continues;
+    }
+    timestamp_.draw(&p, origin, selections);
+    selections.clear();
 
-  if(auto s = selection_for(events_.front().id, Cursor::Type::NAME, name_, bottom_selected, selection)) {
-    selections.push_back(to_selection_format(s->affected, parent_.palette(), parent_.hasFocus()));
-    bottom_selected = s->continues;
+    if(auto s = selection_for(events_.front().id, Cursor::Type::NAME, name_, bottom_selected, selection)) {
+      selections.push_back(to_selection_format(s->affected, parent_.palette(), parent_.hasFocus()));
+      bottom_selected = s->continues;
+    }
+    name_.draw(&p, origin, selections);
+    p.restore();
+    selections.clear();
   }
-  name_.draw(&p, origin, selections);
-  selections.clear();
   return bottom_selected;
 }
 
@@ -682,7 +692,7 @@ EventBlock::SelectionTextResult EventBlock::selection_text(bool bottom_selected,
 }
 
 EventBlock::Event::Event(const TimelineView &view, const EventBlock &block, const EventLike &e)
-  : id{e.id}, time{e.time}, source{e.event} {
+  : id{e.id}, type{e.type}, time{e.time}, source{e.event} {
 
   const auto &&tr = [](const char *s) { return TimelineView::tr(s); };
 
@@ -707,52 +717,54 @@ EventBlock::Event::Event(const TimelineView &view, const EventBlock &block, cons
   };
 
   if(e.type == Message::tag()) {
-    MessageContent msg{e.content};
     if(redaction) {
       if(auto r = redaction->content().reason()) {
         text = tr("REDACTED: %1").arg(*r);
       } else {
         text = tr("REDACTED");
       }
-    } else if(msg.type() == message::Text::tag() || msg.type() == message::Notice::tag()) {
-      text = msg.body();
-      href_urls(view.palette(), formats, text);
-    } else if(msg.type() == message::Emote::tag()) {
-      text = QString("* %1 %2").arg(block.name_.text()).arg(msg.body());
-      href_urls(view.palette(), formats, text, block.name_.text().size() + 3);
-    } else if(msg.type() == matrix::event::room::message::File::tag()
-              || msg.type() == matrix::event::room::message::Image::tag()
-              || msg.type() == matrix::event::room::message::Video::tag()
-              || msg.type() == matrix::event::room::message::Audio::tag()) {
-      matrix::event::room::message::FileLike file(msg);
-      if(msg.type() == matrix::event::room::message::File::tag() && msg.body() == "") {
-        text = matrix::event::room::message::File(file).filename();
-      } else {
-        text = file.body();
-      }
-      {
-        QTextLayout::FormatRange range;
-        range.start = 0;
-        range.length = text.length();
-        range.format = href_format(view.palette(), file.url());
-        formats.push_back(range);
-      }
-      auto type = file.mimetype();
-      auto size = file.size();
-      if(type || size)
-        text += " (";
-      if(size)
-        text += pretty_size(*size);
-      if(type) {
-        if(size) text += " ";
-        text += *type;
-      }
-      if(type || size)
-        text += ")";
     } else {
-      qDebug() << "displaying fallback for unrecognized msgtype:" << msg.type().value();
-      text = msg.body();
-      href_urls(view.palette(), formats, text);
+      MessageContent msg{e.content};
+      if(msg.type() == message::Text::tag() || msg.type() == message::Notice::tag()) {
+        text = msg.body();
+        href_urls(view.palette(), formats, text);
+      } else if(msg.type() == message::Emote::tag()) {
+        text = QString("* %1 %2").arg(block.name_.text()).arg(msg.body());
+        href_urls(view.palette(), formats, text, block.name_.text().size() + 3);
+      } else if(msg.type() == matrix::event::room::message::File::tag()
+                || msg.type() == matrix::event::room::message::Image::tag()
+                || msg.type() == matrix::event::room::message::Video::tag()
+                || msg.type() == matrix::event::room::message::Audio::tag()) {
+        matrix::event::room::message::FileLike file(msg);
+        if(msg.type() == matrix::event::room::message::File::tag() && msg.body() == "") {
+          text = matrix::event::room::message::File(file).filename();
+        } else {
+          text = file.body();
+        }
+        {
+          QTextLayout::FormatRange range;
+          range.start = 0;
+          range.length = text.length();
+          range.format = href_format(view.palette(), file.url());
+          formats.push_back(range);
+        }
+        auto type = file.mimetype();
+        auto size = file.size();
+        if(type || size)
+          text += " (";
+        if(size)
+          text += pretty_size(*size);
+        if(type) {
+          if(size) text += " ";
+          text += *type;
+        }
+        if(type || size)
+          text += ")";
+      } else {
+        qDebug() << "displaying fallback for unrecognized msgtype:" << msg.type().value();
+        text = msg.body();
+        href_urls(view.palette(), formats, text);
+      }
     }
   } else if(e.type == Member::tag()) {
     const MemberContent content{e.content};
@@ -895,6 +907,8 @@ TimelineView::TimelineView(const QUrl &homeserver, ThumbnailCache &cache, QWidge
     });
   connect(copy_, &QShortcut::activated, this, &TimelineView::copy);
 
+  connect(&thumbnail_cache_, &ThumbnailCache::updated, viewport(), static_cast<void (QWidget::*)()>(&QWidget::update));
+
   {
     const int extent = devicePixelRatioF() * spinner_space() * .9;
     spinner_ = QPixmap(extent, extent);
@@ -971,7 +985,7 @@ void TimelineView::redact(const matrix::event::room::Redaction &redaction) {
   maybe_need_backwards();
 }
 
-void TimelineView::add_pending(const QString &transaction, const matrix::RoomState &state, const matrix::UserID &self, Time time,
+void TimelineView::add_pending(const matrix::TransactionID &transaction, const matrix::RoomState &state, const matrix::UserID &self, Time time,
                                matrix::EventType type, matrix::event::Content content, std::experimental::optional<matrix::UserID> affected_user) {
   pending_.emplace_back(transaction,
                         EventLike{get_id(), state, self, time, type, content, affected_user});
@@ -980,6 +994,7 @@ void TimelineView::add_pending(const QString &transaction, const matrix::RoomSta
 
 void TimelineView::set_at_bottom(bool value) {
   at_bottom_ = value;
+  maybe_need_forwards();
 }
 
 void TimelineView::resizeEvent(QResizeEvent *) {
@@ -987,6 +1002,10 @@ void TimelineView::resizeEvent(QResizeEvent *) {
 }
 
 void TimelineView::paintEvent(QPaintEvent *) {
+  // TODO: Move message fetches here
+  // TODO: Force lazy block rebuild here
+  // TODO: Draw purpose-built pending message block below bottom spinner
+
   const qreal spacing = block_spacing(*this);
   const qreal half_spacing = std::round(spacing * 0.5);
   const qreal padding = block_padding(*this);
@@ -997,10 +1016,10 @@ void TimelineView::paintEvent(QPaintEvent *) {
   painter.setPen(palette().color(QPalette::Text));
   painter.translate(QPointF(0, -view.top()));
 
-  bool animating = false;
+  bool spinner_present = false;
   if(view.bottom() > 0 && !at_bottom_) {
     draw_spinner(painter, 0);
-    animating = true;
+    spinner_present = true;
   }
 
   visible_blocks_.clear();
@@ -1033,12 +1052,12 @@ void TimelineView::paintEvent(QPaintEvent *) {
   }
 
   const auto top = painter.worldTransform().m32() + view.top();
-  if(view.top() < top && !at_top()) {
+  if(view.top() < top && !at_top() && !(blocks_.empty() && spinner_present)) {
     draw_spinner(painter, -spinner_space());
-    animating = true;
+    spinner_present = true;
   }
 
-  if(animating) {
+  if(spinner_present) {
     QTimer::singleShot(30, viewport(), static_cast<void (QWidget::*)()>(&QWidget::update));
   }
 
@@ -1185,7 +1204,7 @@ static bool block_border(const EventLike &a, const EventLike &b) {
 }
 
 void TimelineView::rebuild_blocks() {
-  // Optimization: defer until visible
+  // TODO: Separate block for pending messages if there's a bottom spinner
   std::deque<EventBlock> new_blocks;
   std::vector<const EventLike *> block_events;
   for(const auto &batch : batches_) {
@@ -1232,6 +1251,15 @@ void TimelineView::update_layout() {
 
 void TimelineView::maybe_need_backwards() {
   if(at_top()) return;
+
+  // TODO: Don't perform these checks when a fetch is already underway. Track whether that's the case and implement cancellation via discard.
+  qreal top = 0;
+  for(const auto &block : blocks_) {
+    top -= block.bounds().height() + block_spacing(*this);
+  }
+  const auto view = view_rect();
+  if(view.top() - top > view.height()) return;
+
   need_backwards();
 }
 

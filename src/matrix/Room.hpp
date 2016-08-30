@@ -62,6 +62,7 @@ public:
   // Matrix r0.1.0 11.2.2.5 ish (like vector-web)
 
   std::experimental::optional<QString> member_disambiguation(const UserID &member) const;
+  std::experimental::optional<QString> nonmember_disambiguation(const UserID &id, const QString &displayname) const;
   QString member_name(const UserID &member) const;
   // Matrix r0.1.0 11.2.2.3
 
@@ -126,8 +127,9 @@ public:
   };
 
   struct PendingEvent {
-    QString type;
-    QJsonObject content;
+    TransactionID transaction_id;
+    EventType type;
+    event::Content content;
   };
 
   Room(Matrix &universe, Session &session, RoomID id, const QJsonObject &initial,
@@ -160,12 +162,13 @@ public:
 
   EventSend *leave();
 
-  void send(const QString &type, QJsonObject content);
+  TransactionID send(const EventType &type, event::Content content);
+
   void redact(const EventID &event, const QString &reason = "");
 
-  void send_file(const QString &uri, const QString &name, const QString &media_type, size_t size);
-  void send_message(const QString &body);
-  void send_emote(const QString &body);
+  TransactionID send_file(const QString &uri, const QString &name, const QString &media_type, size_t size);
+  TransactionID send_message(const QString &body);
+  TransactionID send_emote(const QString &body);
 
   void send_read_receipt(const EventID &event);
 
@@ -179,10 +182,8 @@ public:
   const Batch &last_batch() const { return last_batch_; }
 
 signals:
-  void member_changed(const UserID &, const event::room::MemberContent &);
-  void membership_changed(const UserID &, Membership old, Membership current);
-  void member_disambiguation_changed(const UserID &, const QString &old);
-  void member_name_changed(const UserID &, const QString &old); // Assume disambiguation changed as well
+  void member_changed(const UserID &, const event::room::MemberContent &old, const event::room::MemberContent &current);
+  void member_disambiguation_changed(const UserID &, const std::experimental::optional<QString> &old, const std::experimental::optional<QString> &current);
   void state_changed();
   void highlight_count_changed(uint64_t old);
   void notification_count_changed(uint64_t old);
@@ -191,7 +192,6 @@ signals:
   void aliases_changed();
   void topic_changed(const std::experimental::optional<QString> &old);
   void avatar_changed();
-  void discontinuity();
   void typing_changed();
   void receipts_changed();
 
@@ -223,7 +223,6 @@ private:
   QNetworkReply *transmitting_;
   QTimer transmit_retry_timer_;
   std::chrono::steady_clock::duration retry_backoff_;
-  QString last_transmit_transaction_;
 
   void update_receipt(const UserID &user, const EventID &event, uint64_t ts);
 

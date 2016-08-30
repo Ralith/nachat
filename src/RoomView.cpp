@@ -2,6 +2,7 @@
 #include "ui_RoomView.h"
 
 #include <stdexcept>
+#include <experimental/optional>
 
 #include <QGuiApplication>
 #include <QCursor>
@@ -17,6 +18,8 @@
 #include "RoomMenu.hpp"
 #include "MemberList.hpp"
 
+using std::experimental::optional;
+
 RoomView::RoomView(ThumbnailCache &cache, matrix::Room &room, QWidget *parent)
   : QWidget(parent), ui(new Ui::RoomView),
     timeline_view_(new TimelineView(room.session().homeserver(), cache, this)),
@@ -31,11 +34,17 @@ RoomView::RoomView(ThumbnailCache &cache, matrix::Room &room, QWidget *parent)
               timeline_view_->prepend(begin, state, evt);
             } else {
               timeline_view_->append(begin, state, evt);
-              timeline_view_->set_at_bottom(timeline_manager_->window().at_end());
             }
+            timeline_view_->set_at_bottom(timeline_manager_->window().at_end());
           });
+  connect(timeline_manager_, &matrix::TimelineManager::discontinuity, [this]() {
+      timeline_view_->set_at_bottom(false);
+    });
+
   connect(timeline_view_, &TimelineView::need_backwards, [this]() { timeline_manager_->grow(matrix::Direction::BACKWARD); });
   connect(timeline_view_, &TimelineView::need_forwards, [this]() { timeline_manager_->grow(matrix::Direction::FORWARD); });
+
+  timeline_manager_->replay();
 
   auto menu = new RoomMenu(room, this);
   connect(ui->menu_button, &QAbstractButton::clicked, [this, menu](bool) {
@@ -48,7 +57,12 @@ RoomView::RoomView(ThumbnailCache &cache, matrix::Room &room, QWidget *parent)
 
   ui->layout->insertWidget(2, entry_);
   setFocusProxy(entry_);
-  connect(entry_, &EntryBox::message, &room_, &matrix::Room::send_message);
+  connect(entry_, &EntryBox::message, [this](const QString &msg) {
+      send(matrix::event::room::Message::tag(),
+           matrix::event::Content{{
+               {"msgtype", "m.text"},
+               {"body", msg}}});
+    });
   connect(entry_, &EntryBox::command, this, &RoomView::command);
   connect(entry_, &EntryBox::pageUp, [this]() {
       timeline_view_->verticalScrollBar()->triggerAction(QAbstractSlider::SliderPageStepSub);
@@ -57,8 +71,8 @@ RoomView::RoomView(ThumbnailCache &cache, matrix::Room &room, QWidget *parent)
       timeline_view_->verticalScrollBar()->triggerAction(QAbstractSlider::SliderPageStepAdd);
     });
 
-  connect(&room_, &matrix::Room::membership_changed, this, &RoomView::membership_changed);
-  connect(&room_, &matrix::Room::member_name_changed, this, &RoomView::member_name_changed);
+  connect(&room_, &matrix::Room::member_changed, this, &RoomView::member_changed);
+  connect(&room_, &matrix::Room::member_disambiguation_changed, this, &RoomView::member_disambiguation_changed);
 
   connect(&room_, &matrix::Room::topic_changed, this, &RoomView::topic_changed);
   topic_changed();
@@ -66,12 +80,14 @@ RoomView::RoomView(ThumbnailCache &cache, matrix::Room &room, QWidget *parent)
 
 RoomView::~RoomView() { delete ui; }
 
-void RoomView::member_name_changed(const matrix::UserID &member, QString old) {
-  member_list_->member_display_changed(room_.state(), member, old);
+void RoomView::member_disambiguation_changed(const matrix::UserID &member, const optional<QString> &old, const optional<QString> &current) {
+  member_list_->member_disambiguation_changed(room_.state(), member, old, current);
 }
 
-void RoomView::membership_changed(const matrix::UserID &member, matrix::Membership old, matrix::Membership current) {
-  member_list_->membership_changed(room_.state(), member, old, current);
+void RoomView::member_changed(const matrix::UserID &member,
+                              const matrix::event::room::MemberContent &old,
+                              const matrix::event::room::MemberContent &current) {
+  member_list_->member_changed(room_.state(), member, old, current);
 }
 
 void RoomView::topic_changed() {
@@ -86,7 +102,10 @@ void RoomView::topic_changed() {
 
 void RoomView::command(const QString &name, const QString &args) {
   if(name == "me") {
-    room_.send_emote(args);
+    send(matrix::event::room::Message::tag(),
+         matrix::event::Content{{
+             {{"msgtype", "m.emote"},
+               {"body", args}}}});
   } else if(name == "join") {
     auto req = room_.session().join(args);
     connect(req, &matrix::JoinRequest::error, [=](const QString &msg) { qCritical() << tr("failed to join \"%1\": %2").arg(args).arg(msg); });
@@ -97,4 +116,9 @@ void RoomView::command(const QString &name, const QString &args) {
 
 void RoomView::selected() {
   // TODO: Mark events read
+}
+
+void RoomView::send(const matrix::EventType &ty, const matrix::event::Content &content) {
+  timeline_view_->add_pending(room_.send(ty, content), room_.state(), room_.session().user_id(),
+                              std::chrono::time_point_cast<Time::duration>(std::chrono::system_clock::now()), ty, content);
 }

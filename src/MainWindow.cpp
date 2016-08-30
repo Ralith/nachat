@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QSystemTrayIcon>
 #include <QDebug>
+#include <QMimeDatabase>
 
 #include "matrix/Room.hpp"
 #include "matrix/Session.hpp"
@@ -108,6 +109,23 @@ MainWindow::MainWindow(matrix::Session &session)
       }
     });
 
+  connect(&thumbnail_cache_, &ThumbnailCache::needs, [this](const matrix::Thumbnail &t) {
+      auto fetch = session_.get_thumbnail(t);
+      QPointer<MainWindow> self(this);
+      connect(fetch, &matrix::ContentFetch::finished, [=](const QString &type, const QString &disposition, const QByteArray &data) {
+          (void)disposition;
+          QPixmap pixmap;
+          pixmap.loadFromData(data, QMimeDatabase().mimeTypeForName(type.toUtf8()).preferredSuffix().toUtf8().constData());
+          if(pixmap.isNull()) pixmap.loadFromData(data);
+
+          if(pixmap.width() > t.size().width() || pixmap.height() > t.size().height())
+            pixmap = pixmap.scaled(t.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+          pixmap.setDevicePixelRatio(self->devicePixelRatioF());
+
+          self->thumbnail_cache_.set(t, pixmap);
+        });
+    });
+
   sync_progress(0, -1);
   for(auto room : session_.rooms()) {
     joined(*room);
@@ -154,7 +172,7 @@ void MainWindow::joined(matrix::Room &room) {
   connect(&room, &matrix::Room::name_changed, just_update);
   connect(&room, &matrix::Room::canonical_alias_changed, just_update);
   connect(&room, &matrix::Room::aliases_changed, just_update);
-  connect(&room, &matrix::Room::membership_changed, just_update);
+  connect(&room, &matrix::Room::member_changed, just_update);
   connect(&room, &matrix::Room::receipts_changed, just_update);
 }
 
@@ -199,7 +217,7 @@ RoomWindowBridge::RoomWindowBridge(matrix::Room &room, ChatWindow &parent) : QOb
   connect(&room, &matrix::Room::name_changed, this, &RoomWindowBridge::display_changed);
   connect(&room, &matrix::Room::canonical_alias_changed, this, &RoomWindowBridge::display_changed);
   connect(&room, &matrix::Room::aliases_changed, this, &RoomWindowBridge::display_changed);
-  connect(&room, &matrix::Room::membership_changed, this, &RoomWindowBridge::display_changed);
+  connect(&room, &matrix::Room::member_changed, this, &RoomWindowBridge::display_changed);
   connect(&room, &matrix::Room::receipts_changed, this, &RoomWindowBridge::display_changed);
   connect(&room, &matrix::Room::message, this, &RoomWindowBridge::display_changed);
   connect(&parent, &ChatWindow::released, this, &RoomWindowBridge::check_release);

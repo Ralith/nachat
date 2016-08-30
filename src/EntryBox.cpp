@@ -19,19 +19,22 @@ EntryBox::EntryBox(QWidget *parent) : QTextEdit(parent), true_history_(INPUT_HIS
 }
 
 QSize EntryBox::sizeHint() const {
+  ensurePolished();
   auto margins = viewportMargins();
   margins += document()->documentMargin();
   QSize size = document()->size().toSize();
   size.rwidth() += margins.left() + margins.right();
   size.rheight() += margins.top() + margins.bottom();
-
   return size;
 }
 
 QSize EntryBox::minimumSizeHint() const {
+  ensurePolished();
   auto margins = viewportMargins();
   margins += document()->documentMargin();
-  return QSize(fontMetrics().averageCharWidth() * 10, fontMetrics().lineSpacing() + margins.top() + margins.bottom());
+  margins += contentsMargins();
+  QSize size(fontMetrics().averageCharWidth() * 10, fontMetrics().lineSpacing() + margins.top() + margins.bottom());
+  return size;
 }
 
 void EntryBox::keyPressEvent(QKeyEvent *event) {

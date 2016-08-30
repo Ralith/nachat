@@ -21,6 +21,7 @@ public:
   
 signals:
   void needs(const matrix::Thumbnail &);
+  void updated();
 
 private:
   struct Item {

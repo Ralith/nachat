@@ -354,12 +354,11 @@ QNetworkReply *Session::put(const QString &path, QJsonObject body) {
 ContentFetch *Session::get(const Content &content) {
   auto reply = get("media/r0/download/" % content.host() % "/" % content.id());
   auto result = new ContentFetch(reply);
-  connect(reply, &QNetworkReply::finished, [content, reply, result]() {
+  connect(reply, &QNetworkReply::finished, [reply, result]() {
       if(reply->error()) {
         result->error(reply->errorString());
       } else {
-        result->finished(content,
-                         reply->header(QNetworkRequest::ContentTypeHeader).toString(),
+        result->finished(reply->header(QNetworkRequest::ContentTypeHeader).toString(),
                          reply->header(QNetworkRequest::ContentDispositionHeader).toString(),
                          reply->readAll());
       }
@@ -367,20 +366,19 @@ ContentFetch *Session::get(const Content &content) {
   return result;
 }
 
-ContentFetch *Session::get_thumbnail(const Content &content, const QSize &size, ThumbnailMethod method) {
+ContentFetch *Session::get_thumbnail(const Thumbnail &t) {
   QUrlQuery query;
   query.addQueryItem("access_token", access_token_);
-  query.addQueryItem("width", QString::number(size.width()));
-  query.addQueryItem("height", QString::number(size.height()));
-  query.addQueryItem("method", method == ThumbnailMethod::SCALE ? "scale" : "crop");
-  auto reply = get("media/r0/thumbnail/" % content.host() % "/" % content.id(), query);
+  query.addQueryItem("width", QString::number(t.size().width()));
+  query.addQueryItem("height", QString::number(t.size().height()));
+  query.addQueryItem("method", t.method() == ThumbnailMethod::SCALE ? "scale" : "crop");
+  auto reply = get("media/r0/thumbnail/" % t.content().host() % "/" % t.content().id(), query);
   auto result = new ContentFetch(reply);
-  connect(reply, &QNetworkReply::finished, [content, reply, result]() {
+  connect(reply, &QNetworkReply::finished, [reply, result]() {
       if(reply->error()) {
         result->error(reply->errorString());
       } else {
-        result->finished(content,
-                         reply->header(QNetworkRequest::ContentTypeHeader).toString(),
+        result->finished(reply->header(QNetworkRequest::ContentTypeHeader).toString(),
                          reply->header(QNetworkRequest::ContentDispositionHeader).toString(),
                          reply->readAll());
       }
@@ -388,7 +386,7 @@ ContentFetch *Session::get_thumbnail(const Content &content, const QSize &size, 
   return result;
 }
 
-QString Session::get_transaction_id() {
+TransactionID Session::get_transaction_id() {
   auto txn = lmdb::txn::begin(env_);
 
   uint64_t value;
@@ -406,7 +404,7 @@ QString Session::get_transaction_id() {
 
   txn.commit();
 
-  return QString::number(value, 36);
+  return TransactionID{QString::number(value, 36)};
 }
 
 JoinRequest *Session::join(const QString &id_or_alias) {

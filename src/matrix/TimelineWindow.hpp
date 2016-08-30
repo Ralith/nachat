@@ -56,7 +56,9 @@ public:
   void reset(const RoomState &current_state);
   // Discard all but latest
 
+  const RoomState &initial_state() { return initial_state_; }
   const std::deque<Batch> &batches() const { return batches_; }
+  const RoomState &final_state() { return final_state_; }
 
 private:
   RoomState initial_state_, final_state_;
@@ -75,6 +77,8 @@ public:
   const TimelineWindow &window() const { return window_; }
 
   void grow(Direction dir);
+
+  void replay();
 
 signals:
   void grew(Direction dir, const TimelineCursor &begin, const RoomState &state, const event::Room &evt);

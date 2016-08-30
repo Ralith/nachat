@@ -86,9 +86,9 @@ public:
     return {};
   }
 
-  std::experimental::optional<QString> transaction_id() const noexcept {
+  std::experimental::optional<TransactionID> transaction_id() const noexcept {
     auto it = json().find("transaction_id");
-    if(it != json().end()) return it->toString();
+    if(it != json().end()) return TransactionID{it->toString()};
     return {};
   }
 

@@ -48,7 +48,7 @@ public:
   explicit ContentFetch(QObject *parent = nullptr) : QObject(parent) {}
 
 signals:
-  void finished(const Content &content, const QString &type, const QString &disposition, const QByteArray &data);
+  void finished(const QString &type, const QString &disposition, const QByteArray &data);
   void error(const QString &msg);
 };
 
@@ -105,11 +105,11 @@ public:
 
   ContentFetch *get(const Content &);
 
-  ContentFetch *get_thumbnail(const Content &, const QSize &size, ThumbnailMethod method = ThumbnailMethod::SCALE);
+  ContentFetch *get_thumbnail(const Thumbnail &);
 
   ContentPost *upload(QIODevice &data, const QString &content_type, const QString &filename);
 
-  QString get_transaction_id();
+  TransactionID get_transaction_id();
 
   JoinRequest *join(const QString &id_or_alias);
 

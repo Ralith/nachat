@@ -96,7 +96,7 @@ void TimelineWindow::prepend_batch(const TimelineCursor &batch_start, const Time
     mgr->grow(Direction::BACKWARD);
     return;
   }
-  batches_.emplace_front(batch_start, std::vector<event::Room>(reversed_events.rbegin(), reversed_events.rend()));
+  batches_.emplace_front(batch_end, std::vector<event::Room>(reversed_events.rbegin(), reversed_events.rend()));
   if(batches_.size() == 1) {
     batches_end_ = batch_start;
   }
@@ -110,7 +110,7 @@ void TimelineWindow::prepend_batch(const TimelineCursor &batch_start, const Time
 void TimelineWindow::append_sync(const proto::Timeline &t, TimelineManager *mgr) {
   if(t.events.empty()) return;
 
-  if(!t.limited && at_end()) {
+  if(at_end()) {
     batches_.emplace_back(std::move(latest_batch_));
     batches_end_ = t.prev_batch;
   }
@@ -120,6 +120,7 @@ void TimelineWindow::append_sync(const proto::Timeline &t, TimelineManager *mgr)
   if(t.limited) mgr->discontinuity();
 
   if(at_end()) {
+    assert(!t.limited);
     for(const auto &evt : latest_batch_.events) {
       mgr->grew(Direction::FORWARD, latest_batch_.begin, final_state_, evt);
       if(auto s = evt.to_state()) {
@@ -162,6 +163,7 @@ void TimelineManager::grow(Direction dir) {
 
   if(!start) return;            // throw?
   auto reply = room_.get_messages(dir, *start, BATCH_SIZE, end);
+  qDebug() << "requesting" << (dir == Direction::BACKWARD ? "backward" : "forward") << "from" << start->value() << "to" << (end ? end->value() : "infinity");
 
   if(dir == Direction::FORWARD) {
     connect(reply, &MessageFetch::finished, this, &TimelineManager::got_forward);
@@ -171,6 +173,16 @@ void TimelineManager::grow(Direction dir) {
     connect(reply, &MessageFetch::finished, this, &TimelineManager::got_backward);
     connect(reply, &MessageFetch::error, this, &TimelineManager::backward_fetch_error);
     backward_req_ = reply;
+  }
+}
+
+void TimelineManager::replay() {
+  auto replay = window().initial_state();
+  for(const auto &batch : window().batches()) {
+    for(const auto &evt : batch.events) {
+      grew(Direction::FORWARD, batch.begin, replay, evt);
+      if(auto s = evt.to_state()) replay.apply(*s);
+    }
   }
 }
 
@@ -190,12 +202,13 @@ void TimelineManager::backward_fetch_error(const QString &msg) {
 
 void TimelineManager::error(Direction dir, const QString &msg) {
   // TODO: Check whether error is retry-worthy?
-  qDebug() << room_.pretty_name() << "retrying timeline fetch due to error:" << msg;
+  qWarning() << room_.pretty_name() << "retrying timeline fetch due to error:" << msg;
   retry_dir_ = dir;
   if(!retry_timer_.isActive()) retry_timer_.start();
 }
 
 void TimelineManager::got_backward(const TimelineCursor &start, const TimelineCursor &end, gsl::span<const event::Room> reversed_events) {
+  qDebug() << "got batch of" << reversed_events.size() << "events from" << start.value() << "to" << end.value();
   backward_req_ = nullptr;
   window_.prepend_batch(start, end, reversed_events, this);
 }

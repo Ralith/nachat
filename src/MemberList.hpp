@@ -2,6 +2,7 @@
 #define NATIVE_CLIENT_MEMBER_LIST_HPP_
 
 #include <map>
+#include <experimental/optional>
 
 #include <QListWidget>
 
@@ -9,15 +10,21 @@
 
 namespace matrix {
 class RoomState;
-enum class Membership;
+namespace event {
+namespace room {
+class MemberContent;
+}
+}
 }
 
 class MemberList : public QListWidget {
 public:
   MemberList(const matrix::RoomState &, QWidget *parent = nullptr);
 
-  void member_display_changed(const matrix::RoomState &, const matrix::UserID &, const QString &old);
-  void membership_changed(const matrix::RoomState &, const matrix::UserID &, matrix::Membership old, matrix::Membership current);
+  void member_changed(const matrix::RoomState &, const matrix::UserID &,
+                      const matrix::event::room::MemberContent &old, const matrix::event::room::MemberContent &current);
+  void member_disambiguation_changed(const matrix::RoomState &, const matrix::UserID &,
+                                     const std::experimental::optional<QString> &old, const std::experimental::optional<QString> &current);
 
   QSize sizeHint() const override;
 

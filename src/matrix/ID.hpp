@@ -25,18 +25,20 @@ template<typename T> inline bool operator==(const ID<T> &x, const ID<T> &y) noex
 template<typename T> inline bool operator!=(const ID<T> &x, const ID<T> &y) noexcept { return x.value() != y.value(); }
 template<typename T> inline bool operator<(const ID<T> &x, const ID<T> &y) noexcept { return x.value() < y.value(); }
 
-struct TimelineCursor : public ID<QString> { using ID::ID; };
-struct SyncCursor : public ID<QString> { using ID::ID; };
+class TransactionID : public ID<QString> { using ID::ID; };
 
-struct EventID : public ID<QString> { using ID::ID; };
-struct RoomID : public ID<QString> { using ID::ID; };
+class TimelineCursor : public ID<QString> { using ID::ID; };
+class SyncCursor : public ID<QString> { using ID::ID; };
 
-struct EventType : public ID<QString> { using ID::ID; };
-struct MessageType : public ID<QString> { using ID::ID; };
+class EventID : public ID<QString> { using ID::ID; };
+class RoomID : public ID<QString> { using ID::ID; };
 
-struct StateKey : public ID<QString> { using ID::ID; };
+class EventType : public ID<QString> { using ID::ID; };
+class MessageType : public ID<QString> { using ID::ID; };
 
-struct UserID : public ID<QString> {
+class StateKey : public ID<QString> { using ID::ID; };
+
+class UserID : public ID<QString> {
   using ID::ID;
   explicit UserID(const StateKey &key) : ID(key.value()) {}
 };

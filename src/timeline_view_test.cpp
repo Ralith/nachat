@@ -106,21 +106,21 @@ int main(int argc, char *argv[]) {
 
   rs.apply(leave_evt);
 
-  tv.prepend(cursor1, matrix::RoomState(), matrix::event::room::Create{matrix::event::room::State{room_evt(QJsonObject{
-            {"type", "m.room.create"},
-            {"event_id", "1"},
-            {"sender", somebody},
-            {"origin_server_ts", 42},
-            {"state_key", ""},
-            {"content", QJsonObject{
-                {"creator", "you"}
-              }}
-          })}});
+  // tv.prepend(cursor1, matrix::RoomState(), matrix::event::room::Create{matrix::event::room::State{room_evt(QJsonObject{
+  //           {"type", "m.room.create"},
+  //           {"event_id", "1"},
+  //           {"sender", somebody},
+  //           {"origin_server_ts", 42},
+  //           {"state_key", ""},
+  //           {"content", QJsonObject{
+  //               {"creator", "you"}
+  //             }}
+  //         })}});
 
-  tv.add_pending("txn", rs, matrix::UserID(somebody_else), Time{}, matrix::event::room::Message::tag(),
+  tv.add_pending(matrix::TransactionID{"txn"}, rs, matrix::UserID(somebody_else), Time{}, matrix::event::room::Message::tag(),
                  matrix::event::Content{QJsonObject{{"msgtype", "m.text"}, {"body", "hello"}}});
 
-  tv.set_at_bottom(true);
+  //tv.set_at_bottom(true);
 
   return a.exec();
 }

@@ -7,7 +7,7 @@ class QNetworkAccessManager;
 
 namespace matrix {
 
-struct UserID;
+class UserID;
 
 class Matrix : public QObject {
   Q_OBJECT

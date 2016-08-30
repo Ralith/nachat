@@ -89,18 +89,21 @@ QString RoomState::pretty_name(const UserID &own_id) const {
 
 optional<QString> RoomState::member_disambiguation(const UserID &member_id) const {
   const auto &member = members_by_id_.at(member_id);
-  if(!member.displayname()) {
-    if(members_by_displayname_.find(member_id.value()) != members_by_displayname_.end()) {
-      return member_id.value();
-    } else {
-      return {};
-    }
-  } else if(members_named(*member.displayname()).size() > 1
-            || (member.displayname() && member_from_id(UserID(member.displayname()->normalized(QString::NormalizationForm_C))))) {
+  if(!member.displayname()) return {};
+  if(members_named(*member.displayname()).size() > 1
+     || (member.displayname() && member_from_id(UserID(member.displayname()->normalized(QString::NormalizationForm_C))))) {
     return member_id.value();
   } else {
     return {};
   }
+}
+
+optional<QString> RoomState::nonmember_disambiguation(const UserID &id, const QString &displayname) const {
+  if(members_by_id_.find(UserID{displayname}) != members_by_id_.end()
+     || members_by_displayname_.find(displayname) != members_by_displayname_.end()) {
+    return id.value();
+  }
+  return {};
 }
 
 QString RoomState::member_name(const UserID &member) const {
@@ -137,7 +140,7 @@ void RoomState::forget_displayname(const UserID &id, const QString &old_name_in,
     if(existing_mxid) other_member = UserID(old_name);
   }
   if(other_member) {
-    other_disambiguation = *member_disambiguation(*other_member);
+    room->member_disambiguation_changed(*other_member, other_member->value(), {});
   }
   const auto before = vec.size();
   vec.erase(std::remove(vec.begin(), vec.end(), id), vec.end());
@@ -146,7 +149,7 @@ void RoomState::forget_displayname(const UserID &id, const QString &old_name_in,
     members_by_displayname_.erase(old_name);
   }
   if(other_member) {
-    room->member_disambiguation_changed(*other_member, other_disambiguation);
+    
   }
 }
 
@@ -156,19 +159,12 @@ void RoomState::record_displayname(const UserID &id, const QString &name, Room *
   for(const auto &x : vec) {
     assert(x != id);
   }
-  vec.push_back(id);
 
-  if(room) {
-    optional<UserID> other_member;
-    const bool existing_displayname = vec.size() == 2;
-    const bool existing_mxid = member_from_id(UserID(normalized));
-    if(!existing_displayname || !existing_mxid) {
-      // If there's only one user with the name, they get newly disambiguated too
-      if(existing_displayname) other_member = vec[0];
-      if(existing_mxid) other_member = UserID(normalized);
-    }
-    if(other_member) room->member_disambiguation_changed(*other_member, "");
+  if(room && vec.size() == 1) {
+    room->member_disambiguation_changed(vec[0], {}, vec[0].value());
   }
+
+  vec.push_back(id);
 }
 
 const event::room::MemberContent *RoomState::member_from_id(const UserID &id) const {
@@ -279,12 +275,7 @@ bool Room::dispatch(const proto::JoinedRoom &joined) {
     notification_count_changed(old);
   }
 
-  if(joined.timeline.limited) {
-    discontinuity();
-  }
-
   prev_batch(joined.timeline.prev_batch);
-  // Must be called *after* discontinuity so that users can easily discard existing timeline events
 
   for(auto &evt : joined.timeline.events) {
     message(evt);
@@ -331,29 +322,28 @@ bool Room::dispatch(const proto::JoinedRoom &joined) {
 }
 
 bool RoomState::update_membership(const UserID &user_id, const event::room::MemberContent &content, Room *room) {
-  if(room) room->member_changed(user_id, content);
+  auto it = members_by_id_.find(user_id);
+  if(room) {
+    room->member_changed(user_id, it != members_by_id_.end() ? it->second : event::room::MemberContent::leave, content);
+  }
 
   switch(content.membership()) {
   case Membership::INVITE:
   case Membership::JOIN: {
-    auto &member = members_by_id_.emplace(
+    if(it == members_by_id_.end()) {
+      it = members_by_id_.emplace(
         std::piecewise_construct,
         std::forward_as_tuple(user_id),
-        std::forward_as_tuple(event::room::MemberContent::leave)).first->second;
-    auto old_membership = member.membership();
-    auto old_displayname = member.displayname();
-    auto old_member_name = member_name(user_id);
-    member = content;
-    if(member.displayname() != old_displayname) {
-      if(old_displayname)
-        forget_displayname(user_id, *old_displayname, room);
+        std::forward_as_tuple(event::room::MemberContent::leave)).first;
+    }
+    auto &member = it->second;;
+    if(content.displayname() != member.displayname()) {
       if(member.displayname())
-        record_displayname(user_id, *member.displayname(), room);
-      if(room && membership_displayable(old_membership)) room->member_name_changed(user_id, old_member_name);
+        forget_displayname(user_id, *member.displayname(), room);
+      if(content.displayname())
+        record_displayname(user_id, *content.displayname(), room);
     }
-    if(room && member.membership() != old_membership) {
-      room->membership_changed(user_id, old_membership, content.membership());
-    }
+    member = content;
     break;
   }
   case Membership::LEAVE:
@@ -361,13 +351,11 @@ bool RoomState::update_membership(const UserID &user_id, const event::room::Memb
     if(room && user_id == room->id()) {
       room->left(content.membership());
     }
-    auto it = members_by_id_.find(user_id);
     if(it != members_by_id_.end()) {
       auto &member = it->second;
       if(member.displayname()) {
         forget_displayname(user_id, *member.displayname(), room);
       }
-      if(room) room->membership_changed(user_id, member.membership(), content.membership());
       members_by_id_.erase(it);
     }
     break;
@@ -539,14 +527,16 @@ EventSend *Room::leave() {
   return es;
 }
 
-void Room::send(const QString &type, QJsonObject content) {
-  pending_events_.push_back({type, content});
+TransactionID Room::send(const EventType &type, event::Content content) {
+  pending_events_.push_back({session_.get_transaction_id(), type, std::move(content)});
   transmit_event();
+  return pending_events_.back().transaction_id;
 }
 
 void Room::redact(const EventID &event, const QString &reason) {
   auto txn = session_.get_transaction_id();
-  auto reply = session_.put("client/r0/rooms/" % QUrl::toPercentEncoding(id_.value()) % "/redact/" % QUrl::toPercentEncoding(event.value()) % "/" % txn,
+  auto reply = session_.put(QString{"client/r0/rooms/" % QUrl::toPercentEncoding(id_.value())
+        % "/redact/" % QUrl::toPercentEncoding(event.value()) % "/" % QUrl::toPercentEncoding(txn.value())},
                             reason.isEmpty() ? QJsonObject() : QJsonObject{{"reason", reason}}
     );
   auto es = new EventSend(reply);
@@ -555,30 +545,34 @@ void Room::redact(const EventID &event, const QString &reason) {
       else es->finished();
     });
   connect(es, &EventSend::error, this, &Room::error);
+  
 }
 
-void Room::send_file(const QString &uri, const QString &name, const QString &media_type, size_t size) {
-  send("m.room.message",
-       {{"msgtype", "m.file"},
-         {"url", uri},
-         {"filename", name},
-         {"body", name},
-         {"info", QJsonObject{
-             {"mimetype", media_type},
-             {"size", static_cast<qint64>(size)}}}
-           });
+TransactionID Room::send_file(const QString &uri, const QString &name, const QString &media_type, size_t size) {
+  return send(event::room::Message::tag(),
+              event::Content{{
+                    {"msgtype", "m.file"},
+                    {"url", uri},
+                    {"filename", name},
+                    {"body", name},
+                    {"info", QJsonObject{
+                        {"mimetype", media_type},
+                        {"size", static_cast<qint64>(size)}}}
+                }});
 }
 
-void Room::send_message(const QString &body) {
-  send("m.room.message",
-       {{"msgtype", "m.text"},
-         {"body", body}});
+TransactionID Room::send_message(const QString &body) {
+  return send(event::room::Message::tag(),
+              event::Content{{
+                  {"msgtype", "m.text"},
+                  {"body", body}}});
 }
 
-void Room::send_emote(const QString &body) {
-  send("m.room.message",
-       {{"msgtype", "m.emote"},
-         {"body", body}});
+TransactionID Room::send_emote(const QString &body) {
+  return send(event::room::Message::tag(),
+              event::Content{{
+                  {{"msgtype", "m.emote"},
+                    {"body", body}}}});
 }
 
 void Room::send_read_receipt(const EventID &event) {
@@ -626,10 +620,9 @@ void Room::transmit_event() {
   if(transmitting_) return;     // We'll be re-invoked when necessary by transmit_finished
 
   const auto &event = pending_events_.front();
-  if(last_transmit_transaction_.isEmpty()) last_transmit_transaction_ = session_.get_transaction_id();
-  transmitting_ = session_.put(
-    "client/r0/rooms/" % QUrl::toPercentEncoding(id_.value()) % "/send/" % QUrl::toPercentEncoding(event.type) % "/" % last_transmit_transaction_,
-    event.content);
+  transmitting_ = session_.put(QString{"client/r0/rooms/" % QUrl::toPercentEncoding(id_.value())
+        % "/send/" % QUrl::toPercentEncoding(event.type.value()) % "/" % QUrl::toPercentEncoding(event.transaction_id.value())},
+    event.content.json());
   connect(transmitting_, &QNetworkReply::finished, this, &Room::transmit_finished);
 }
 
@@ -651,7 +644,6 @@ void Room::transmit_finished() {
     qDebug() << "retrying send in" << duration_cast<duration<float>>(retry_backoff_).count() << "seconds due to error:" << *r.error;
   }
   if(!retrying) {
-    last_transmit_transaction_ = "";
     retry_backoff_ = MINIMUM_BACKOFF;
   }
   if(!pending_events_.empty()) {

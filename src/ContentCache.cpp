@@ -27,5 +27,9 @@ const std::experimental::optional<QPixmap> &ThumbnailCache::get(const Thumbnail 
 }
 
 void ThumbnailCache::set(const Thumbnail &x, QPixmap p) {
-  items_.at(x).pixmap = p;
+  auto it = items_.find(x);
+  if(it != items_.end()) {
+    it->second.pixmap = p;
+    updated();
+  }
 }

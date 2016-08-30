@@ -21,23 +21,28 @@ MemberList::MemberList(const matrix::RoomState &s, QWidget *parent) : QListWidge
   update_members();
 }
 
-void MemberList::member_display_changed(const matrix::RoomState &s, const matrix::UserID &id, const QString &old) {
-  auto erased = members_.erase(old);
-  if(!erased) {
-    QString msg = "member name changed from unknown name " + old + " to " + s.member_name(id);
-    throw std::logic_error(msg.toStdString().c_str());
+void MemberList::member_changed(const matrix::RoomState &state, const matrix::UserID &id,
+                                const matrix::event::room::MemberContent &old, const matrix::event::room::MemberContent &current) {
+  if(membership_displayable(old.membership()) && old.displayname() != current.displayname()) {
+    members_.erase(state.member_name(id));
   }
-  members_.emplace(s.member_name(id), id);
+  if(membership_displayable(current.membership())) {
+    if(current.displayname()) {
+      auto dis = state.nonmember_disambiguation(id, *current.displayname());
+      members_.emplace(*current.displayname() + (dis ? " (" + *dis + ")" : ""), id);
+    } else {
+      members_.emplace(id.value(), id);
+    }
+  }
   update_members();
 }
 
-void MemberList::membership_changed(const matrix::RoomState &s, const matrix::UserID &id, matrix::Membership old, matrix::Membership current) {
+void MemberList::member_disambiguation_changed(const matrix::RoomState &state, const matrix::UserID &id,
+                                               const std::experimental::optional<QString> &old, const std::experimental::optional<QString> &current) {
   (void)old;
-  if(membership_displayable(current)) {
-    members_.emplace(s.member_name(id), id);
-  } else {
-    members_.erase(s.member_name(id));
-  }
+  const auto &dn = *state.member_from_id(id)->displayname();
+  members_.erase(state.member_name(id));
+  members_.emplace(dn + (current ? " (" + *current + ")" : ""), id);
   update_members();
 }
 
