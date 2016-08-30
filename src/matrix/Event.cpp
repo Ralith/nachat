@@ -231,12 +231,12 @@ MemberContent::MemberContent(Content c) : Content(std::move(c)) {
   membership_ = parse_membership(json()["membership"].toString());
   {
     auto it = json().find("avatar_url");
-    if(it != json().end() && !it->isNull())
+    if(it != json().end() && !it->isNull() && it->toString() != "")
       avatar_url_ = json()["avatar_url"].toString();
   }
   {
     auto it = json().find("displayname");
-    if(it != json().end() && !it->isNull())
+    if(it != json().end() && !it->isNull() && it->toString() != "")
       displayname_ = json()["displayname"].toString();
   }
 }
@@ -248,7 +248,8 @@ MemberContent::MemberContent(Membership membership,
       {"membership", to_qstring(membership)},
       {"displayname", displayname ? QJsonValue(*displayname) : QJsonValue()},
       {"avatar_url", avatar_url ? QJsonValue(*avatar_url) : QJsonValue()}
-    }) {}
+    }),
+    membership_{membership}, avatar_url_{avatar_url}, displayname_{displayname} {}
 
 const MemberContent MemberContent::leave(Content({{"membership", "leave"}}));
 
