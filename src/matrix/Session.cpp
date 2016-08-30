@@ -226,6 +226,9 @@ void Session::dispatch(const proto::Sync &sync) {
       connect(&room, &Room::member_changed, [&changed_members](const UserID &id, const event::room::MemberContent &state) {
           changed_members.emplace_back(id, state);
         });
+      for(const auto m : room.state().members()) {
+        changed_members.emplace_back(m->first, m->second);
+      }
 
       joined(room);
     } else {
