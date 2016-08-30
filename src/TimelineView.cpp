@@ -323,16 +323,7 @@ void EventBlock::update_layout(qreal width) {
 
 QRectF EventBlock::bounds() const {
   // We assume that name_ overlaps timestamp_ and that all paragraphs have equal width.
-  //return QRectF(0, 0, avatar_extent(), avatar_extent()) | name_.boundingRect() | events_.back().paragraphs.back().boundingRect();
-  size_t lines = name_.lineCount();
-  for(const auto &event : events_) {
-    for(const auto &paragraph : event.paragraphs) {
-      lines += paragraph.lineCount();
-    }
-  }
-  return QRectF(0, 0,
-                avatar_extent() + horizontal_padding() + name_.boundingRect().width(),
-                std::max<qreal>(avatar_extent(), (std::max<size_t>(2, lines) - 1) * parent_.fontMetrics().lineSpacing() + parent_.fontMetrics().ascent()));
+  return QRectF(0, 0, avatar_extent(), avatar_extent()) | name_.boundingRect() | events_.back().paragraphs.back().boundingRect();
 }
 
 struct TextRange {
