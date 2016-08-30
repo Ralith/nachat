@@ -45,6 +45,7 @@ RoomView::RoomView(ThumbnailCache &cache, matrix::Room &room, QWidget *parent)
   connect(timeline_view_, &TimelineView::need_forwards, [this]() { timeline_manager_->grow(matrix::Direction::FORWARD); });
 
   timeline_manager_->replay();
+  timeline_view_->set_at_bottom(timeline_manager_->window().at_end());
 
   auto menu = new RoomMenu(room, this);
   connect(ui->menu_button, &QAbstractButton::clicked, [this, menu](bool) {
