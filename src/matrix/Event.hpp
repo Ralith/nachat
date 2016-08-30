@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <experimental/optional>
 #include <vector>
+#include <memory>
 
 #include <QString>
 #include <QJsonObject>
