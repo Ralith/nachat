@@ -385,11 +385,14 @@ static optional<SelectionResult> selection_for(TimelineEventID id, Cursor::Type 
 
   if(result) {
     switch(selection.mode) {
-    case Selection::Mode::CHARACTER: break;
-    case Selection::Mode::WORD:
-      result->affected.length = layout.nextCursorPosition(result->affected.start + result->affected.length, QTextLayout::SkipWords);
-      result->affected.start = layout.previousCursorPosition(result->affected.start, QTextLayout::SkipWords);
+    case Selection::Mode::CHARACTER:
       break;
+    case Selection::Mode::WORD: {
+      const auto end = layout.nextCursorPosition(result->affected.start + result->affected.length, QTextLayout::SkipWords);
+      result->affected.start = layout.previousCursorPosition(result->affected.start, QTextLayout::SkipWords);
+      result->affected.length = end - result->affected.start;
+      break;
+    }
     case Selection::Mode::PARAGRAPH:
       result->affected.start = 0;
       result->affected.length = layout.text().size();
@@ -1076,7 +1079,7 @@ void TimelineView::mousePressEvent(QMouseEvent *event) {
     selection_.begin = *get_cursor(event->localPos(), false);
     selection_.end = selection_.begin;
 
-    if(had_selection)
+    if(had_selection || click_count_ > 0)
       viewport()->update();
 
     QGuiApplication::setOverrideCursor(Qt::IBeamCursor);
