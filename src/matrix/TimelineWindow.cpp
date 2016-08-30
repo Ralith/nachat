@@ -184,6 +184,10 @@ void TimelineManager::replay() {
       if(auto s = evt.to_state()) replay.apply(*s);
     }
   }
+  for(const auto &evt : window().latest_batch().events) {
+    grew(Direction::FORWARD, window().latest_batch().begin, replay, evt);
+    if(auto s = evt.to_state()) replay.apply(*s);
+  }
 }
 
 void TimelineManager::retry() {

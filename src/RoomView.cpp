@@ -34,8 +34,8 @@ RoomView::RoomView(ThumbnailCache &cache, matrix::Room &room, QWidget *parent)
               timeline_view_->prepend(begin, state, evt);
             } else {
               timeline_view_->append(begin, state, evt);
+              timeline_view_->set_at_bottom(timeline_manager_->window().at_end());
             }
-            timeline_view_->set_at_bottom(timeline_manager_->window().at_end());
           });
   connect(timeline_manager_, &matrix::TimelineManager::discontinuity, [this]() {
       timeline_view_->set_at_bottom(false);

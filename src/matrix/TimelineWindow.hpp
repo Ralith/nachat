@@ -58,6 +58,7 @@ public:
 
   const RoomState &initial_state() { return initial_state_; }
   const std::deque<Batch> &batches() const { return batches_; }
+  const Batch &latest_batch() const { return latest_batch_; }
   const RoomState &final_state() { return final_state_; }
 
 private:
