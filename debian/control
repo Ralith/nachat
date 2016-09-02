@@ -1,0 +1,14 @@
+Source: nachat
+Section: net
+Priority: optional
+Maintainer: Hubert Chathi <hubert@uhoreg.ca>
+Build-Depends:  debhelper (>= 9), cmake (>= 3.1), liblmdb-dev, qtbase5-dev (>= 5.6), libqt5svg5-dev (>= 5.6)
+Standards-Version: 3.9.8
+Homepage: https://github.com/Ralith/nachat
+
+Package: nachat
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: chat client for Matrix
+ Nachat is a Qt-based chat client for the Matrix protocol.  Matrix is an
+ open, federated communications protocol.

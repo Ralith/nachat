@@ -1,0 +1,6 @@
+nachat (0.0+git20160822.c45c505-1) unstable; urgency=medium
+
+  * Initial debianization
+
+ -- Hubert Chathi <hubert@uhoreg.ca>  Thu, 01 Sep 2016 11:33:53 -0400
+
