@@ -1234,6 +1234,7 @@ void TimelineView::rebuild_blocks() {
     new_blocks.emplace_back(*this, thumbnail_cache_, block_events);
     block_events.clear();
   }
+  visible_blocks_.clear();
   std::swap(blocks_, new_blocks);
   update_layout();
 }
