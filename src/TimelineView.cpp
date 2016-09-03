@@ -656,7 +656,12 @@ EventBlock::SelectionTextResult EventBlock::selection_text(bool bottom_selected,
     for(auto paragraph = event->paragraphs.rbegin(); paragraph != event->paragraphs.rend(); ++paragraph) {
       index -= 1;
       if(auto s = selection_for(event->id, Cursor::Type::BODY, *paragraph, bottom_selected, selection, index)) {
-        result = " " % paragraph->text().mid(s->affected.start, s->affected.length) % "\n" % result;
+        QString line = ((s->continues || bottom_selected) ? " " : "") + paragraph->text().mid(s->affected.start, s->affected.length);
+        if(result.isEmpty()) {
+          result = std::move(line);
+        } else {
+          result = std::move(line) % "\n" % std::move(result);
+        }
         bottom_selected = s->continues;
       }
     }
