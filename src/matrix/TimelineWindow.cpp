@@ -67,9 +67,10 @@ bool TimelineWindow::at_end() const {
 void TimelineWindow::append_batch(const TimelineCursor &batch_start, const TimelineCursor &batch_end, gsl::span<const event::Room> events,
                                   TimelineManager *mgr) {
   if(!end() || batch_start != *this->end()) {
-    mgr->grow(Direction::FORWARD);
+    if(end()) mgr->grow(Direction::FORWARD);
     return;
   }
+
   batches_.emplace_back(batch_start, std::vector<event::Room>(events.begin(), events.end()));
   batches_end_ = batch_end;
 
