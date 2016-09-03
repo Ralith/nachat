@@ -99,8 +99,6 @@ struct Selection {
   Cursor end;
 
   Selection() : mode{Mode::CHARACTER}, begin{TimelineEventID{0}, 0, 0}, end{begin} {}
-
-  explicit operator bool() const { return begin != end; }
 };
 
 class TimelineView;

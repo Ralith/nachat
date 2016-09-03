@@ -1067,7 +1067,6 @@ void TimelineView::mousePressEvent(QMouseEvent *event) {
   if(event->isAccepted()) return;
 
   if(event->button() == Qt::LeftButton) {
-    const bool had_selection = static_cast<bool>(selection_);
     auto now = std::chrono::steady_clock::now();
     if(now - last_click_ <= std::chrono::milliseconds(QGuiApplication::styleHints()->mouseDoubleClickInterval())) {
       click_count_ += 1;
@@ -1079,8 +1078,7 @@ void TimelineView::mousePressEvent(QMouseEvent *event) {
     selection_.begin = *get_cursor(event->localPos(), false);
     selection_.end = selection_.begin;
 
-    if(had_selection || click_count_ > 0)
-      viewport()->update();
+    viewport()->update();
 
     QGuiApplication::setOverrideCursor(Qt::IBeamCursor);
     last_click_ = now;
