@@ -127,6 +127,8 @@ public:
 
   SelectionTextResult selection_text(bool bottom_selected, const Selection &selection) const;
 
+  bool has(TimelineEventID event) const;
+
 private:
   struct Event {
     TimelineEventID id;

@@ -685,6 +685,14 @@ EventBlock::SelectionTextResult EventBlock::selection_text(bool bottom_selected,
   return SelectionTextResult{std::move(result), bottom_selected};
 }
 
+bool EventBlock::has(TimelineEventID event) const {
+  for(const auto &e : events_) {
+    if(e.id == event) return true;
+  }
+
+  return false;
+}
+
 EventBlock::Event::Event(const TimelineView &view, const EventBlock &block, const EventLike &e)
   : id{e.id}, type{e.type}, time{e.time}, source{e.event} {
 
@@ -1021,8 +1029,13 @@ void TimelineView::paintEvent(QPaintEvent *) {
   for(auto block = blocks_.rbegin(); block != blocks_.rend(); ++block) {
     const auto &bounds = block->bounds();
     painter.translate(QPointF(0, -std::round(spacing + bounds.height())));
+
     const auto block_top = painter.worldTransform().dy() + view.top();
-    if(block_top > view.bottom()) continue;
+
+    if(block_top > view.bottom()) {
+      selecting ^= block->has(selection_.begin.event()) ^ block->has(selection_.end.event());
+      continue;
+    }
 
     {
       const QRectF outline(0, 0, view.width(), bounds.height() + spacing);
