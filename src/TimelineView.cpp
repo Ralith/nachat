@@ -1079,6 +1079,10 @@ void TimelineView::mousePressEvent(QMouseEvent *event) {
     selection_.begin = *get_cursor(world, false);
     selection_.end = selection_.begin;
 
+    QString t = selection_text();
+    if(!t.isEmpty())
+      QGuiApplication::clipboard()->setText(selection_text(), QClipboard::Selection);
+
     viewport()->update();
 
     QGuiApplication::setOverrideCursor(Qt::IBeamCursor);
