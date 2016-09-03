@@ -82,7 +82,7 @@ struct hash<matrix::Thumbnail> {
             hash<matrix::Content>()(t.content()),
             hash<int>()(t.size().width())),
           hash<int>()(t.size().height())),
-        hash<matrix::ThumbnailMethod>()(t.method()));
+        hash<int>()(static_cast<int>(t.method()))); // Cast to int is unnecessary in C++14, but gcc 5 is missing support
   }
 };
 
