@@ -904,6 +904,7 @@ TimelineView::TimelineView(const QUrl &homeserver, ThumbnailCache &cache, QWidge
   setSizePolicy(policy);
 
   connect(verticalScrollBar(), &QAbstractSlider::valueChanged, [this]() {
+      compute_visible_blocks();
       maybe_need_forwards();
       maybe_need_backwards();
     });
@@ -1004,8 +1005,6 @@ void TimelineView::resizeEvent(QResizeEvent *) {
 }
 
 void TimelineView::paintEvent(QPaintEvent *) {
-  // TODO: Move message fetches here
-  // TODO: Force lazy block rebuild here
   // TODO: Draw purpose-built pending message block below bottom spinner
 
   const qreal spacing = block_spacing(*this);
@@ -1016,7 +1015,7 @@ void TimelineView::paintEvent(QPaintEvent *) {
   QPainter painter(viewport());
   painter.fillRect(viewport()->contentsRect(), palette().color(QPalette::Dark));
   painter.setPen(palette().color(QPalette::Text));
-  painter.translate(QPointF(0, -view.top()));
+  painter.translate(QPointF(0, -view.top())); // Translate into space where y origin is bottom of first block
 
   bool spinner_present = false;
   if(view.bottom() > 0 && !at_bottom_) {
@@ -1024,21 +1023,14 @@ void TimelineView::paintEvent(QPaintEvent *) {
     spinner_present = true;
   }
 
-  visible_blocks_.clear();
-  bool selecting = false;
-  for(auto block = blocks_.rbegin(); block != blocks_.rend(); ++block) {
-    const auto &bounds = block->bounds();
-    painter.translate(QPointF(0, -std::round(spacing + bounds.height())));
-
-    const auto block_top = painter.worldTransform().dy() + view.top();
-
-    if(block_top > view.bottom()) {
-      selecting ^= block->has(selection_.begin.event()) ^ block->has(selection_.end.event());
-      continue;
-    }
+  bool selecting = selection_starts_below_view_;
+  for(const auto &block : visible_blocks_) {
+    painter.save();
+    const auto &bounds = block.bounds();
+    painter.translate(bounds.topLeft());
 
     {
-      const QRectF outline(0, 0, view.width(), bounds.height() + spacing);
+      const QRectF outline(-padding, -half_spacing, view.width(), bounds.height() + spacing);
       painter.save();
       painter.setRenderHint(QPainter::Antialiasing);
       QPainterPath path;
@@ -1047,21 +1039,16 @@ void TimelineView::paintEvent(QPaintEvent *) {
       painter.restore();
     }
 
-    {
-      painter.save();
-      painter.translate(QPointF(padding, half_spacing));
-      visible_blocks_.emplace_back(*block, QPointF(painter.worldTransform().dx(), painter.worldTransform().dy()));
-      selecting = block->draw(painter, selecting, selection_);
-      painter.restore();
-    }
-
-    if(block_top < view.top()) break;
+    selecting = block.block().draw(painter, selecting, selection_);
+    painter.restore();
   }
 
-  const auto top = painter.worldTransform().m32() + view.top();
-  if(view.top() < top && !at_top() && !(blocks_.empty() && spinner_present)) {
-    draw_spinner(painter, -spinner_space());
-    spinner_present = true;
+  if(!at_top()) {
+    const qreal top = visible_blocks_.empty() ? 0 : visible_blocks_.back().bounds().top() - half_spacing;
+    if(view.top() < top) {
+      draw_spinner(painter, top - spinner_space());
+      spinner_present = true;
+    }
   }
 
   if(spinner_present) {
@@ -1076,7 +1063,8 @@ void TimelineView::changeEvent(QEvent *) {
 }
 
 void TimelineView::mousePressEvent(QMouseEvent *event) {
-  dispatch_input(event->localPos(), event);
+  const auto &world = view_rect().topLeft() + event->localPos();
+  dispatch_input(world, event);
   if(event->isAccepted()) return;
 
   if(event->button() == Qt::LeftButton) {
@@ -1088,7 +1076,7 @@ void TimelineView::mousePressEvent(QMouseEvent *event) {
     }
     constexpr Selection::Mode selection_modes[] = {Selection::Mode::CHARACTER, Selection::Mode::WORD, Selection::Mode::PARAGRAPH};
     selection_.mode = selection_modes[std::min<size_t>(2, click_count_)];
-    selection_.begin = *get_cursor(event->localPos(), false);
+    selection_.begin = *get_cursor(world, false);
     selection_.end = selection_.begin;
 
     viewport()->update();
@@ -1104,7 +1092,8 @@ void TimelineView::mouseDoubleClickEvent(QMouseEvent *event) {
 }
 
 void TimelineView::mouseMoveEvent(QMouseEvent *event) {
-  dispatch_input(event->localPos(), event);
+  const auto &world = view_rect().topLeft() + event->localPos();
+  dispatch_input(world, event);
 
   if(!event->isAccepted()) {
     setCursor(Qt::ArrowCursor);
@@ -1112,7 +1101,7 @@ void TimelineView::mouseMoveEvent(QMouseEvent *event) {
   }
 
   if(selection_updating_ && event->buttons() & Qt::LeftButton) {
-    auto new_end = *get_cursor(event->localPos(), false);
+    auto new_end = *get_cursor(world, false);
     if(selection_.end != new_end) {
       selection_.end = new_end;
       viewport()->update();
@@ -1125,7 +1114,8 @@ void TimelineView::mouseMoveEvent(QMouseEvent *event) {
 }
 
 void TimelineView::mouseReleaseEvent(QMouseEvent *event) {
-  dispatch_input(event->localPos(), event);
+  const auto &world = view_rect().topLeft() + event->localPos();
+  dispatch_input(world, event);
 
   if(event->button() == Qt::LeftButton) {
     QGuiApplication::restoreOverrideCursor();
@@ -1143,13 +1133,15 @@ void TimelineView::focusOutEvent(QFocusEvent *e) {
 }
 
 void TimelineView::contextMenuEvent(QContextMenuEvent *event) {
-  dispatch_input(QPointF(event->pos()), event);
+  const auto &world = view_rect().topLeft() + event->pos();
+  dispatch_input(QPointF(world), event);
 }
 
 bool TimelineView::viewportEvent(QEvent *e) {
   if(e->type() == QEvent::ToolTip) {
     auto help = static_cast<QHelpEvent*>(e);
-    dispatch_input(QPointF(help->pos()), help);
+    const auto &world = view_rect().topLeft() + help->pos();
+    dispatch_input(QPointF(world), help);
     if(!help->isAccepted()) {
       QToolTip::hideText();
     }
@@ -1251,7 +1243,7 @@ void TimelineView::update_layout() {
   }
 
   update_scrollbar(content_height);
-
+  compute_visible_blocks();
   viewport()->update();
 }
 
@@ -1297,11 +1289,11 @@ void TimelineView::draw_spinner(QPainter &painter, qreal top) const {
   painter.restore();
 }
 
-void TimelineView::dispatch_input(const QPointF &point, QEvent *input) {
+void TimelineView::dispatch_input(const QPointF &world, QEvent *input) {
   for(auto &vb : visible_blocks_) {
     const auto rect = vb.bounds();
-    if(rect.contains(point)) {
-      vb.block().handle_input(point - rect.topLeft(), input);
+    if(rect.contains(world)) {
+      vb.block().handle_input(world - rect.topLeft(), input);
       return;
     }
   }
@@ -1327,4 +1319,31 @@ optional<Cursor> TimelineView::get_cursor(const QPointF &point, bool exact) cons
   auto x = visible_blocks_.front().block().get_cursor(point - visible_blocks_.front().bounds().topLeft());
   if(x) return x->cursor;
   return {};
+}
+
+void TimelineView::compute_visible_blocks() {
+  // TODO: Force lazy block rebuild here
+  // TODO: Move message fetches here
+
+  const qreal spacing = block_spacing(*this);
+  const qreal half_spacing = std::round(spacing * 0.5);
+  const qreal padding = block_padding(*this);
+  const auto view = view_rect();
+
+  visible_blocks_.clear();
+  selection_starts_below_view_ = false;
+  qreal offset = 0;
+  for(auto block = blocks_.rbegin(); block != blocks_.rend(); ++block) {
+    const auto &bounds = block->bounds();
+    offset -= std::round(spacing + bounds.height());
+
+    if(offset > view.bottom()) {
+      selection_starts_below_view_ ^= block->has(selection_.begin.event()) ^ block->has(selection_.end.event());
+      continue;
+    }
+
+    visible_blocks_.emplace_back(*block, QPointF(padding, offset + half_spacing));
+
+    if(offset < view.top()) break;
+  }
 }

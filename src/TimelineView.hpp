@@ -235,6 +235,7 @@ private:
   std::deque<Batch> batches_;
   std::deque<EventBlock> blocks_;
   std::vector<VisibleBlock> visible_blocks_;
+  bool selection_starts_below_view_;
   Selection selection_;
   bool selection_updating_;
   std::chrono::steady_clock::time_point last_click_;
@@ -259,6 +260,7 @@ private:
   void dispatch_input(const QPointF &point, QEvent *input);
   TimelineEventID get_id();
   std::experimental::optional<Cursor> get_cursor(const QPointF &point, bool exact) const;
+  void compute_visible_blocks();
 };
 
 #endif
