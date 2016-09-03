@@ -111,7 +111,7 @@ void TimelineWindow::prepend_batch(const TimelineCursor &batch_start, const Time
 void TimelineWindow::append_sync(const proto::Timeline &t, TimelineManager *mgr) {
   if(t.events.empty()) return;
 
-  if(at_end()) {
+  if(at_end() && !t.limited) {  // FIXME: Don't discard previous batch in the event of a limited sync
     batches_.emplace_back(std::move(latest_batch_));
     batches_end_ = t.prev_batch;
   }
