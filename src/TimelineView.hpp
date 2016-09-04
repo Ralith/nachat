@@ -250,13 +250,14 @@ private:
   bool at_bottom_;
   uint64_t id_counter_;
 
+  bool blocks_dirty_;
+
   QString selection_text() const;
   void copy() const;
   QRectF view_rect() const;     // in coordinate space such that (0,0) = bottom-left of latest message
   void update_scrollbar(int content_height);
   void rebuild_blocks();
   void update_layout();
-  void maybe_need_backwards();
   void maybe_need_forwards();
   bool at_top() const;
   qreal spinner_space() const;

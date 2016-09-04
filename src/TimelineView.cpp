@@ -901,7 +901,7 @@ QRectF EventBlock::Event::bounds() const {
 
 TimelineView::TimelineView(const QUrl &homeserver, ThumbnailCache &cache, QWidget *parent)
   : QAbstractScrollArea{parent}, homeserver_{homeserver}, thumbnail_cache_{cache}, selection_updating_{false}, click_count_{0},
-    copy_{new QShortcut(QKeySequence::Copy, this)}, at_bottom_{false}, id_counter_{0} {
+    copy_{new QShortcut(QKeySequence::Copy, this)}, at_bottom_{false}, id_counter_{0}, blocks_dirty_{false} {
   setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
   verticalScrollBar()->setSingleStep(20);  // Taken from QScrollArea
@@ -914,8 +914,6 @@ TimelineView::TimelineView(const QUrl &homeserver, ThumbnailCache &cache, QWidge
 
   connect(verticalScrollBar(), &QAbstractSlider::valueChanged, [this]() {
       compute_visible_blocks();
-      maybe_need_forwards();
-      maybe_need_backwards();
     });
   connect(copy_, &QShortcut::activated, this, &TimelineView::copy);
 
@@ -947,8 +945,7 @@ void TimelineView::prepend(const matrix::TimelineCursor &begin, const matrix::Ro
     }
   }
 
-  rebuild_blocks();
-  maybe_need_backwards();
+  blocks_dirty_ = true;
 }
 
 void TimelineView::append(const matrix::TimelineCursor &begin, const matrix::RoomState &state, const matrix::event::Room &evt) {
@@ -975,8 +972,7 @@ void TimelineView::append(const matrix::TimelineCursor &begin, const matrix::Roo
     batches_.emplace_back(begin, std::deque<EventLike>{EventLike{id, state, evt}});
   }
 
-  rebuild_blocks();
-  maybe_need_forwards();
+  blocks_dirty_ = true;
 }
 
 void TimelineView::redact(const matrix::event::room::Redaction &redaction) {
@@ -992,20 +988,19 @@ void TimelineView::redact(const matrix::event::room::Redaction &redaction) {
     if(done) break;
   }
 
-  rebuild_blocks();
-  maybe_need_forwards();
-  maybe_need_backwards();
+  blocks_dirty_ = true;
 }
 
 void TimelineView::add_pending(const matrix::TransactionID &transaction, const matrix::RoomState &state, const matrix::UserID &self, Time time,
                                matrix::EventType type, matrix::event::Content content, std::experimental::optional<matrix::UserID> affected_user) {
   pending_.emplace_back(transaction,
                         EventLike{get_id(), state, self, time, type, content, affected_user});
-  rebuild_blocks();
+  blocks_dirty_ = true;
 }
 
 void TimelineView::set_at_bottom(bool value) {
   at_bottom_ = value;
+  viewport()->update();
   maybe_need_forwards();
 }
 
@@ -1014,6 +1009,10 @@ void TimelineView::resizeEvent(QResizeEvent *) {
 }
 
 void TimelineView::paintEvent(QPaintEvent *) {
+  if(blocks_dirty_) {
+    rebuild_blocks();
+    blocks_dirty_ = false;
+  }
   // TODO: Draw purpose-built pending message block below bottom spinner
 
   const qreal spacing = block_spacing(*this);
@@ -1068,7 +1067,7 @@ void TimelineView::paintEvent(QPaintEvent *) {
 
 void TimelineView::changeEvent(QEvent *) {
   // Optimization: Block lifecycle could be refactored to construct/polish/flow instead of construct/flow to reduce CPU use
-  rebuild_blocks();
+  blocks_dirty_ = true;
 }
 
 void TimelineView::mousePressEvent(QMouseEvent *event) {
@@ -1276,23 +1275,11 @@ void TimelineView::update_layout() {
   viewport()->update();
 }
 
-void TimelineView::maybe_need_backwards() {
-  if(at_top()) return;
-
-  // TODO: Don't perform these checks when a fetch is already underway. Track whether that's the case and implement cancellation via discard.
-  qreal top = 0;
-  for(const auto &block : blocks_) {
-    top -= block.bounds().height() + block_spacing(*this);
-  }
-  const auto view = view_rect();
-  if(view.top() - top > view.height()) return;
-
-  need_backwards();
-}
-
 void TimelineView::maybe_need_forwards() {
-  if(at_bottom_) return;
-  need_forwards();
+  const auto view = view_rect();
+  if(!at_bottom_ && -view.bottom() < view.height()) {
+    need_forwards();
+  }
 }
 
 bool TimelineView::at_top() const {
@@ -1351,9 +1338,6 @@ optional<Cursor> TimelineView::get_cursor(const QPointF &point, bool exact) cons
 }
 
 void TimelineView::compute_visible_blocks() {
-  // TODO: Force lazy block rebuild here
-  // TODO: Move message fetches here
-
   const qreal spacing = block_spacing(*this);
   const qreal half_spacing = std::round(spacing * 0.5);
   const qreal padding = block_padding(*this);
@@ -1362,7 +1346,8 @@ void TimelineView::compute_visible_blocks() {
   visible_blocks_.clear();
   selection_starts_below_view_ = false;
   qreal offset = 0;
-  for(auto block = blocks_.rbegin(); block != blocks_.rend(); ++block) {
+  std::deque<EventBlock>::reverse_iterator block;
+  for(block = blocks_.rbegin(); block != blocks_.rend(); ++block) {
     const auto &bounds = block->bounds();
     const auto total_height = std::round(spacing + bounds.height());
     offset -= total_height;
@@ -1378,5 +1363,14 @@ void TimelineView::compute_visible_blocks() {
     visible_blocks_.emplace_back(*block, QPointF(padding, offset + half_spacing));
 
     if(offset < view.top()) break;
+  }
+
+  for(; block != blocks_.rend(); ++block) {
+    offset -= std::round(spacing + block->bounds().height());
+  }
+
+  maybe_need_forwards();
+  if(view.top() - offset < view.height()) {
+    need_backwards();
   }
 }
