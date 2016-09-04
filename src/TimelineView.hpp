@@ -129,6 +129,8 @@ public:
 
   bool has(TimelineEventID event) const;
 
+  TimelineEventID first_event() const { return events_.front().id; }
+
 private:
   struct Event {
     TimelineEventID id;
@@ -138,6 +140,8 @@ private:
     FixedVector<QTextLayout> paragraphs;
 
     Event(const TimelineView &, const EventBlock &, const EventLike &);
+
+    QRectF bounds() const;
   };
 
   struct TimeInfo {
@@ -211,11 +215,6 @@ private:
     Pending(const matrix::TransactionID &tx, EventLike e) : transaction{tx}, event{std::move(e)} {}
   };
 
-  struct Position {
-    TimelineEventID event;
-    qreal from_bottom;
-  };
-
   class VisibleBlock {
   public:
     VisibleBlock(EventBlock &block, const QPointF &origin) : block_{block}, origin_{origin} {}
@@ -229,6 +228,11 @@ private:
     QPointF origin_;
   };
 
+  struct ScrollPosition {
+    TimelineEventID block;
+    qreal from_bottom;
+  };
+
   QUrl homeserver_;
   ThumbnailCache &thumbnail_cache_;
   std::deque<Pending> pending_;
@@ -236,6 +240,7 @@ private:
   std::deque<EventBlock> blocks_;
   std::vector<VisibleBlock> visible_blocks_;
   bool selection_starts_below_view_;
+  std::experimental::optional<ScrollPosition> scroll_position_; // relative position of bottom of view
   Selection selection_;
   bool selection_updating_;
   std::chrono::steady_clock::time_point last_click_;
@@ -244,7 +249,6 @@ private:
   QPixmap spinner_;
   bool at_bottom_;
   uint64_t id_counter_;
-  std::experimental::optional<Position> scroll_position_;
 
   QString selection_text() const;
   void copy() const;

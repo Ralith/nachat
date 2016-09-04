@@ -574,11 +574,7 @@ qreal EventBlock::horizontal_padding() const {
 
 const EventBlock::Event *EventBlock::event_at(const QPointF &point) const {
   for(const auto &event : events_) {
-    QRectF bounds;
-    for(const auto &paragraph : event.paragraphs) {
-      bounds |= paragraph.boundingRect();
-    }
-    if(bounds.contains(point)) return &event;
+    if(event.bounds().contains(point)) return &event;
   }
   return nullptr;
 }
@@ -895,6 +891,14 @@ EventBlock::Event::Event(const TimelineView &view, const EventBlock &block, cons
   }
 }
 
+QRectF EventBlock::Event::bounds() const {
+  QRectF bounds;
+  for(const auto &paragraph : paragraphs) {
+    bounds |= paragraph.boundingRect();
+  }
+  return bounds;
+}
+
 TimelineView::TimelineView(const QUrl &homeserver, ThumbnailCache &cache, QWidget *parent)
   : QAbstractScrollArea{parent}, homeserver_{homeserver}, thumbnail_cache_{cache}, selection_updating_{false}, click_count_{0},
     copy_{new QShortcut(QKeySequence::Copy, this)}, at_bottom_{false}, id_counter_{0} {
@@ -1197,11 +1201,27 @@ void TimelineView::update_scrollbar(int content_height) {
   const bool was_at_bottom = scroll.value() == scroll.maximum();
   const auto view_height = viewport()->contentsRect().height();
 
-  content_height += (!at_bottom_ + !at_top()) * spinner_space();
+  const qreal below_content = !at_bottom_ * spinner_space();
+  const qreal total_height = below_content + content_height + !at_top() * spinner_space();
 
-  scroll.setMaximum(content_height > view_height ? content_height - view_height : 0);
+  scroll.setMaximum(total_height > view_height ? total_height - view_height : 0);
   scroll.setPageStep(viewport()->contentsRect().height());
-  if(was_at_bottom) scroll.setValue(scroll.maximum());
+  if(was_at_bottom || !scroll_position_) {
+    scroll.setValue(scroll.maximum());
+  } else {
+    // Find the new position of the top of the lowest previously visible block, then scroll such that the bottom of the
+    // view is below it by the same margin
+    qreal block_top = 0;
+    for(auto block = blocks_.crbegin(); block != blocks_.crend(); ++block) {
+      const auto &bounds = block->bounds();
+      const auto block_height = std::round(block_spacing(*this) + bounds.height());
+      block_top -= block_height;
+      if(block->first_event() == scroll_position_->block) {
+        scroll.setValue(scroll.maximum() - below_content + (block_top + block_height + scroll_position_->from_bottom));
+        break;
+      }
+    }
+  }
 }
 
 // Whether two events should be assigned to distinct blocks
@@ -1344,13 +1364,17 @@ void TimelineView::compute_visible_blocks() {
   qreal offset = 0;
   for(auto block = blocks_.rbegin(); block != blocks_.rend(); ++block) {
     const auto &bounds = block->bounds();
-    offset -= std::round(spacing + bounds.height());
+    const auto total_height = std::round(spacing + bounds.height());
+    offset -= total_height;
 
     if(offset > view.bottom()) {
       selection_starts_below_view_ ^= block->has(selection_.begin.event()) ^ block->has(selection_.end.event());
       continue;
     }
 
+    if(visible_blocks_.empty()) {
+      scroll_position_ = ScrollPosition{block->first_event(), view.bottom() - (offset + total_height)};
+    }
     visible_blocks_.emplace_back(*block, QPointF(padding, offset + half_spacing));
 
     if(offset < view.top()) break;
