@@ -955,12 +955,7 @@ void TimelineView::append(const matrix::TimelineCursor &begin, const matrix::Roo
   optional<TimelineEventID> existing_id;
   if(auto u = evt.unsigned_data()) {
     if(auto txid = u->transaction_id()) {
-      std::deque<Pending>::const_iterator it;
-      for(it = pending_.cbegin(); it != pending_.cend(); ++it) {
-        if(it->transaction == *txid) {
-          break;
-        }
-      }
+      auto it = std::find_if(pending_.cbegin(), pending_.cend(), [&](const Pending &x) { return x.transaction == *txid; });
       if(it != pending_.cend()) {
         existing_id = it->event.id;
         pending_.erase(it);
