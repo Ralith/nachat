@@ -1076,6 +1076,8 @@ void TimelineView::mousePressEvent(QMouseEvent *event) {
   if(event->isAccepted()) return;
 
   if(event->button() == Qt::LeftButton) {
+    selection_starts_below_view_ = false;
+
     auto now = std::chrono::steady_clock::now();
     if(now - last_click_ <= std::chrono::milliseconds(QGuiApplication::styleHints()->mouseDoubleClickInterval())) {
       click_count_ += 1;
