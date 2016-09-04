@@ -39,6 +39,7 @@ RoomState::RoomState(const QJsonObject &info, gsl::span<const Member> members) {
                    return v.toString();
                  });
 
+  members_by_id_.reserve(members.size());
   for(const auto &member : members) {
     members_by_id_.insert(member);
     if(member.second.displayname()) {
