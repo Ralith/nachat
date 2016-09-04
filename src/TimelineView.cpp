@@ -948,7 +948,7 @@ void TimelineView::prepend(const matrix::TimelineCursor &begin, const matrix::Ro
     }
   }
 
-  blocks_dirty_ = true;
+  mark_dirty();
 }
 
 void TimelineView::append(const matrix::TimelineCursor &begin, const matrix::RoomState &state, const matrix::event::Room &evt) {
@@ -970,7 +970,7 @@ void TimelineView::append(const matrix::TimelineCursor &begin, const matrix::Roo
     batches_.emplace_back(begin, std::deque<EventLike>{EventLike{id, state, evt}});
   }
 
-  blocks_dirty_ = true;
+  mark_dirty();
 }
 
 void TimelineView::redact(const matrix::event::room::Redaction &redaction) {
@@ -986,14 +986,14 @@ void TimelineView::redact(const matrix::event::room::Redaction &redaction) {
     if(done) break;
   }
 
-  blocks_dirty_ = true;
+  mark_dirty();
 }
 
 void TimelineView::add_pending(const matrix::TransactionID &transaction, const matrix::RoomState &state, const matrix::UserID &self, Time time,
                                matrix::EventType type, matrix::event::Content content, std::experimental::optional<matrix::UserID> affected_user) {
   pending_.emplace_back(transaction,
                         EventLike{get_id(), state, self, time, type, content, affected_user});
-  blocks_dirty_ = true;
+  mark_dirty();
 }
 
 void TimelineView::set_at_bottom(bool value) {
@@ -1065,7 +1065,7 @@ void TimelineView::paintEvent(QPaintEvent *) {
 
 void TimelineView::changeEvent(QEvent *) {
   // Optimization: Block lifecycle could be refactored to construct/polish/flow instead of construct/flow to reduce CPU use
-  blocks_dirty_ = true;
+  mark_dirty();
 }
 
 void TimelineView::mousePressEvent(QMouseEvent *event) {
@@ -1379,4 +1379,9 @@ void TimelineView::selection_dragged(const QPointF &world) {
     QGuiApplication::clipboard()->setText(selection_text(), QClipboard::Selection);
 
   compute_visible_blocks();     // Ensure selection_starts_below_view_ is accurate
+}
+
+void TimelineView::mark_dirty() {
+  blocks_dirty_ = true;
+  viewport()->update();
 }
