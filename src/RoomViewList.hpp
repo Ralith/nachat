@@ -46,7 +46,7 @@ private:
 
   std::unordered_map<matrix::RoomID, RoomInfo> items_;
   QMenu *menu_;
-  std::experimental::optional<matrix::RoomID> context_;
+  QListWidgetItem *context_;
 
   void update_item(const RoomInfo &i);
 };
