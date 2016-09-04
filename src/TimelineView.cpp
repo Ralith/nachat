@@ -913,10 +913,10 @@ TimelineView::TimelineView(const QUrl &homeserver, ThumbnailCache &cache, QWidge
   setSizePolicy(policy);
 
   connect(verticalScrollBar(), &QAbstractSlider::valueChanged, [this]() {
+      compute_visible_blocks();
       if(selection_updating_ && QGuiApplication::mouseButtons() & Qt::LeftButton) {
         selection_dragged(view_rect().topLeft() + QPointF{mapFromGlobal(QCursor::pos())});
       }
-      compute_visible_blocks();
     });
   connect(copy_, &QShortcut::activated, this, &TimelineView::copy);
 
@@ -1377,4 +1377,6 @@ void TimelineView::selection_dragged(const QPointF &world) {
   QString t = selection_text();
   if(!t.isEmpty())
     QGuiApplication::clipboard()->setText(selection_text(), QClipboard::Selection);
+
+  compute_visible_blocks();     // Ensure selection_starts_below_view_ is accurate
 }
