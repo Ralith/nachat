@@ -266,6 +266,7 @@ private:
   TimelineEventID get_id();
   std::experimental::optional<Cursor> get_cursor(const QPointF &point, bool exact) const;
   void compute_visible_blocks();
+  void selection_dragged(const QPointF &);
 };
 
 #endif

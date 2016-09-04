@@ -913,6 +913,9 @@ TimelineView::TimelineView(const QUrl &homeserver, ThumbnailCache &cache, QWidge
   setSizePolicy(policy);
 
   connect(verticalScrollBar(), &QAbstractSlider::valueChanged, [this]() {
+      if(selection_updating_ && QGuiApplication::mouseButtons() & Qt::LeftButton) {
+        selection_dragged(view_rect().topLeft() + QPointF{mapFromGlobal(QCursor::pos())});
+      }
       compute_visible_blocks();
     });
   connect(copy_, &QShortcut::activated, this, &TimelineView::copy);
@@ -1115,15 +1118,7 @@ void TimelineView::mouseMoveEvent(QMouseEvent *event) {
   }
 
   if(selection_updating_ && event->buttons() & Qt::LeftButton) {
-    auto new_end = *get_cursor(world, false);
-    if(selection_.end != new_end) {
-      selection_.end = new_end;
-      viewport()->update();
-    }
-
-    QString t = selection_text();
-    if(!t.isEmpty())
-      QGuiApplication::clipboard()->setText(selection_text(), QClipboard::Selection);
+    selection_dragged(world);
   }
 }
 
@@ -1375,4 +1370,16 @@ void TimelineView::compute_visible_blocks() {
   if(view.top() - offset < view.height()) {
     need_backwards();
   }
+}
+
+void TimelineView::selection_dragged(const QPointF &world) {
+  auto new_end = *get_cursor(world, false);
+  if(selection_.end != new_end) {
+    selection_.end = new_end;
+    viewport()->update();
+  }
+
+  QString t = selection_text();
+  if(!t.isEmpty())
+    QGuiApplication::clipboard()->setText(selection_text(), QClipboard::Selection);
 }
