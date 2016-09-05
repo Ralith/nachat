@@ -212,8 +212,6 @@ void Session::handle_sync_reply() {
 }
 
 void Session::dispatch(const proto::Sync &sync) {
-  // TODO: Exception-safety: update rooms and emit signals, then separately write to db
-  next_batch_ = sync.next_batch;
   for(auto &joined_room : sync.rooms.join) {
     auto it = rooms_.find(joined_room.id);
     auto &changed_members = changed_members_[joined_room.id];
@@ -238,7 +236,7 @@ void Session::dispatch(const proto::Sync &sync) {
     }
   }
 
-  auto current_batch = next_batch_;
+  next_batch_ = sync.next_batch;
 
   update_cache(sync);
 
