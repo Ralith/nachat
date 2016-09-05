@@ -611,6 +611,9 @@ void Room::update_receipt(const UserID &user, const EventID &event, uint64_t ts)
       auto &vec = it->second;
       // Remove from index
       vec.erase(std::remove(vec.begin(), vec.end(), &emplaced.first->second), vec.end());
+      if(vec.empty()) {
+        receipts_by_event_.erase(it);
+      }
     }
     emplaced.first->second = new_value;
   }
