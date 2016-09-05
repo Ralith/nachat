@@ -86,12 +86,12 @@ public:
   Room *room_from_id(const RoomID &r) {
     auto it = rooms_.find(r);
     if(it == rooms_.end()) return nullptr;
-    return &it->second;
+    return &it->second.room;
   }
   const Room *room_from_id(const RoomID &r) const {
     auto it = rooms_.find(r);
     if(it == rooms_.end()) return nullptr;
-    return &it->second;
+    return &it->second.room;
   }
 
   size_t buffer_size() const { return buffer_size_; }
@@ -125,6 +125,16 @@ signals:
   void sync_complete();
 
 private:
+  struct RoomInfo {
+    Room room;
+    std::experimental::optional<lmdb::dbi> members;
+    std::vector<Member> member_changes;
+
+    RoomInfo(Matrix &universe, Session &session, const proto::JoinedRoom &joined_room) : room{universe, session, joined_room} {}
+    RoomInfo(Matrix &universe, Session &session, RoomID id, const QJsonObject &initial,
+             gsl::span<const Member> members) : room{universe, session, id, initial, members} {}
+  };
+
   Matrix &universe_;
   const QUrl homeserver_;
   const UserID user_id_;
@@ -132,13 +142,11 @@ private:
   lmdb::env env_;
   lmdb::dbi state_db_, room_db_;
   size_t buffer_size_;
-  std::unordered_map<RoomID, Room> rooms_;
-  std::unordered_map<RoomID, lmdb::dbi> member_dbs_;
+  std::unordered_map<RoomID, RoomInfo> rooms_;
   bool synced_;
   std::experimental::optional<SyncCursor> next_batch_;
   QNetworkReply *sync_reply_;
   QTimer sync_retry_timer_;
-  std::unordered_map<RoomID, std::vector<Member>> changed_members_;
 
   std::chrono::steady_clock::time_point last_sync_error_;
   // Last time a sync failed. Used to ensure we don't spin if errors happen quickly.

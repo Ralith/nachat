@@ -122,9 +122,7 @@ Session::Session(Matrix& universe, QUrl homeserver, UserID user_id, QString acce
       auto cursor = lmdb::cursor::open(txn, room_db_);
       while(cursor.get(room, state, MDB_NEXT)) {
         auto id = RoomID(QString::fromUtf8(room.data(), room.size()));
-        auto &member_db = member_dbs_.emplace(std::piecewise_construct,
-                                              std::forward_as_tuple(id),
-                                              std::forward_as_tuple(lmdb::dbi::open(txn, room_dbname(id).c_str(), MDB_CREATE))).first->second;
+        auto &&member_db = lmdb::dbi::open(txn, room_dbname(id).c_str(), MDB_CREATE);
         std::vector<Member> members;
         {
           auto member_cursor = lmdb::cursor::open(txn, member_db);
@@ -136,11 +134,12 @@ Session::Session(Matrix& universe, QUrl homeserver, UserID user_id, QString acce
                                      QJsonDocument::fromBinaryData(QByteArray{member_content.data(), static_cast<int>(member_content.size())}).object()}});
           }
         }
-        rooms_.emplace(std::piecewise_construct,
-                       std::forward_as_tuple(id),
-                       std::forward_as_tuple(universe_, *this, id,
-                                             QJsonDocument::fromBinaryData(QByteArray(state.data(), state.size())).object(),
-                                             members));
+        auto &room = rooms_.emplace(std::piecewise_construct,
+                                    std::forward_as_tuple(id),
+                                    std::forward_as_tuple(universe_, *this, id,
+                                                          QJsonDocument::fromBinaryData(QByteArray(state.data(), state.size())).object(),
+                                                          members)).first->second;
+        room.members = std::move(member_db);
       }
     } else {
       qDebug() << "starting from scratch";
@@ -214,25 +213,24 @@ void Session::handle_sync_reply() {
 void Session::dispatch(const proto::Sync &sync) {
   for(auto &joined_room : sync.rooms.join) {
     auto it = rooms_.find(joined_room.id);
-    auto &changed_members = changed_members_[joined_room.id];
-    changed_members.clear();
     if(it == rooms_.end()) {
       auto &room = rooms_.emplace(std::piecewise_construct,
                                   std::forward_as_tuple(joined_room.id),
                                   std::forward_as_tuple(universe_, *this, joined_room)).first->second;
       const auto id = joined_room.id;
-      connect(&room, &Room::member_changed, [&changed_members](const UserID &id, const event::room::MemberContent &state) {
-          changed_members.emplace_back(id, state);
+      connect(&room.room, &Room::member_changed, [&room](const UserID &id, const event::room::MemberContent &state) {
+          room.member_changes.emplace_back(id, state);
         });
-      for(const auto m : room.state().members()) {
-        changed_members.emplace_back(m->first, m->second);
+      for(const auto m : room.room.state().members()) {
+        room.member_changes.emplace_back(m->first, m->second);
       }
 
-      joined(room);
+      joined(room.room);
     } else {
       auto &room = it->second;
-      room.load_state(joined_room.state.events);
-      room.dispatch(joined_room);
+      room.member_changes.clear();
+      room.room.load_state(joined_room.state.events);
+      room.room.dispatch(joined_room);
     }
   }
 
@@ -255,28 +253,26 @@ void Session::update_cache(const proto::Sync &sync) {
     lmdb::dbi_put(txn, state_db_, next_batch_key, lmdb::val(batch_utf8.data(), batch_utf8.size()));
 
     for(auto &joined_room : sync.rooms.join) {
-      const auto &room = rooms_.at(joined_room.id);
+      auto &room = rooms_.at(joined_room.id);
 
       lmdb::dbi *member_db;
       {
-        auto it = member_dbs_.find(joined_room.id);
-        if(it == member_dbs_.end()) {
+        if(!room.members) {
           // We defer adding to member_dbs_ until after commit because the handle will be invalidated if the transaction fails
           new_member_dbs.emplace_back(joined_room.id, lmdb::dbi::open(txn, room_dbname(joined_room.id).c_str(), MDB_CREATE));
           member_db = &new_member_dbs.back().second;
         } else {
-          member_db = &it->second;
+          member_db = &*room.members;
         }
       }
 
       {
-        auto data = QJsonDocument(room.to_json()).toBinaryData();
-        auto utf8 = room.id().value().toUtf8();
+        auto data = QJsonDocument(room.room.to_json()).toBinaryData();
+        auto utf8 = joined_room.id.value().toUtf8();
         lmdb::dbi_put(txn, room_db_, lmdb::val(utf8.data(), utf8.size()), lmdb::val(data.data(), data.size()));
       }
 
-      const auto &changed_members = changed_members_.at(joined_room.id);
-      for(const auto &m : changed_members) {
+      for(const auto &m : room.member_changes) {
         auto id_utf8 = m.first.value().toUtf8();
         switch(m.second.membership()) {
         case Membership::INVITE:
@@ -296,7 +292,7 @@ void Session::update_cache(const proto::Sync &sync) {
     txn.commit();
     
     for(auto &db : new_member_dbs) {
-      member_dbs_.emplace(std::move(db));
+      rooms_.at(db.first).members = std::move(db.second);
     }
   } catch(lmdb::runtime_error &e) {
     // TODO: Handle out of space/databases and retry
@@ -320,7 +316,7 @@ std::vector<Room *> Session::rooms() {
   std::vector<Room *> result;
   result.reserve(rooms_.size());
   std::transform(rooms_.begin(), rooms_.end(), std::back_inserter(result),
-                 [](auto &x) { return &x.second; });
+                 [](auto &x) { return &x.second.room; });
   return result;
 }
 
