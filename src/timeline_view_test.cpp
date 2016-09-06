@@ -88,7 +88,6 @@ int main(int argc, char *argv[]) {
           }}
       })};
 
-  tv.redact(redact_evt);
   tv.append(cursor1, rs, redact_evt);
 
   auto leave_evt = member_evt(QJsonObject{

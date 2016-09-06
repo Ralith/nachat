@@ -203,6 +203,13 @@ void EventLike::redact(const matrix::event::room::Redaction &because) {
   content = event->content();
 }
 
+optional<matrix::event::room::Redaction> EventLike::redaction() const {
+  if(event && event->unsigned_data()) {
+    return event->unsigned_data()->redacted_because();
+  }
+  return {};
+}
+
 EventBlock::EventBlock(TimelineView &parent, ThumbnailCache &thumbnail_cache, gsl::span<const EventLike *const> events)
   : parent_{parent}, sender_{events[0]->sender}, events_{static_cast<std::size_t>(events.size())}
 {
@@ -422,7 +429,8 @@ bool EventBlock::draw(QPainter &p, bool bottom_selected, const Selection &select
   QVector<QTextLayout::FormatRange> selections;
   for(auto event = events_.rbegin(); event != events_.rend(); ++event) {
     p.save();
-    if(event->type != matrix::event::room::Message::tag()) {
+    if(event->type != matrix::event::room::Message::tag() || event->redacted) {
+      // Style such that user-controlled content can't be confused with this event's rendering
       p.setPen(parent_.palette().color(QPalette::Dark));
     }
     size_t index = event->paragraphs.size();
@@ -695,7 +703,7 @@ bool EventBlock::has(TimelineEventID event) const {
 }
 
 EventBlock::Event::Event(const TimelineView &view, const EventBlock &block, const EventLike &e)
-  : id{e.id}, type{e.type}, time{e.time}, source{e.event} {
+  : id{e.id}, type{e.type}, redacted{e.redaction()}, time{e.time}, source{e.event} {
 
   const auto &&tr = [](const char *s) { return TimelineView::tr(s); };
 
@@ -704,10 +712,7 @@ EventBlock::Event::Event(const TimelineView &view, const EventBlock &block, cons
 
   using namespace matrix::event::room;
 
-  optional<Redaction> redaction;
-  if(e.event && e.event->unsigned_data()) {
-    redaction = e.event->unsigned_data()->redacted_because();
-  }
+  const auto redaction = e.redaction();
 
   const auto &&redaction_note = [&]() {
     if(redaction) {
@@ -858,12 +863,21 @@ EventBlock::Event::Event(const TimelineView &view, const EventBlock &block, cons
   } else if(e.type == Create::tag()) {
     text = tr("created the room");
   } else if(e.type == Redaction::tag()) {
-    auto reason = e.content.json()["reason"].toString();
-     // TODO: Clickable event ID
-    if(reason.isEmpty()) {
-      text = tr("redacted %1").arg(e.redacts->value());
+    if(redaction) {
+      auto reason = redaction->content().reason();
+      if(reason) {
+        text = tr("redacted REDACTED (%1)").arg(*reason);
+      } else {
+        text = tr("redacted REDACTED");
+      }
     } else {
-      text = tr("redacted %1: %2").arg(e.redacts->value()).arg(reason);
+      auto reason = RedactionContent{e.content}.reason();
+      // TODO: Clickable event ID
+      if(reason) {
+        text = tr("redacted %1: %2").arg(e.redacts->value()).arg(*reason);
+      } else {
+        text = tr("redacted %1").arg(e.redacts->value());
+      }
     }
   } else {
     text = tr("unrecognized message type %1").arg(e.type.value());
@@ -970,20 +984,21 @@ void TimelineView::append(const matrix::TimelineCursor &begin, const matrix::Roo
     batches_.emplace_back(begin, std::deque<EventLike>{EventLike{id, state, evt}});
   }
 
-  mark_dirty();
-}
-
-void TimelineView::redact(const matrix::event::room::Redaction &redaction) {
-  bool done = false;
-  for(auto &batch : batches_) {
-    for(auto &existing_event : batch.events) {
-      if(existing_event.event->id() == redaction.redacts()) {
-        existing_event.redact(redaction);
-        done = true;
+  if(evt.type() == matrix::event::room::Redaction::tag()) {
+    try {
+      matrix::event::room::Redaction redaction{evt};
+      for(auto &batch : batches_) {
+        for(auto &existing_event : batch.events) {
+          if(existing_event.event->id() == redaction.redacts()) {
+            existing_event.redact(redaction);
+            goto done;
+          }
+        }
       }
-      if(done) break;
+    done:;
+    } catch(matrix::malformed_event &e) {
+      qWarning() << "ignoring malformed redaction:" << e.what() << evt.json();
     }
-    if(done) break;
   }
 
   mark_dirty();

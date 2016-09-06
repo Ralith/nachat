@@ -58,6 +58,8 @@ struct EventLike {
 
   std::experimental::optional<matrix::event::room::MemberContent> effective_profile() const;
   void redact(const matrix::event::room::Redaction &);
+
+  std::experimental::optional<matrix::event::room::Redaction> redaction() const;
 };
 
 class Cursor {
@@ -135,6 +137,7 @@ private:
   struct Event {
     TimelineEventID id;
     matrix::EventType type;
+    bool redacted;
     std::experimental::optional<Time> time;
     std::experimental::optional<matrix::event::Room> source;
     FixedVector<QTextLayout> paragraphs;
@@ -170,7 +173,6 @@ public:
 
   void prepend(const matrix::TimelineCursor &begin, const matrix::RoomState &state, const matrix::event::Room &evt);
   void append(const matrix::TimelineCursor &begin, const matrix::RoomState &state, const matrix::event::Room &evt);
-  void redact(const matrix::event::room::Redaction &); // Call only on redaction events received from sync
 
   // FIXME: Pending messages should always be rendered according to the most recent room state, not the one when they were sent.
   void add_pending(const matrix::TransactionID &transaction, const matrix::RoomState &state, const matrix::UserID &self, Time time,

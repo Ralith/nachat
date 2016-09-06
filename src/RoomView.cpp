@@ -43,6 +43,7 @@ RoomView::RoomView(ThumbnailCache &cache, matrix::Room &room, QWidget *parent)
 
   connect(timeline_view_, &TimelineView::need_backwards, [this]() { timeline_manager_->grow(matrix::Direction::BACKWARD); });
   connect(timeline_view_, &TimelineView::need_forwards, [this]() { timeline_manager_->grow(matrix::Direction::FORWARD); });
+  connect(timeline_view_, &TimelineView::redact_requested, &room, &matrix::Room::redact); // TODO: Add to timeline_view_'s pending events
 
   timeline_manager_->replay();
   timeline_view_->set_at_bottom(timeline_manager_->window().at_end());
