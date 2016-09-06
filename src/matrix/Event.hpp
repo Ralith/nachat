@@ -17,7 +17,7 @@ namespace matrix {
 
 class type_mismatch : public std::logic_error {
 public:
-  type_mismatch() : std::logic_error::logic_error("event has incorrect type field") {}
+  type_mismatch() : std::logic_error::logic_error("event has incorrect \"type\" field") {}
 };
 
 class malformed_event : public std::invalid_argument {
