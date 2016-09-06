@@ -1,7 +1,6 @@
 #include "proto.hpp"
 
-#include <QJsonArray>
-#include <QDebug>
+#include <unordered_set>
 
 namespace matrix {
 
@@ -44,6 +43,15 @@ JoinedRoom parse_joined_room(QString id, QJsonValue v) {
   room.ephemeral.events = parse_array(o["ephemeral"].toObject()["events"], [](QJsonValue v) {
       return Event(v.toObject());
     });
+
+  // Work around SYN-766
+  std::unordered_set<EventID> event_ids;
+  for(const auto &s : room.state.events) {
+    event_ids.insert(s.id());
+  }
+  if(room.timeline.events.size() && event_ids.count(room.timeline.events.front().id())) {
+    room.timeline.events = std::vector<event::Room>(room.timeline.events.begin() + 1, room.timeline.events.end());
+  }
 
   return room;
 }
