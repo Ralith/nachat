@@ -189,7 +189,7 @@ Room::Room(Matrix &universe, Session &session, RoomID id, const QJsonObject &ini
   transmit_retry_timer_.setSingleShot(true);
   connect(&transmit_retry_timer_, &QTimer::timeout, this, &Room::transmit_event);
 
-  for(auto it = last_batch_.events.crbegin(); it != last_batch_.events.crend(); ++it) {
+  for(auto it = last_batch().events.crbegin(); it != last_batch().events.crend(); ++it) {
     if(auto s = it->to_state()) initial_state_.revert(*s);
   }
 
@@ -201,29 +201,16 @@ Room::Room(Matrix &universe, Session &session, RoomID id, const QJsonObject &ini
 
 Room::Room(Matrix &universe, Session &session, const proto::JoinedRoom &joined_room)
     : universe_(universe), session_(session), id_{joined_room.id},
-      last_batch_{joined_room.timeline.prev_batch, joined_room.timeline.events},
       transmitting_(nullptr), retry_backoff_(MINIMUM_BACKOFF)
 {
   transmit_retry_timer_.setSingleShot(true);
   connect(&transmit_retry_timer_, &QTimer::timeout, this, &Room::transmit_event);
 
-  load_state(joined_room.state.events);
   dispatch(joined_room);
 }
 
 QString Room::pretty_name() const {
   return state_.pretty_name(session_.user_id());
-}
-
-void Room::load_state(gsl::span<const event::room::State> events) {
-  for(auto &state : events) {
-    try {
-      initial_state_.apply(state);
-      state_.dispatch(state, this);
-    } catch(malformed_event &e) {
-      qWarning() << "WARNING:" << id().value() << "ignoring malformed state" << e.what() << state.json();
-    }
-  }
 }
 
 static std::vector<event::Room> parse_room_events(const QJsonArray &a) {
@@ -263,6 +250,14 @@ QJsonObject Room::to_json() const {
 
 bool Room::dispatch(const proto::JoinedRoom &joined) {
   bool state_touched = false;
+
+  for(auto &state : joined.state.events) {
+    try {
+      state_touched |= state_.dispatch(state, this);
+    } catch(malformed_event &e) {
+      qWarning() << "WARNING:" << id().value() << "ignoring malformed state:" << e.what() << state.json();
+    }
+  }
 
   if(joined.unread_notifications.highlight_count != highlight_count_) {
     auto old = highlight_count_;
@@ -314,10 +309,21 @@ bool Room::dispatch(const proto::JoinedRoom &joined) {
     state_changed();
   }
 
-  for(const auto &evt : last_batch_.events) {
-    if(auto s = evt.to_state()) initial_state_.apply(*s);
+  if(last_batch_ && !joined.timeline.limited) {
+    for(const auto &evt : last_batch().events) {
+      if(auto s = evt.to_state()) initial_state_.apply(*s);
+    }
+  } else {
+    initial_state_ = state_;
+    for(auto evt = joined.timeline.events.crbegin(); evt != joined.timeline.events.crend(); ++evt) {
+      try {
+        if(auto s = evt->to_state()) initial_state_.revert(*s);
+      } catch(malformed_event &e) {
+        qWarning() << "WARNING:" << id().value() << "ignoring malformed state:" << e.what() << evt->json();
+      }
+    }
   }
-  last_batch_ = Batch{joined.timeline};
+  last_batch_.emplace(joined.timeline);
 
   return state_touched;
 }

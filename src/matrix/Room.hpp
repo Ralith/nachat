@@ -153,7 +153,6 @@ public:
     return pretty_name() + (highlight_count() != 0 ? " (" + QString::number(highlight_count()) + ")" : "");
   }
 
-  void load_state(gsl::span<const event::room::State>);
   bool dispatch(const proto::JoinedRoom &);
 
   QJsonObject to_json() const;
@@ -179,7 +178,7 @@ public:
   const std::deque<PendingEvent> &pending_events() const { return pending_events_; }
   // Events that have not yet been successfully transmitted
 
-  const Batch &last_batch() const { return last_batch_; }
+  const Batch &last_batch() const { return *last_batch_; }
 
 signals:
   void member_changed(const UserID &, const event::room::MemberContent &old, const event::room::MemberContent &current);
@@ -209,7 +208,7 @@ private:
   const RoomID id_;
 
   RoomState initial_state_, state_;
-  Batch last_batch_;
+  std::experimental::optional<Batch> last_batch_;
 
   uint64_t highlight_count_ = 0, notification_count_ = 0;
 

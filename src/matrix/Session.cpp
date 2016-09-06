@@ -229,7 +229,6 @@ void Session::dispatch(const proto::Sync &sync) {
     } else {
       auto &room = it->second;
       room.member_changes.clear();
-      room.room.load_state(joined_room.state.events);
       room.room.dispatch(joined_room);
     }
   }
