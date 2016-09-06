@@ -273,6 +273,18 @@ bool Room::dispatch(const proto::JoinedRoom &joined) {
   for(auto &evt : joined.timeline.events) {
     message(evt);
 
+    if(evt.type() == event::room::Redaction::tag()) {
+      optional<event::room::Redaction> r;
+      try {
+        r.emplace(evt);
+      } catch(malformed_event &e) {
+        qWarning() << pretty_name() << "ignoring malformed redaction:" << e.what() << evt.json();
+      }
+      if(r) {
+        redaction(*r);
+      }
+    }
+
     if(auto s = evt.to_state()) {
       try {
         state_touched |= state_.dispatch(*s, this);

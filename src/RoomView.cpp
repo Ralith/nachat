@@ -45,6 +45,9 @@ RoomView::RoomView(ThumbnailCache &cache, matrix::Room &room, QWidget *parent)
   connect(timeline_view_, &TimelineView::need_forwards, [this]() { timeline_manager_->grow(matrix::Direction::FORWARD); });
   connect(timeline_view_, &TimelineView::redact_requested, &room, &matrix::Room::redact); // TODO: Add to timeline_view_'s pending events
 
+  // Ensure redactions apply instantly even when the view is scrolled back and therefore not receiving sync events.
+  connect(&room, &matrix::Room::redaction, timeline_view_, &TimelineView::redact);
+
   timeline_manager_->replay();
   timeline_view_->set_at_bottom(timeline_manager_->window().at_end());
 

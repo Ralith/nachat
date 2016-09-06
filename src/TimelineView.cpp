@@ -985,22 +985,30 @@ void TimelineView::append(const matrix::TimelineCursor &begin, const matrix::Roo
   }
 
   if(evt.type() == matrix::event::room::Redaction::tag()) {
+    // This will usually be redundant to a call made to redact during normal sync, but redaction is idempotent, and if a
+    // discontinuity arises between the window and the sync batch and is resolved with fetches from /messages then it
+    // would otherwise be missed.
     try {
       matrix::event::room::Redaction redaction{evt};
-      for(auto &batch : batches_) {
-        for(auto &existing_event : batch.events) {
-          if(existing_event.event->id() == redaction.redacts()) {
-            existing_event.redact(redaction);
-            goto done;
-          }
-        }
-      }
-    done:;
+      redact(redaction);
     } catch(matrix::malformed_event &e) {
       qWarning() << "ignoring malformed redaction:" << e.what() << evt.json();
     }
   }
 
+  mark_dirty();
+}
+
+void TimelineView::redact(const matrix::event::room::Redaction &redaction) {
+  for(auto &batch : batches_) {
+    for(auto &existing_event : batch.events) {
+      if(existing_event.event->id() == redaction.redacts()) {
+        existing_event.redact(redaction);
+        goto done;
+      }
+    }
+  }
+done:
   mark_dirty();
 }
 

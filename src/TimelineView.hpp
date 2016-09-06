@@ -173,6 +173,7 @@ public:
 
   void prepend(const matrix::TimelineCursor &begin, const matrix::RoomState &state, const matrix::event::Room &evt);
   void append(const matrix::TimelineCursor &begin, const matrix::RoomState &state, const matrix::event::Room &evt);
+  void redact(const matrix::event::room::Redaction &redaction); // Feed from sync
 
   // FIXME: Pending messages should always be rendered according to the most recent room state, not the one when they were sent.
   void add_pending(const matrix::TransactionID &transaction, const matrix::RoomState &state, const matrix::UserID &self, Time time,

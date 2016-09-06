@@ -197,6 +197,7 @@ signals:
 
   void prev_batch(const TimelineCursor &);
   void message(const event::Room &);
+  void redaction(const event::room::Redaction &);
 
   void error(const QString &msg);
   void left(Membership reason);
