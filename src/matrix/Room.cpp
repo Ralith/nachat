@@ -8,6 +8,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QPointer>
 #include <QtDebug>
 
 #include "proto.hpp"
@@ -540,19 +541,18 @@ TransactionID Room::send(const EventType &type, event::Content content) {
   return pending_events_.back().transaction_id;
 }
 
-void Room::redact(const EventID &event, const QString &reason) {
+TransactionID Room::redact(const EventID &event, const QString &reason) {
   auto txn = session_.get_transaction_id();
   auto reply = session_.put(QString{"client/r0/rooms/" % QUrl::toPercentEncoding(id_.value())
         % "/redact/" % QUrl::toPercentEncoding(event.value()) % "/" % QUrl::toPercentEncoding(txn.value())},
                             reason.isEmpty() ? QJsonObject() : QJsonObject{{"reason", reason}}
     );
-  auto es = new EventSend(reply);
-  connect(reply, &QNetworkReply::finished, [reply, es]() {
-      if(reply->error()) es->error(reply->errorString());
-      else es->finished();
+  QPointer<Room> self(this);
+  connect(reply, &QNetworkReply::finished, [self, reply]() {
+      // TODO: Retry
+      if(self && reply->error()) self->error(reply->errorString());
     });
-  connect(es, &EventSend::error, this, &Room::error);
-  
+  return txn;
 }
 
 TransactionID Room::send_file(const QString &uri, const QString &name, const QString &media_type, size_t size) {

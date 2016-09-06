@@ -163,7 +163,7 @@ public:
 
   TransactionID send(const EventType &type, event::Content content);
 
-  void redact(const EventID &event, const QString &reason = "");
+  TransactionID redact(const EventID &event, const QString &reason = "");
 
   TransactionID send_file(const QString &uri, const QString &name, const QString &media_type, size_t size);
   TransactionID send_message(const QString &body);
