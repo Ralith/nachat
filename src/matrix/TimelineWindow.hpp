@@ -23,7 +23,7 @@ class TimelineManager;
 
 class TimelineWindow {
 public:
-  TimelineWindow(const RoomState &initial_state, gsl::span<const Batch> batches, const RoomState &final_state);
+  TimelineWindow(gsl::span<const Batch> batches, const RoomState &final_state);
 
   void discard(const TimelineCursor &, Direction dir);
 

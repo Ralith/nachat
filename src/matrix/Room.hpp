@@ -145,8 +145,7 @@ public:
   uint64_t highlight_count() const { return highlight_count_; }
   uint64_t notification_count() const { return notification_count_; }
 
-  const RoomState &initial_state() const { return initial_state_; } // Before last_batch
-  const RoomState &state() const { return state_; }                 // After last_batch
+  const RoomState &state() const { return state_; }
 
   QString pretty_name() const;
   QString pretty_name_highlights() const {
@@ -207,7 +206,7 @@ private:
   Session &session_;
   const RoomID id_;
 
-  RoomState initial_state_, state_;
+  RoomState state_;
   std::experimental::optional<Batch> last_batch_;
 
   uint64_t highlight_count_ = 0, notification_count_ = 0;

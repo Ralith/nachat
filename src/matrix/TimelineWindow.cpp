@@ -10,22 +10,33 @@ using std::experimental::optional;
 
 namespace matrix {
 
-static constexpr size_t BATCH_SIZE = 50;
+namespace {
 
-TimelineWindow::TimelineWindow(const RoomState &initial_state, gsl::span<const Batch> batches, const RoomState &final_state)
-  : initial_state_{initial_state}, final_state_{final_state},
+constexpr size_t BATCH_SIZE = 50;
+
+void revert_batch(RoomState &state, const Batch &batch) {
+  for(auto it = batch.events.crbegin(); it != batch.events.crend(); ++it) {
+    if(auto s = it->to_state()) state.revert(*s);
+  }
+}
+
+}
+
+TimelineWindow::TimelineWindow(gsl::span<const Batch> batches, const RoomState &final_state)
+  : initial_state_{final_state}, final_state_{final_state},
     batches_(batches.begin(), batches.empty() ? throw std::invalid_argument("timeline window must be construct from at least one batch") : batches.end()-1),
-    latest_batch_{*(batches.end()-1)} {}
+    latest_batch_{*(batches.end()-1)}
+{
+  for(auto it = batches.crbegin(); it != batches.crend(); ++it) {
+    revert_batch(initial_state_, *it);
+  }
+}
 
 void TimelineWindow::discard(const TimelineCursor &batch, Direction dir) {
   if(dir == Direction::FORWARD) {
-    for(const auto &evt : latest_batch_.events) {
-      if(auto s = evt.to_state()) final_state_.revert(*s);
-    }
+    revert_batch(final_state_, latest_batch_);
     for(auto it = batches_.crbegin(); it != batches_.crend(); ++it) {
-      for(const auto &evt : it->events) {
-        if(auto s = evt.to_state()) final_state_.revert(*s);
-      }
+      revert_batch(final_state_, *it);
       if(it->begin == batch) {
         if(it.base() != batches_.begin()) {
           batches_end_ = it->begin;
@@ -136,14 +147,12 @@ void TimelineWindow::reset(const RoomState &current_state) {
   batches_end_ = {};
   final_state_ = current_state;
   initial_state_ = final_state_;
-  for(auto it = latest_batch_.events.crbegin(); it != latest_batch_.events.crend(); ++it) {
-    if(auto s = it->to_state()) initial_state_.revert(*s);
-  }
+  revert_batch(initial_state_, latest_batch_);
 }
 
 
 TimelineManager::TimelineManager(Room &room, QObject *parent)
-  : QObject(parent), room_(room), window_{room.initial_state(), room.last_batch(), room.state()}, forward_req_{nullptr}, backward_req_{nullptr}
+  : QObject(parent), room_(room), window_{room.last_batch(), room.state()}, forward_req_{nullptr}, backward_req_{nullptr}
 {
   retry_timer_.setSingleShot(true);
   retry_timer_.setInterval(1000);

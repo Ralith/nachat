@@ -181,7 +181,7 @@ static constexpr std::chrono::steady_clock::duration MINIMUM_BACKOFF(std::chrono
 Room::Room(Matrix &universe, Session &session, RoomID id, const QJsonObject &initial,
            gsl::span<const Member> members)
     : universe_(universe), session_(session), id_(std::move(id)),
-      initial_state_{initial["state"].toObject(), members}, state_{initial_state_},
+      state_{initial["state"].toObject(), members},
       last_batch_{initial["last_batch"].toObject()},
       highlight_count_{static_cast<uint64_t>(initial["highlight_count"].toDouble(0))},
       notification_count_{static_cast<uint64_t>(initial["notification_count"].toDouble(0))},
@@ -189,10 +189,6 @@ Room::Room(Matrix &universe, Session &session, RoomID id, const QJsonObject &ini
 {
   transmit_retry_timer_.setSingleShot(true);
   connect(&transmit_retry_timer_, &QTimer::timeout, this, &Room::transmit_event);
-
-  for(auto it = last_batch().events.crbegin(); it != last_batch().events.crend(); ++it) {
-    if(auto s = it->to_state()) initial_state_.revert(*s);
-  }
 
   auto receipts = initial["receipts"].toObject();
   for(auto it = receipts.begin(); it != receipts.end(); ++it) {
@@ -310,20 +306,6 @@ bool Room::dispatch(const proto::JoinedRoom &joined) {
     state_changed();
   }
 
-  if(last_batch_ && !joined.timeline.limited) {
-    for(const auto &evt : last_batch().events) {
-      if(auto s = evt.to_state()) initial_state_.apply(*s);
-    }
-  } else {
-    initial_state_ = state_;
-    for(auto evt = joined.timeline.events.crbegin(); evt != joined.timeline.events.crend(); ++evt) {
-      try {
-        if(auto s = evt->to_state()) initial_state_.revert(*s);
-      } catch(malformed_event &e) {
-        qWarning() << "WARNING:" << id().value() << "ignoring malformed state:" << e.what() << evt->json();
-      }
-    }
-  }
   last_batch_.emplace(joined.timeline);
 
   return state_touched;
