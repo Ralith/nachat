@@ -285,6 +285,10 @@ bool Room::dispatch(const proto::JoinedRoom &joined) {
       }
     }
 
+    if(!state_.member_from_id(evt.sender()) && evt.type() != event::room::Create::tag() && evt.type() != event::room::Member::tag()) {
+      qWarning() << pretty_name() << "received event from non-member:" << evt.json();
+    }
+
     if(auto s = evt.to_state()) {
       try {
         state_touched |= state_.dispatch(*s, this);

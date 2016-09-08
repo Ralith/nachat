@@ -12,7 +12,7 @@
 
 namespace matrix {
 
-constexpr uint64_t CACHE_FORMAT_VERSION = 3;
+constexpr uint64_t CACHE_FORMAT_VERSION = 4;
 // Bumped every time a backwards-incompatible format change is made, a
 // corruption bug is fixed, or a previously ignored class of state is
 // persisted
@@ -218,8 +218,11 @@ void Session::dispatch(const proto::Sync &sync) {
                                   std::forward_as_tuple(joined_room.id),
                                   std::forward_as_tuple(universe_, *this, joined_room)).first->second;
       const auto id = joined_room.id;
-      connect(&room.room, &Room::member_changed, [&room](const UserID &id, const event::room::MemberContent &state) {
-          room.member_changes.emplace_back(id, state);
+      connect(&room.room, &Room::member_changed, [&room](const UserID &id,
+                                                         const event::room::MemberContent &old,
+                                                         const event::room::MemberContent &current) {
+          (void)old;
+          room.member_changes.emplace_back(id, current);
         });
       for(const auto m : room.room.state().members()) {
         room.member_changes.emplace_back(m->first, m->second);
@@ -228,7 +231,6 @@ void Session::dispatch(const proto::Sync &sync) {
       joined(room.room);
     } else {
       auto &room = it->second;
-      room.member_changes.clear();
       room.room.dispatch(joined_room);
     }
   }
@@ -287,12 +289,19 @@ void Session::update_cache(const proto::Sync &sync) {
         }
       }
     }
-        
+
     txn.commit();
-    
+
+    // Post-success
     for(auto &db : new_member_dbs) {
       rooms_.at(db.first).members = std::move(db.second);
     }
+
+    for(auto &joined_room : sync.rooms.join) {
+      auto &room = rooms_.at(joined_room.id);
+      room.member_changes.clear();
+    }
+
   } catch(lmdb::runtime_error &e) {
     // TODO: Handle out of space/databases and retry
     error(e.what());
