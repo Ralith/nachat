@@ -21,6 +21,8 @@ int main(int argc, char *argv[]) {
   QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
 
   QApplication app(argc, argv);
+  app.setQuitOnLastWindowClosed(false);
+
   QSettings settings;
 
   QNetworkAccessManager net;   // Create this on another thread for faster startup?
