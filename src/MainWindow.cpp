@@ -209,14 +209,7 @@ void MainWindow::sync_progress(qint64 received, qint64 total) {
 }
 
 RoomWindowBridge::RoomWindowBridge(matrix::Room &room, ChatWindow &parent) : QObject(&parent), room_(room), window_(parent) {
-  connect(&room, &matrix::Room::highlight_count_changed, this, &RoomWindowBridge::display_changed);
-  connect(&room, &matrix::Room::notification_count_changed, this, &RoomWindowBridge::display_changed);
-  connect(&room, &matrix::Room::name_changed, this, &RoomWindowBridge::display_changed);
-  connect(&room, &matrix::Room::canonical_alias_changed, this, &RoomWindowBridge::display_changed);
-  connect(&room, &matrix::Room::aliases_changed, this, &RoomWindowBridge::display_changed);
-  connect(&room, &matrix::Room::member_changed, this, &RoomWindowBridge::display_changed);
-  connect(&room, &matrix::Room::receipts_changed, this, &RoomWindowBridge::display_changed);
-  connect(&room, &matrix::Room::message, this, &RoomWindowBridge::display_changed);
+  connect(&room, &matrix::Room::sync_complete, this, &RoomWindowBridge::display_changed);
   connect(&parent, &ChatWindow::released, this, &RoomWindowBridge::check_release);
 }
 

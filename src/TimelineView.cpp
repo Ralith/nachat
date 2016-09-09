@@ -170,7 +170,7 @@ EventLike::EventLike(TimelineEventID id, const matrix::RoomState &state, matrix:
 EventLike::EventLike(TimelineEventID id, const matrix::RoomState &state,
                      const matrix::UserID &sender, Time time, matrix::EventType type, matrix::event::Content content,
                      optional<matrix::UserID> affected_user, optional<matrix::EventID> redacts)
-  : id{id}, type{std::move(type)}, time{time}, sender{sender}, redacts{redacts}, content{std::move(content)}
+  : id{id}, type{std::move(type)}, time{time}, sender{sender}, redacts{redacts}, content{std::move(content)}, read{false}
 {
   if(affected_user) {
     auto m = state.member_from_id(*affected_user);
@@ -702,6 +702,13 @@ bool EventBlock::has(TimelineEventID event) const {
   return false;
 }
 
+optional<matrix::EventID> EventBlock::last_event_in(const QRectF &rect) const {
+  for(auto e = events_.rbegin(); e != events_.rend(); ++e) {
+    if(e->source && rect.contains(e->bounds())) return e->source->id();
+  }
+  return {};
+}
+
 EventBlock::Event::Event(const TimelineView &view, const EventBlock &block, const EventLike &e)
   : id{e.id}, type{e.type}, redacted{e.redaction()}, time{e.time}, source{e.event} {
 
@@ -948,11 +955,13 @@ TimelineView::TimelineView(const QUrl &homeserver, ThumbnailCache &cache, QWidge
 }
 
 void TimelineView::prepend(const matrix::TimelineCursor &begin, const matrix::RoomState &state, const matrix::event::Room &evt) {
+  const bool next_read = batches_.empty() ? false : batches_.front().events.front().read;
   if(!batches_.empty() && batches_.front().begin == begin) {
     batches_.front().events.emplace_front(get_id(), state, evt);
   } else {
     batches_.emplace_front(begin, std::deque<EventLike>{EventLike{get_id(), state, evt}});
   }
+  batches_.front().events.front().read = next_read;
 
   if(auto u = evt.unsigned_data()) {
     if(auto txid = u->transaction_id()) {
@@ -978,11 +987,14 @@ void TimelineView::append(const matrix::TimelineCursor &begin, const matrix::Roo
   }
 
   const auto id = existing_id ? *existing_id : get_id();
+  const bool prev_read = batches_.empty() ? false : batches_.back().events.back().read;
+  const bool newly_unread = last_read_ && !batches_.empty() && batches_.back().events.back().event && batches_.back().events.back().event->id() == *last_read_;
   if(!batches_.empty() && batches_.back().begin == begin) {
     batches_.back().events.emplace_back(id, state, evt);
   } else {
     batches_.emplace_back(begin, std::deque<EventLike>{EventLike{id, state, evt}});
   }
+  batches_.back().events.back().read = !newly_unread && prev_read;
 
   if(evt.type() == matrix::event::room::Redaction::tag()) {
     // This will usually be redundant to a call made to redact during normal sync, but redaction is idempotent, and if a
@@ -1023,6 +1035,27 @@ void TimelineView::set_at_bottom(bool value) {
   at_bottom_ = value;
   viewport()->update();
   maybe_need_forwards();
+}
+
+void TimelineView::set_last_read(const matrix::EventID &id) {
+  last_read_ = id;
+  bool found = false;
+  for(auto batch = batches_.rbegin(); batch != batches_.rend(); ++batch) {
+    for(auto event = batch->events.rbegin(); event != batch->events.rend(); ++event) {
+      if(event->read) return;
+      if(event->event && event->event->id() == id) {
+        found = true;
+      }
+      event->read = found;
+    }
+  }
+}
+
+optional<matrix::EventID> TimelineView::latest_visible_event() const {
+  if(visible_blocks_.empty()) return {};
+
+  auto &vb = visible_blocks_.front();
+  return vb.block().last_event_in(view_rect().translated(-vb.bounds().topLeft()));
 }
 
 void TimelineView::resizeEvent(QResizeEvent *) {
@@ -1138,6 +1171,8 @@ void TimelineView::mouseMoveEvent(QMouseEvent *event) {
   if(selection_updating_ && event->buttons() & Qt::LeftButton) {
     selection_dragged(world);
   }
+
+  mark_read();
 }
 
 void TimelineView::mouseReleaseEvent(QMouseEvent *event) {
@@ -1407,4 +1442,21 @@ void TimelineView::selection_dragged(const QPointF &world) {
 void TimelineView::mark_dirty() {
   blocks_dirty_ = true;
   viewport()->update();
+}
+
+void TimelineView::mark_read() {
+  auto id = latest_visible_event();
+  if(!id) return;
+
+  // Optimization: index stored events by ID for logarithmic or constant time read check
+  for(auto batch = batches_.rbegin(); batch != batches_.rend(); ++batch) {
+    for(auto event = batch->events.rbegin(); event != batch->events.rend(); ++event) {
+      if(event->read) return;
+      if(event->event && event->event->id() == *id) {
+        event_read(*id);
+        set_last_read(*id);
+        return;
+      }
+    }
+  }
 }

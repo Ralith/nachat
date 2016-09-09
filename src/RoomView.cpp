@@ -44,6 +44,8 @@ RoomView::RoomView(ThumbnailCache &cache, matrix::Room &room, QWidget *parent)
   connect(timeline_view_, &TimelineView::need_backwards, [this]() { timeline_manager_->grow(matrix::Direction::BACKWARD); });
   connect(timeline_view_, &TimelineView::need_forwards, [this]() { timeline_manager_->grow(matrix::Direction::FORWARD); });
   connect(timeline_view_, &TimelineView::redact_requested, &room, &matrix::Room::redact); // TODO: Add to timeline_view_'s pending events
+  connect(timeline_view_, &TimelineView::event_read, &room, &matrix::Room::send_read_receipt);
+  connect(&room, &matrix::Room::receipts_changed, this, &RoomView::update_last_read);
 
   // Ensure redactions apply instantly even when the view is scrolled back and therefore not receiving sync events.
   connect(&room, &matrix::Room::redaction, timeline_view_, &TimelineView::redact);
@@ -75,6 +77,7 @@ RoomView::RoomView(ThumbnailCache &cache, matrix::Room &room, QWidget *parent)
   connect(entry_, &EntryBox::pageDown, [this]() {
       timeline_view_->verticalScrollBar()->triggerAction(QAbstractSlider::SliderPageStepAdd);
     });
+  connect(entry_, &EntryBox::activity, timeline_view_, &TimelineView::mark_read);
 
   connect(&room_, &matrix::Room::member_changed, this, &RoomView::member_changed);
   connect(&room_, &matrix::Room::member_disambiguation_changed, this, &RoomView::member_disambiguation_changed);
@@ -126,4 +129,10 @@ void RoomView::selected() {
 void RoomView::send(const matrix::EventType &ty, const matrix::event::Content &content) {
   timeline_view_->add_pending(room_.send(ty, content), room_.state(), room_.session().user_id(),
                               std::chrono::time_point_cast<Time::duration>(std::chrono::system_clock::now()), ty, content);
+}
+
+void RoomView::update_last_read() {
+  auto r = room_.receipt_from(room_.session().user_id());
+  if(!r) return;
+  timeline_view_->set_last_read(r->event);
 }

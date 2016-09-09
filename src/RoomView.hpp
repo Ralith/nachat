@@ -62,6 +62,7 @@ private:
   void topic_changed();
   void command(const QString &name, const QString &args);
   void send(const matrix::EventType &ty, const matrix::event::Content &content);
+  void update_last_read();
 };
 
 #endif // ROOMVIEW_H

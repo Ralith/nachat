@@ -51,6 +51,8 @@ struct EventLike {
 
   matrix::event::Content content;
 
+  bool read;
+
   explicit EventLike(TimelineEventID id, const matrix::RoomState &, matrix::event::Room real);
   EventLike(TimelineEventID id, const matrix::RoomState &,
             const matrix::UserID &sender, Time time, matrix::EventType type, matrix::event::Content content,
@@ -133,6 +135,8 @@ public:
 
   TimelineEventID first_event() const { return events_.front().id; }
 
+  std::experimental::optional<matrix::EventID> last_event_in(const QRectF &) const; // Most recent real event fully contained by a rect
+
 private:
   struct Event {
     TimelineEventID id;
@@ -180,6 +184,12 @@ public:
                    matrix::EventType type, matrix::event::Content content, std::experimental::optional<matrix::UserID> affected_user = {});
 
   void set_at_bottom(bool);
+
+  void set_last_read(const matrix::EventID &id); // Signal event_read only for events following this
+
+  std::experimental::optional<matrix::EventID> latest_visible_event() const;
+
+  void mark_read();
 
   const QUrl &homeserver() const { return homeserver_; }
 
@@ -252,6 +262,7 @@ private:
   QPixmap spinner_;
   bool at_bottom_;
   uint64_t id_counter_;
+  std::experimental::optional<matrix::EventID> last_read_;
 
   bool blocks_dirty_;
 
