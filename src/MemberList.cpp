@@ -47,6 +47,7 @@ void MemberList::member_disambiguation_changed(const matrix::RoomState &state, c
 }
 
 void MemberList::update_members() {
+  // FIXME: Do this lazily!
   clear();
   for(const auto &member : members_) {
     auto item = new QListWidgetItem;

@@ -1065,7 +1065,6 @@ void TimelineView::resizeEvent(QResizeEvent *) {
 void TimelineView::paintEvent(QPaintEvent *) {
   if(blocks_dirty_) {
     rebuild_blocks();
-    blocks_dirty_ = false;
   }
   // TODO: Draw purpose-built pending message block below bottom spinner
 
@@ -1307,6 +1306,7 @@ void TimelineView::rebuild_blocks() {
   visible_blocks_.clear();
   std::swap(blocks_, new_blocks);
   update_layout();
+  blocks_dirty_ = false;
 }
 
 void TimelineView::update_layout() {
