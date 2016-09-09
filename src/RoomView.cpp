@@ -123,7 +123,7 @@ void RoomView::command(const QString &name, const QString &args) {
 }
 
 void RoomView::selected() {
-  // TODO: Mark events read
+  timeline_view_->mark_read();
 }
 
 void RoomView::send(const matrix::EventType &ty, const matrix::event::Content &content) {
