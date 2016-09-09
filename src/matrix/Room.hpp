@@ -111,7 +111,6 @@ struct Batch {
   std::vector<event::Room> events;
 
   Batch(TimelineCursor begin, std::vector<event::Room> events) : begin{begin}, events{std::move(events)} {}
-  Batch(const proto::Timeline &t);
   Batch(const QJsonObject &o);
 
   QJsonObject to_json() const;
@@ -177,7 +176,9 @@ public:
   const std::deque<PendingEvent> &pending_events() const { return pending_events_; }
   // Events that have not yet been successfully transmitted
 
-  const Batch &last_batch() const { return *last_batch_; }
+  const std::deque<Batch> &buffer() const { return buffer_; }
+
+  bool has_unread() const;
 
 signals:
   void member_changed(const UserID &, const event::room::MemberContent &old, const event::room::MemberContent &current);
@@ -193,7 +194,8 @@ signals:
   void typing_changed();
   void receipts_changed();
 
-  void batch(const proto::Timeline &);
+  void sync_start(const proto::Timeline &);
+  void sync_complete(const proto::Timeline &);
 
   void prev_batch(const TimelineCursor &);
   void message(const event::Room &);
@@ -208,7 +210,7 @@ private:
   const RoomID id_;
 
   RoomState state_;
-  std::experimental::optional<Batch> last_batch_;
+  std::deque<Batch> buffer_;
 
   uint64_t highlight_count_ = 0, notification_count_ = 0;
 

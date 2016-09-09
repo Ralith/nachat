@@ -178,11 +178,20 @@ const event::room::MemberContent *RoomState::member_from_id(const UserID &id) co
 static constexpr std::chrono::steady_clock::duration MINIMUM_BACKOFF(std::chrono::seconds(5));
 // Default synapse seconds-per-message when throttled
 
+static std::deque<Batch> parse_buffer(QJsonValue v) {
+  std::deque<Batch> result;
+  for(const auto &x : v.toArray()) {
+    result.emplace_back(x.toObject());
+    assert(!result.back().events.empty());
+  }
+  return result;
+}
+
 Room::Room(Matrix &universe, Session &session, RoomID id, const QJsonObject &initial,
            gsl::span<const Member> members)
     : universe_(universe), session_(session), id_(std::move(id)),
       state_{initial["state"].toObject(), members},
-      last_batch_{initial["last_batch"].toObject()},
+      buffer_{parse_buffer(initial["buffer"])},
       highlight_count_{static_cast<uint64_t>(initial["highlight_count"].toDouble(0))},
       notification_count_{static_cast<uint64_t>(initial["notification_count"].toDouble(0))},
       transmitting_(nullptr), retry_backoff_(MINIMUM_BACKOFF)
@@ -219,7 +228,6 @@ static std::vector<event::Room> parse_room_events(const QJsonArray &a) {
   return result;
 }
 
-Batch::Batch(const proto::Timeline &t) : Batch{t.prev_batch, t.events} {}
 Batch::Batch(const QJsonObject &o) : Batch{TimelineCursor{o["begin"].toString()}, parse_room_events(o["events"].toArray())} {}
 
 QJsonObject Batch::to_json() const {
@@ -236,17 +244,23 @@ QJsonObject Room::to_json() const {
   for(const auto &receipt : receipts_by_user_) {
     receipts[receipt.first.value()] = QJsonObject{{"event_id", receipt.second.event.value()}, {"ts", static_cast<qint64>(receipt.second.ts)}};
   }
+  QJsonArray buffer_array;
+  for(const auto &batch : buffer()) {
+    buffer_array.push_back(batch.to_json());
+  }
   return QJsonObject{
     {"state", state_.to_json()},
     {"highlight_count", static_cast<double>(highlight_count_)},
     {"notification_count", static_cast<double>(notification_count_)},
     {"receipts", receipts},
-    {"last_batch", last_batch().to_json()}
+    {"buffer", buffer_array},
   };
 }
 
 bool Room::dispatch(const proto::JoinedRoom &joined) {
   bool state_touched = false;
+
+  sync_start(joined.timeline);
 
   for(auto &state : joined.state.events) {
     try {
@@ -298,8 +312,6 @@ bool Room::dispatch(const proto::JoinedRoom &joined) {
     }
   }
 
-  batch(joined.timeline);
-
   for(const auto &evt : joined.ephemeral.events) {
     if(evt.type() == event::Receipt::tag()) {
       const auto content = evt.content().json();
@@ -318,11 +330,21 @@ bool Room::dispatch(const proto::JoinedRoom &joined) {
     }
   }
 
+  if(!joined.timeline.events.empty()) {
+    buffer_.emplace_back(joined.timeline.prev_batch, joined.timeline.events);
+
+    size_t buffer_evts = std::accumulate(buffer().begin(), buffer().end(), 0, [](size_t c, const Batch &x) {  return c + x.events.size(); });
+    while(buffer_.size() > 1 && buffer_evts > session().buffer_size()) {
+      buffer_evts -= buffer_.front().events.size();
+      buffer_.pop_front();
+    }
+  }
+
+  sync_complete(joined.timeline);
+
   if(state_touched) {
     state_changed();
   }
-
-  last_batch_.emplace(joined.timeline);
 
   return state_touched;
 }
@@ -662,6 +684,18 @@ void Room::transmit_finished() {
       transmit_event();
     }
   }
+}
+
+bool Room::has_unread() const {
+  auto receipt = receipt_from(session().user_id());
+  if(!receipt) return true;
+  for(auto batch = buffer().rbegin(); batch != buffer().rend(); ++batch) {
+    for(auto event = batch->events.rbegin(); event != batch->events.rend(); ++event) {
+      if(receipt->event == event->id()) return false;
+      if(event->type() == event::room::Message::tag() && event->sender() != session().user_id()) return true;
+    }
+  }
+  return true;
 }
 
 }

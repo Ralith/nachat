@@ -154,6 +154,7 @@ void MainWindow::joined(matrix::Room &room) {
   ui->room_list->addItem(i.item);
   i.display_name = room.pretty_name_highlights();
   i.highlight_count = room.highlight_count() + room.notification_count();
+  i.has_unread = room.has_unread();
   update_room(i);
 
   connect(&room, &matrix::Room::highlight_count_changed, [this, &room](uint64_t old) {
@@ -168,12 +169,7 @@ void MainWindow::joined(matrix::Room &room) {
         highlight(room.id());
       }
     });
-  auto &&just_update = [this, &room]() { update_room(room); };
-  connect(&room, &matrix::Room::name_changed, just_update);
-  connect(&room, &matrix::Room::canonical_alias_changed, just_update);
-  connect(&room, &matrix::Room::aliases_changed, just_update);
-  connect(&room, &matrix::Room::member_changed, just_update);
-  connect(&room, &matrix::Room::receipts_changed, just_update);
+  connect(&room, &matrix::Room::sync_complete, [this, &room]() { update_room(room); });
 }
 
 void MainWindow::highlight(const matrix::RoomID &room) {
@@ -189,13 +185,14 @@ void MainWindow::update_room(matrix::Room &room) {
   auto &i = rooms_.at(room.id());
   i.display_name = room.pretty_name_highlights();
   i.highlight_count = room.highlight_count() + room.notification_count();
+  i.has_unread = room.has_unread();
   update_room(i);
 }
 
 void MainWindow::update_room(RoomInfo &info) {
   info.item->setText(info.display_name);
   auto f = font();
-  f.setBold(info.highlight_count != 0);
+  f.setBold(info.highlight_count != 0 || info.has_unread);
   info.item->setFont(f);
 }
 
