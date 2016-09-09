@@ -30,6 +30,7 @@ TimelineWindow::TimelineWindow(const std::deque<Batch> &batches, const RoomState
   if(!batches_.empty()) {
     batches_end_ = latest_batch_.begin;
   }
+  revert_batch(initial_state_, latest_batch_);
   for(auto it = batches.crbegin(); it != batches.crend(); ++it) {
     revert_batch(initial_state_, *it);
   }
