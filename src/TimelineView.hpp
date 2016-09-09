@@ -134,6 +134,7 @@ public:
   bool has(TimelineEventID event) const;
 
   TimelineEventID first_event() const { return events_.front().id; }
+  const matrix::UserID &sender() const { return sender_; }
 
   std::experimental::optional<matrix::EventID> last_event_in(const QRectF &) const; // Most recent real event fully contained by a rect
 
