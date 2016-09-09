@@ -12,7 +12,7 @@
 
 namespace matrix {
 
-constexpr uint64_t CACHE_FORMAT_VERSION = 4;
+constexpr uint64_t CACHE_FORMAT_VERSION = 5;
 // Bumped every time a backwards-incompatible format change is made, a
 // corruption bug is fixed, or a previously ignored class of state is
 // persisted
@@ -134,11 +134,9 @@ Session::Session(Matrix& universe, QUrl homeserver, UserID user_id, QString acce
                                      QJsonDocument::fromBinaryData(QByteArray{member_content.data(), static_cast<int>(member_content.size())}).object()}});
           }
         }
-        auto &room = rooms_.emplace(std::piecewise_construct,
-                                    std::forward_as_tuple(id),
-                                    std::forward_as_tuple(universe_, *this, id,
-                                                          QJsonDocument::fromBinaryData(QByteArray(state.data(), state.size())).object(),
-                                                          members)).first->second;
+        auto &room = add_room(id, universe_, *this, id,
+                              QJsonDocument::fromBinaryData(QByteArray(state.data(), state.size())).object(),
+                              members);
         room.members = std::move(member_db);
       }
     } else {
@@ -214,16 +212,8 @@ void Session::dispatch(const proto::Sync &sync) {
   for(auto &joined_room : sync.rooms.join) {
     auto it = rooms_.find(joined_room.id);
     if(it == rooms_.end()) {
-      auto &room = rooms_.emplace(std::piecewise_construct,
-                                  std::forward_as_tuple(joined_room.id),
-                                  std::forward_as_tuple(universe_, *this, joined_room)).first->second;
-      const auto id = joined_room.id;
-      connect(&room.room, &Room::member_changed, [&room](const UserID &id,
-                                                         const event::room::MemberContent &old,
-                                                         const event::room::MemberContent &current) {
-          (void)old;
-          room.member_changes.emplace_back(id, current);
-        });
+      auto &room = add_room(joined_room.id, universe_, *this, joined_room);
+
       for(const auto m : room.room.state().members()) {
         room.member_changes.emplace_back(m->first, m->second);
       }
@@ -450,5 +440,20 @@ ContentPost *Session::upload(QIODevice &data, const QString &content_type, const
   connect(reply, &QNetworkReply::uploadProgress, result, &ContentPost::progress);
   return result;
 }
+
+template<typename ...Ts>
+Session::RoomInfo &Session::add_room(const RoomID &id, Ts &&...ts) {
+  auto &room = rooms_.emplace(std::piecewise_construct,
+                              std::forward_as_tuple(id),
+                              std::forward_as_tuple(std::forward<Ts>(ts)...)).first->second;
+  connect(&room.room, &Room::member_changed, [&room](const UserID &id,
+                                                     const event::room::MemberContent &old,
+                                                     const event::room::MemberContent &current) {
+            (void)old;
+            room.member_changes.emplace_back(id, current);
+          });
+  return room;
+}
+
 
 }

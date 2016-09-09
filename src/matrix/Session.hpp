@@ -160,6 +160,9 @@ private:
   void handle_sync_reply();
   void dispatch(const proto::Sync &sync);
   void update_cache(const proto::Sync &sync);
+
+  template<typename ...Ts>
+  RoomInfo &add_room(const RoomID &id, Ts &&...ts);
 };
 
 }
