@@ -1095,7 +1095,7 @@ void TimelineView::paintEvent(QPaintEvent *) {
       const auto hash = QCryptographicHash::hash(block.block().sender().value().toUtf8(), QCryptographicHash::Sha3_224);
       const auto user_color = QColor::fromHsvF(static_cast<uint8_t>(hash[0]) * 1./255., 1, 1);
       auto user_tint = user_color;
-      user_tint.setAlphaF(0.03);
+      user_tint.setAlphaF(0.75);
 
       const QRectF outline(-padding, -half_spacing, view.width(), bounds.height() + spacing);
 
@@ -1104,8 +1104,16 @@ void TimelineView::paintEvent(QPaintEvent *) {
 
       QPainterPath path;
       path.addRoundedRect(outline, padding*2, padding*2);
-      painter.fillPath(path, palette().color(QPalette::Base));
-      painter.fillPath(path, user_tint);
+      painter.fillPath(path, palette().base());
+
+      QPainterPath colored;
+      colored.setFillRule(Qt::WindingFill);
+      colored.addRect(QRectF{-padding, -half_spacing, padding, bounds.height() + spacing});
+      painter.fillPath(colored.intersected(path), user_tint);
+
+      QPainterPath separator;
+      separator.addRect(QRectF{0, -half_spacing, view.width(), half_spacing});
+      painter.fillPath(separator.intersected(path), palette().alternateBase());
 
       painter.restore();
     }
@@ -1125,7 +1133,6 @@ void TimelineView::paintEvent(QPaintEvent *) {
   if(spinner_present) {
     QTimer::singleShot(30, viewport(), static_cast<void (QWidget::*)()>(&QWidget::update));
   }
-
 }
 
 void TimelineView::changeEvent(QEvent *) {
