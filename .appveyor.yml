@@ -12,15 +12,9 @@ configuration:
   - Debug
   - Release
 
-cache:
-  - LMDB.tar.gz -> .appveyor.yml
-
 install:
   - git submodule update --init
-  - ps: if ( -not (Test-Path "LMDB.tar.gz") ) { Start-FileDownload "https://github.com/LMDB/lmdb/archive/LMDB_${env:LMDB_VERSION}.tar.gz" -FileName "LMDB.tar.gz" }
-  - 7z x "LMDB.tar.gz" -so | 7z x -si -ttar
-  - C:\msys64\usr\bin\bash.exe -lc "cd $APPVEYOR_BUILD_FOLDER/lmdb-LMDB_$LMDB_VERSION/libraries/liblmdb/; make install"
-  - C:\msys64\usr\bin\bash.exe -lc "pacman --noconfirm -Syuu mingw-w64-x86_64-qt5"
+  - C:\msys64\usr\bin\bash.exe -lc "pacman --noconfirm -Syuu mingw-w64-x86_64-qt5 mingw-w64-x86_64-lmdb"
 
 build_script:
   - C:\msys64\usr\bin\bash.exe -lc "cd $APPVEYOR_BUILD_FOLDER; cmake -DCMAKE_BUILD_TYPE=$CONFIGURATION -H. -Bbuild -G 'MSYS Makefiles'; make -C build -j2"
