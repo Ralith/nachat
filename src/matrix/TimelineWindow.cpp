@@ -55,7 +55,7 @@ void TimelineWindow::discard(const TimelineCursor &batch, Direction dir) {
       }
     }
   }
-  qDebug() << "timeline window tried to discard unknown batch" << batch.value();
+  qWarning() << "timeline window tried to discard unknown batch" << batch.value();
   batches_.clear();
 }
 
