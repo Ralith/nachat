@@ -69,10 +69,8 @@ bool TimelineWindow::at_end() const {
 
 void TimelineWindow::append_batch(const TimelineCursor &batch_start, const TimelineCursor &batch_end, gsl::span<const event::Room> events,
                                   TimelineManager *mgr) {
-  qDebug() << "appending" << events.size() << "events:" << batch_start.value() << "to" << batch_end.value();
   if(!end() || batch_start != *this->end()) {
     if(end()) mgr->grow(Direction::FORWARD);
-    qDebug() << "ENDPOINT MISMATCH";
     return;
   }
 
@@ -84,7 +82,6 @@ void TimelineWindow::append_batch(const TimelineCursor &batch_start, const Timel
   }
 
   if(static_cast<size_t>(events.size()) < BATCH_SIZE) {
-    qDebug() << "RECONNECTED WITH SYNC" << batches_.back().events.back().id().value() << sync_batch_.events.front().id().value();
     batches_.emplace_back(sync_batch_);
     batches_end_ = {};
     ++new_batches;
@@ -177,7 +174,6 @@ void TimelineManager::grow(Direction dir) {
     throw std::logic_error("tried to grow from an undefined cursor");
   }
   auto reply = room_.get_messages(dir, *start, BATCH_SIZE, end);
-  qDebug() << "requesting" << (dir == Direction::BACKWARD ? "backward" : "forward") << "from" << start->value() << "to" << (end ? end->value() : "infinity");
 
   if(dir == Direction::FORWARD) {
     connect(reply, &MessageFetch::finished, this, &TimelineManager::got_forward);
@@ -222,7 +218,6 @@ void TimelineManager::error(Direction dir, const QString &msg) {
 }
 
 void TimelineManager::got_backward(const TimelineCursor &start, const TimelineCursor &end, gsl::span<const event::Room> reversed_events) {
-  //qDebug() << "got batch of" << reversed_events.size() << "events from" << start.value() << "to" << end.value();
   backward_req_ = nullptr;
   window_.prepend_batch(start, end, reversed_events, this);
 }

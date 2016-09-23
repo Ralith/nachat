@@ -1486,14 +1486,12 @@ void TimelineView::compute_visible_blocks() {
 
     if(latest_found && batches_.end() - discard_after > 1) {
       auto first_erased = discard_after+1;
-      qDebug() << "discarding" << batches_.end() - first_erased << "batches at end, beginning after" << discard_after->begin.value();
       discarded_after(discard_after->begin);
       batches_.erase(first_erased, batches_.end());
       at_bottom_ = false;
       mark_dirty();
     }
     if(earliest_found && discard_before != batches_.begin()) {
-      qDebug() << "discarding" << discard_before - batches_.begin() << "batches at begin, ending before" << discard_before->begin.value();
       discarded_before(discard_before->begin);
       batches_.erase(batches_.begin(), discard_before);
       mark_dirty();
