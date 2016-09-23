@@ -23,28 +23,20 @@ class TimelineManager;
 
 class TimelineWindow {
 public:
-  TimelineWindow(const std::deque<Batch> &batches, const RoomState &final_state);
+  TimelineWindow(std::deque<Batch> batches, const RoomState &final_state);
 
   void discard(const TimelineCursor &, Direction dir);
 
   bool at_start() const;
   bool at_end() const;
 
-  TimelineCursor begin() const {
-    if(batches_.empty()) {
-      return latest_batch_.begin;
-    }
-    return batches_.front().begin;
-  }
+  TimelineCursor begin() const { return batches_.front().begin; }
 
   // Empty => window includes present
-  std::experimental::optional<TimelineCursor> end() const {
-    if(batches_end_ && *batches_end_ == latest_batch_.begin) return {};
-    return batches_end_;
-  }
+  std::experimental::optional<TimelineCursor> end() const { return batches_end_; }
 
-  TimelineCursor latest_begin() const {
-    return latest_batch_.begin;
+  TimelineCursor sync_begin() const {
+    return sync_batch_.begin;
   }
 
   void prepend_batch(const TimelineCursor &start, const TimelineCursor &end, gsl::span<const event::Room> reversed_events,
@@ -58,14 +50,13 @@ public:
 
   const RoomState &initial_state() { return initial_state_; }
   const std::deque<Batch> &batches() const { return batches_; }
-  const Batch &latest_batch() const { return latest_batch_; }
   const RoomState &final_state() { return final_state_; }
 
 private:
   RoomState initial_state_, final_state_;
   std::deque<Batch> batches_;   // have nonempty events
   std::experimental::optional<TimelineCursor> batches_end_;
-  Batch latest_batch_;
+  Batch sync_batch_;            // may equal batches_.back()
 };
 
 class TimelineManager : public QObject {

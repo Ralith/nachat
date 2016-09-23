@@ -114,6 +114,19 @@ struct CursorWithHref {
 
 class EventBlock {
 public:
+  struct Event {
+    TimelineEventID id;
+    matrix::EventType type;
+    bool redacted;
+    std::experimental::optional<Time> time;
+    std::experimental::optional<matrix::event::Room> source;
+    FixedVector<QTextLayout> paragraphs;
+
+    Event(const TimelineView &, const EventBlock &, const EventLike &);
+
+    QRectF bounds() const;
+  };
+
   EventBlock(TimelineView &parent, ThumbnailCache &cache, gsl::span<const EventLike *const> events); // All events should have same sender
 
   void update_layout(qreal width);
@@ -138,20 +151,9 @@ public:
 
   std::experimental::optional<matrix::EventID> last_event_in(const QRectF &) const; // Most recent real event fully contained by a rect
 
+  const FixedVector<Event> &events() const { return events_; }
+
 private:
-  struct Event {
-    TimelineEventID id;
-    matrix::EventType type;
-    bool redacted;
-    std::experimental::optional<Time> time;
-    std::experimental::optional<matrix::event::Room> source;
-    FixedVector<QTextLayout> paragraphs;
-
-    Event(const TimelineView &, const EventBlock &, const EventLike &);
-
-    QRectF bounds() const;
-  };
-
   struct TimeInfo {
     Time start, end;
   };
@@ -197,6 +199,8 @@ public:
 signals:
   void need_backwards();
   void need_forwards();
+  void discarded_after(const matrix::TimelineCursor &);
+  void discarded_before(const matrix::TimelineCursor &);
 
   void redact_requested(const matrix::EventID &id, const QString &reason);
   void event_read(const matrix::EventID &id);
@@ -217,9 +221,10 @@ protected:
 private:
   struct Batch {
     matrix::TimelineCursor begin;
-    std::deque<EventLike> events;
+    std::deque<EventLike> events; // TODO: Can't this be real event objects?
 
     Batch(matrix::TimelineCursor begin, std::deque<EventLike> events) : begin{std::move(begin)}, events{std::move(events)} {}
+    bool contains(const matrix::EventID &e) const;
   };
 
   struct Pending {
@@ -236,6 +241,7 @@ private:
     EventBlock &block() { return block_; }
     const EventBlock &block() const { return block_; }
     QRectF bounds() const;
+    QPointF origin() const { return origin_; }
 
   private:
     EventBlock &block_;

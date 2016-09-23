@@ -38,7 +38,13 @@ RoomView::RoomView(ThumbnailCache &cache, matrix::Room &room, QWidget *parent)
             }
           });
   connect(timeline_manager_, &matrix::TimelineManager::discontinuity, [this]() {
-      timeline_view_->set_at_bottom(false);
+      timeline_view_->set_at_bottom(false); // FIXME: Reset view history
+    });
+  connect(timeline_view_, &TimelineView::discarded_before, [this](const matrix::TimelineCursor &c) {
+      timeline_manager_->window().discard(c, matrix::Direction::BACKWARD);
+    });
+  connect(timeline_view_, &TimelineView::discarded_after, [this](const matrix::TimelineCursor &c) {
+      timeline_manager_->window().discard(c, matrix::Direction::FORWARD);
     });
 
   connect(timeline_view_, &TimelineView::need_backwards, [this]() { timeline_manager_->grow(matrix::Direction::BACKWARD); });

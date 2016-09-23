@@ -22,84 +22,77 @@ void revert_batch(RoomState &state, const Batch &batch) {
 
 }
 
-TimelineWindow::TimelineWindow(const std::deque<Batch> &batches, const RoomState &final_state)
+TimelineWindow::TimelineWindow(std::deque<Batch> batches, const RoomState &final_state)
   : initial_state_{final_state}, final_state_{final_state},
-    batches_(batches.begin(), batches.empty() ? throw std::invalid_argument("timeline window must be construct from at least one batch") : batches.end()-1),
-    latest_batch_{*(batches.end()-1)}
+    batches_{std::move(batches)},
+    sync_batch_{batches_.empty() ? throw std::invalid_argument("timeline window must be construct from at least one batch") : batches_.back()}
 {
-  if(!batches_.empty()) {
-    batches_end_ = latest_batch_.begin;
-  }
-  revert_batch(initial_state_, latest_batch_);
-  for(auto it = batches.crbegin(); it != batches.crend(); ++it) {
+  for(auto it = batches_.crbegin(); it != batches_.crend(); ++it) {
     revert_batch(initial_state_, *it);
   }
 }
 
 void TimelineWindow::discard(const TimelineCursor &batch, Direction dir) {
   if(dir == Direction::FORWARD) {
-    revert_batch(final_state_, latest_batch_);
     for(auto it = batches_.crbegin(); it != batches_.crend(); ++it) {
-      revert_batch(final_state_, *it);
       if(it->begin == batch) {
-        if(it.base() != batches_.begin()) {
-          batches_end_ = it->begin;
-        } else {
-          batches_end_ = {};
+        if(it.base() != batches_.cend()) {
+          batches_end_ = it.base()->begin;
         }
         batches_.erase(it.base(), batches_.end());
         return;
       }
+      revert_batch(final_state_, *it);
     }
   } else {
     for(auto it = batches_.cbegin(); it != batches_.cend(); ++it) {
-      for(const auto &evt : it->events) {
-        if(auto s = evt.to_state()) initial_state_.apply(*s);
-      }
       if(it->begin == batch) {
         batches_.erase(batches_.cbegin(), it);
         return;
       }
-    }
-    if(batch == latest_batch_.begin) {
-      batches_.clear();
-      return;
+      for(const auto &evt : it->events) {
+        if(auto s = evt.to_state()) initial_state_.apply(*s);
+      }
     }
   }
-  qDebug() << "timeline window tried to discard unknown batch";
+  qDebug() << "timeline window tried to discard unknown batch" << batch.value();
   batches_.clear();
 }
 
 bool TimelineWindow::at_start() const {
-  return (!batches_.empty() && batches_.back().events.back().type() == event::room::Create::tag())
-    || (!latest_batch_.events.empty() && latest_batch_.events.back().type() == event::room::Create::tag());
+  return batches_.front().events.front().type() == event::room::Create::tag();
 }
 
 bool TimelineWindow::at_end() const {
-  return batches_.empty() || *batches_end_ == latest_batch_.begin;
+  return batches_.empty() || sync_batch_.begin == batches_.back().begin;
 }
 
 void TimelineWindow::append_batch(const TimelineCursor &batch_start, const TimelineCursor &batch_end, gsl::span<const event::Room> events,
                                   TimelineManager *mgr) {
+  qDebug() << "appending" << events.size() << "events:" << batch_start.value() << "to" << batch_end.value();
   if(!end() || batch_start != *this->end()) {
     if(end()) mgr->grow(Direction::FORWARD);
+    qDebug() << "ENDPOINT MISMATCH";
     return;
   }
-  if(events.empty()) return;
 
-  batches_.emplace_back(batch_start, std::vector<event::Room>(events.begin(), events.end()));
-  batches_end_ = batch_end;
-
-  for(const auto &evt : batches_.back().events) {
-    mgr->grew(Direction::FORWARD, batch_start, final_state_, evt);
-    if(auto s = evt.to_state()) {
-      final_state_.apply(*s);
-    }
+  size_t new_batches = 0;
+  if(!events.empty()) {
+    batches_.emplace_back(batch_start, std::vector<event::Room>(events.begin(), events.end()));
+    batches_end_ = batch_end;
+    ++new_batches;
   }
 
-  if(latest_batch_.begin == batch_end) {
-    for(const auto &evt : latest_batch_.events) {
-      mgr->grew(Direction::FORWARD, batch_start, final_state_, evt);
+  if(static_cast<size_t>(events.size()) < BATCH_SIZE) {
+    qDebug() << "RECONNECTED WITH SYNC" << batches_.back().events.back().id().value() << sync_batch_.events.front().id().value();
+    batches_.emplace_back(sync_batch_);
+    batches_end_ = {};
+    ++new_batches;
+  }
+
+  for(size_t i = 0; i < new_batches; ++i) {
+    for(const auto &evt : batches_[batches_.size()-new_batches+i].events) {
+      mgr->grew(Direction::FORWARD, batches_.back().begin, final_state_, evt);
       if(auto s = evt.to_state()) {
         final_state_.apply(*s);
       }
@@ -117,9 +110,6 @@ void TimelineWindow::prepend_batch(const TimelineCursor &batch_start, const Time
   if(reversed_events.empty()) return;
 
   batches_.emplace_front(batch_end, std::vector<event::Room>(reversed_events.rbegin(), reversed_events.rend()));
-  if(batches_.size() == 1) {
-    batches_end_ = batch_start;
-  }
 
   for(auto it = batches_.front().events.crbegin(); it != batches_.front().events.crend(); ++it) {
     if(auto s = it->to_state()) initial_state_.revert(*s);
@@ -130,19 +120,22 @@ void TimelineWindow::prepend_batch(const TimelineCursor &batch_start, const Time
 void TimelineWindow::append_sync(const proto::Timeline &t, TimelineManager *mgr) {
   if(t.events.empty()) return;
 
-  if(at_end() && !t.limited) {  // FIXME: Don't discard previous batch in the event of a limited sync
-    if(!latest_batch_.events.empty()) batches_.emplace_back(std::move(latest_batch_));
-    batches_end_ = t.prev_batch;
+  if(at_end()) {
+    if(t.limited) {
+      batches_.clear();         // FIXME: Don't nuke history
+    }
+    batches_.emplace_back(t.prev_batch, t.events);
   }
 
-  latest_batch_ = Batch{t.prev_batch, t.events};
-  
-  if(t.limited) mgr->discontinuity();
+  sync_batch_ = Batch{t.prev_batch, t.events};
 
   if(at_end()) {
-    assert(!t.limited);
-    for(const auto &evt : latest_batch_.events) {
-      mgr->grew(Direction::FORWARD, latest_batch_.begin, final_state_, evt);
+    if(t.limited) {
+      mgr->discontinuity();
+    }
+
+    for(const auto &evt : sync_batch_.events) {
+      mgr->grew(Direction::FORWARD, sync_batch_.begin, final_state_, evt);
       if(auto s = evt.to_state()) {
         final_state_.apply(*s);
       }
@@ -152,10 +145,11 @@ void TimelineWindow::append_sync(const proto::Timeline &t, TimelineManager *mgr)
 
 void TimelineWindow::reset(const RoomState &current_state) {
   batches_.clear();
+  batches_.emplace_back(sync_batch_);
   batches_end_ = {};
   final_state_ = current_state;
-  initial_state_ = final_state_;
-  revert_batch(initial_state_, latest_batch_);
+  initial_state_ = current_state;
+  revert_batch(initial_state_, sync_batch_);
 }
 
 
@@ -173,13 +167,15 @@ void TimelineManager::grow(Direction dir) {
   if(dir == Direction::FORWARD) {
     if(forward_req_ || window_.at_end()) return;
     start = window_.end();
-    end = window_.latest_begin();
+    end = window_.sync_begin();
   } else {
     if(backward_req_ || window_.at_start()) return;
     start = window_.begin();
   }
 
-  if(!start) return;            // throw?
+  if(!start) {
+    throw std::logic_error("tried to grow from an undefined cursor");
+  }
   auto reply = room_.get_messages(dir, *start, BATCH_SIZE, end);
   qDebug() << "requesting" << (dir == Direction::BACKWARD ? "backward" : "forward") << "from" << start->value() << "to" << (end ? end->value() : "infinity");
 
@@ -199,12 +195,6 @@ void TimelineManager::replay() {
   for(const auto &batch : window().batches()) {
     for(const auto &evt : batch.events) {
       grew(Direction::FORWARD, batch.begin, replay, evt);
-      if(auto s = evt.to_state()) replay.apply(*s);
-    }
-  }
-  if(window().at_end()) {
-    for(const auto &evt : window().latest_batch().events) {
-      grew(Direction::FORWARD, window().latest_batch().begin, replay, evt);
       if(auto s = evt.to_state()) replay.apply(*s);
     }
   }
@@ -232,7 +222,7 @@ void TimelineManager::error(Direction dir, const QString &msg) {
 }
 
 void TimelineManager::got_backward(const TimelineCursor &start, const TimelineCursor &end, gsl::span<const event::Room> reversed_events) {
-  qDebug() << "got batch of" << reversed_events.size() << "events from" << start.value() << "to" << end.value();
+  //qDebug() << "got batch of" << reversed_events.size() << "events from" << start.value() << "to" << end.value();
   backward_req_ = nullptr;
   window_.prepend_batch(start, end, reversed_events, this);
 }

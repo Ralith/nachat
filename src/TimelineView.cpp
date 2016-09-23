@@ -32,6 +32,7 @@ using std::experimental::optional;
 namespace {
 
 constexpr std::chrono::minutes BLOCK_MERGE_INTERVAL(5);
+constexpr size_t DISCARD_PAGES_AWAY = 3; // Number of pages away a batch must be to be discarded
 
 qreal block_spacing(const QWidget &parent) {
   return std::round(parent.fontMetrics().lineSpacing() * 0.75);
@@ -703,13 +704,6 @@ bool EventBlock::has(TimelineEventID event) const {
   return false;
 }
 
-optional<matrix::EventID> EventBlock::last_event_in(const QRectF &rect) const {
-  for(auto e = events_.rbegin(); e != events_.rend(); ++e) {
-    if(e->source && rect.contains(e->bounds())) return e->source->id();
-  }
-  return {};
-}
-
 EventBlock::Event::Event(const TimelineView &view, const EventBlock &block, const EventLike &e)
   : id{e.id}, type{e.type}, redacted{e.redaction()}, time{e.time}, source{e.event} {
 
@@ -1055,8 +1049,25 @@ void TimelineView::set_last_read(const matrix::EventID &id) {
 optional<matrix::EventID> TimelineView::latest_visible_event() const {
   if(visible_blocks_.empty()) return {};
 
-  auto &vb = visible_blocks_.front();
-  return vb.block().last_event_in(view_rect().translated(-vb.bounds().topLeft()));
+  const auto view = view_rect();
+  {
+    auto &vb = visible_blocks_.front();
+    const auto block_origin = vb.origin();
+    for(auto event = vb.block().events().rbegin(); event != vb.block().events().rend(); ++event) {
+      if(event->source && event->bounds().translated(block_origin).bottom() <= view.bottom()) {
+        return event->source->id();
+      }
+    }
+  }
+  if(visible_blocks_.size() > 1) {
+    auto &vb = visible_blocks_[1];
+    const auto block_origin = vb.origin();
+    auto &event = vb.block().events().back();
+    if(event.source && event.bounds().translated(block_origin).bottom() <= view.bottom()) {
+      return event.source->id();
+    }
+  }
+  return {};
 }
 
 void TimelineView::resizeEvent(QResizeEvent *) {
@@ -1412,15 +1423,29 @@ void TimelineView::compute_visible_blocks() {
 
   visible_blocks_.clear();
   selection_starts_below_view_ = false;
+
+  if(batches_.empty()) return;
+
   qreal offset = 0;
   std::deque<EventBlock>::reverse_iterator block;
+  optional<matrix::EventID> latest_retained_event;
   for(block = blocks_.rbegin(); block != blocks_.rend(); ++block) {
     const auto &bounds = block->bounds();
     const auto total_height = std::round(spacing + bounds.height());
+
     offset -= total_height;
 
     if(offset > view.bottom()) {
       selection_starts_below_view_ ^= block->has(selection_.begin.event()) ^ block->has(selection_.end.event());
+
+      for(auto event = block->events().crbegin(); event != block->events().crend(); ++event) {
+        const qreal event_top = event->bounds().top() + offset;
+        if(event_top - view.bottom() < DISCARD_PAGES_AWAY * view.height()) {
+          break;
+        }
+        if(event->source) latest_retained_event = event->source->id();
+      }
+
       continue;
     }
 
@@ -1432,8 +1457,49 @@ void TimelineView::compute_visible_blocks() {
     if(offset < view.top()) break;
   }
 
+  optional<matrix::EventID> earliest_retained_event;
+  // Compute vertical extent of all blocks and back discard_before off until it's outside DISCARD_PAGES_AWAY
   for(; block != blocks_.rend(); ++block) {
     offset -= std::round(spacing + block->bounds().height());
+
+    for(auto event = block->events().crbegin(); event != block->events().crend(); ++event) {
+      const qreal event_bottom = event->bounds().bottom() + offset;
+      if(view.top() - event_bottom > DISCARD_PAGES_AWAY * view.height()) {
+        break;
+      }
+      if(event->source) earliest_retained_event = event->source->id();
+    }
+  }
+
+  if(selection_text().isEmpty()) { // Don't discard blocks while there's a selection, lest we invalidate it. TODO: Be less conservative.
+    std::deque<Batch>::iterator discard_before, discard_after;
+    // This search can fail if compute_visible_blocks has already been called since the last time the block list was rebuilt
+    bool earliest_found = false, latest_found = false;
+    for(auto it = batches_.begin(); it != batches_.end(); ++it) {
+      if(earliest_retained_event && it->contains(*earliest_retained_event)) {
+        earliest_found = true;
+        discard_before = it;
+      }
+      if(latest_retained_event && it->contains(*latest_retained_event)) {
+        latest_found = true;
+        discard_after = it;
+      }
+    }
+
+    if(latest_found && batches_.end() - discard_after > 1) {
+      auto first_erased = discard_after+1;
+      qDebug() << "discarding" << batches_.end() - first_erased << "batches at end, beginning after" << discard_after->begin.value();
+      discarded_after(discard_after->begin);
+      batches_.erase(first_erased, batches_.end());
+      at_bottom_ = false;
+      mark_dirty();
+    }
+    if(earliest_found && discard_before != batches_.begin()) {
+      qDebug() << "discarding" << discard_before - batches_.begin() << "batches at begin, ending before" << discard_before->begin.value();
+      discarded_before(discard_before->begin);
+      batches_.erase(batches_.begin(), discard_before);
+      mark_dirty();
+    }
   }
 
   maybe_need_forwards();
@@ -1476,4 +1542,8 @@ void TimelineView::mark_read() {
       }
     }
   }
+}
+
+bool TimelineView::Batch::contains(const matrix::EventID &id) const {
+  return events.end() != std::find_if(events.begin(), events.end(), [&](const EventLike &e) { return e.event && e.event->id() == id; });
 }
