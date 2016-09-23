@@ -320,7 +320,7 @@ void EventBlock::update_layout(qreal width) {
       while(true) {
         auto line = paragraph.createLine();
         if(!line.isValid()) break;
-        qreal offset = (lines < 2) * early_offset;
+        qreal offset = (lines < 2) ? early_offset : horizontal_padding();
         line.setLineWidth(width - offset);
         line.setPosition(QPointF(offset, lines * metrics.lineSpacing()));
         lines += 1;
@@ -1117,7 +1117,7 @@ void TimelineView::paintEvent(QPaintEvent *) {
 
       QPainterPath colored;
       colored.setFillRule(Qt::WindingFill);
-      colored.addRect(QRectF{-padding, -half_spacing, padding, fontMetrics().lineSpacing() + fontMetrics().ascent() + half_spacing});
+      colored.addRect(QRectF{-padding, -half_spacing, padding, bounds.height() + spacing});
       painter.fillPath(colored.intersected(path), user_color);
 
       QPainterPath separator;
