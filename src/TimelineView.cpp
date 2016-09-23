@@ -1105,8 +1105,6 @@ void TimelineView::paintEvent(QPaintEvent *) {
     {
       const auto hash = QCryptographicHash::hash(block.block().sender().value().toUtf8(), QCryptographicHash::Sha3_224);
       const auto user_color = QColor::fromHsvF(static_cast<uint8_t>(hash[0]) * 1./255., 1, 1);
-      auto user_tint = user_color;
-      user_tint.setAlphaF(0.75);
 
       const QRectF outline(-padding, -half_spacing, view.width(), bounds.height() + spacing);
 
@@ -1119,8 +1117,8 @@ void TimelineView::paintEvent(QPaintEvent *) {
 
       QPainterPath colored;
       colored.setFillRule(Qt::WindingFill);
-      colored.addRect(QRectF{-padding, -half_spacing, padding, bounds.height() + spacing});
-      painter.fillPath(colored.intersected(path), user_tint);
+      colored.addRect(QRectF{-padding, -half_spacing, padding, fontMetrics().lineSpacing() + fontMetrics().ascent() + half_spacing});
+      painter.fillPath(colored.intersected(path), user_color);
 
       QPainterPath separator;
       separator.addRect(QRectF{0, -half_spacing, view.width(), half_spacing});
