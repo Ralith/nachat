@@ -21,7 +21,8 @@
 
 MainWindow::MainWindow(matrix::Session &session)
     : ui(new Ui::MainWindow), session_(session),
-      progress_(new QProgressBar(this)), sync_label_(new QLabel(this)) {
+      progress_(new QProgressBar(this)), sync_label_(new QLabel(this)),
+      thumbnail_cache_{devicePixelRatioF()} {
   ui->setupUi(this);
 
   ui->status_bar->addPermanentWidget(sync_label_);

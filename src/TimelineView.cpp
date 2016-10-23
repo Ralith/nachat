@@ -219,9 +219,10 @@ EventBlock::EventBlock(TimelineView &parent, ThumbnailCache &thumbnail_cache, gs
 
   if(auto p = front.effective_profile()) {
     if(auto avatar = p->avatar_url()) {
-      const auto size = static_cast<int>(std::floor(avatar_extent()));
+      const auto size = static_cast<int>(std::floor(avatar_extent())) * parent_.devicePixelRatio();
       try {
-        avatar_ = ThumbnailRef{matrix::Thumbnail{matrix::Content{*avatar}, QSize{size, size}, matrix::ThumbnailMethod::SCALE}, thumbnail_cache};
+        avatar_ = ThumbnailRef{matrix::Thumbnail{matrix::Content{*avatar}, QSize{size, size}, matrix::ThumbnailMethod::SCALE},
+                               thumbnail_cache};
       } catch(const matrix::illegal_content_scheme &) {
         qDebug() << "illegal content in avatar url" << *avatar << "for user" << front.sender.value();
       }

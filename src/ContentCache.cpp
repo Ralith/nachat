@@ -29,6 +29,7 @@ const std::experimental::optional<QPixmap> &ThumbnailCache::get(const Thumbnail 
 void ThumbnailCache::set(const Thumbnail &x, QPixmap p) {
   auto it = items_.find(x);
   if(it != items_.end()) {
+    p.setDevicePixelRatio(device_pixel_ratio_);
     it->second.pixmap = p;
     updated();
   }

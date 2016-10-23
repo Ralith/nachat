@@ -13,6 +13,8 @@ class ThumbnailCache : public QObject {
   Q_OBJECT
 
 public:
+  explicit ThumbnailCache(qreal device_pixel_ratio = 1.0) : device_pixel_ratio_{device_pixel_ratio} {}
+
   void ref(const matrix::Thumbnail &);
   void unref(const matrix::Thumbnail &);
 
@@ -29,6 +31,7 @@ private:
     std::experimental::optional<QPixmap> pixmap;
   };
 
+  qreal device_pixel_ratio_;
   std::unordered_map<matrix::Thumbnail, Item> items_;
 };
 
