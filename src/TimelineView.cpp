@@ -1291,7 +1291,7 @@ void TimelineView::update_scrollbar(int content_height) {
       const auto &bounds = block->bounds();
       const auto block_height = std::round(block_spacing(*this) + bounds.height());
       block_top -= block_height;
-      if(block->first_event() == scroll_position_->block) {
+      if(block->events().front().id == scroll_position_->block) {
         scroll.setValue(scroll.maximum() - below_content + (block_top + block_height + scroll_position_->from_bottom));
         break;
       }
@@ -1449,7 +1449,7 @@ void TimelineView::compute_visible_blocks() {
     }
 
     if(visible_blocks_.empty()) {
-      scroll_position_ = ScrollPosition{block->first_event(), view.bottom() - (offset + total_height)};
+      scroll_position_ = ScrollPosition{block->events().front().id, view.bottom() - (offset + total_height)};
     }
     visible_blocks_.emplace_back(*block, QPointF(padding, offset + half_spacing));
 
