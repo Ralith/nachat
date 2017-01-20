@@ -30,7 +30,7 @@ struct JoinedRoom;
 struct Timeline;
 }
 
-inline QString pretty_name(const UserID &user, const event::room::MemberContent profile) {
+inline QString pretty_name(const UserID &user, const event::room::MemberContent &profile) {
   return profile.displayname() ? *profile.displayname() : user.value();
 }
 

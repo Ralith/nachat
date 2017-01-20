@@ -10,6 +10,7 @@ add_library(matrix
   Content.cpp
   Event.cpp
   TimelineWindow.cpp
+  MemberListModel.cpp
   )
 
 target_include_directories(matrix

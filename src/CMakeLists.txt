@@ -28,7 +28,6 @@ add_executable(nachat WIN32
   RoomMenu.cpp
   sort.cpp
   RoomViewList.cpp
-  MemberList.cpp
   Spinner.cpp
   RedactDialog.cpp
   JoinDialog.cpp

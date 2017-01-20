@@ -18,6 +18,7 @@ enum class Membership;
 class TimelineManager;
 class UserID;
 class EventType;
+class MemberListModel;
 
 namespace event {
 class Room;
@@ -52,13 +53,10 @@ private:
   Ui::RoomView *ui;
   TimelineView *timeline_view_;
   EntryBox *entry_;
-  MemberList *member_list_;
   matrix::Room &room_;
   matrix::TimelineManager *timeline_manager_;
+  matrix::MemberListModel *member_list_;
 
-  void member_changed(const matrix::UserID &member, const matrix::event::room::MemberContent &old, const matrix::event::room::MemberContent &current);
-  void member_disambiguation_changed(const matrix::UserID &member,
-                                     const std::experimental::optional<QString> &old, const std::experimental::optional<QString> &current);
   void topic_changed();
   void command(const QString &name, const QString &args);
   void send(const matrix::EventType &ty, const matrix::event::Content &content);
