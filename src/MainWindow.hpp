@@ -10,6 +10,7 @@
 #include "matrix/ID.hpp"
 
 #include "ContentCache.hpp"
+#include "JoinedRoomListModel.hpp"
 
 class QProgressBar;
 class QLabel;
@@ -37,29 +38,18 @@ signals:
   void log_out();
 
 private:
-  struct RoomInfo {
-    ChatWindow *window = nullptr;
-    QListWidgetItem *item = nullptr;
-    bool has_unread = false;
-    QString display_name;
-    size_t highlight_count = 0;
-  };
-
   Ui::MainWindow *ui;
   matrix::Session &session_;
   QProgressBar *progress_;
   QLabel *sync_label_;
   QPointer<ChatWindow> last_focused_;
   ThumbnailCache thumbnail_cache_;
+  JoinedRoomListModel rooms_;
+  std::unordered_map<matrix::RoomID, ChatWindow *> windows_;
 
-  std::unordered_map<matrix::RoomID, RoomInfo> rooms_;
-
-  void joined(matrix::Room &room);
-  void highlight(const matrix::RoomID &room);
-  void update_room(RoomInfo &info);
-  void update_room(matrix::Room &room);
   void sync_progress(qint64 received, qint64 total);
   ChatWindow *spawn_chat_window();
+  void highlight(const matrix::RoomID &room);
 };
 
 class RoomWindowBridge : public QObject {

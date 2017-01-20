@@ -22,7 +22,7 @@
 MainWindow::MainWindow(matrix::Session &session)
     : ui(new Ui::MainWindow), session_(session),
       progress_(new QProgressBar(this)), sync_label_(new QLabel(this)),
-      thumbnail_cache_{devicePixelRatioF()} {
+      thumbnail_cache_{devicePixelRatioF()}, rooms_{session} {
   ui->setupUi(this);
 
   ui->status_bar->addPermanentWidget(sync_label_);
@@ -73,30 +73,23 @@ MainWindow::MainWindow(matrix::Session &session)
       progress_->hide();
       sync_label_->hide();
     });
-  connect(&session_, &matrix::Session::joined, this, &MainWindow::joined);
 
   ui->action_quit->setShortcuts(QKeySequence::Quit);
   connect(ui->action_quit, &QAction::triggered, this, &MainWindow::quit);
 
-  connect(ui->room_list, &QListWidget::itemActivated, [this](QListWidgetItem *){
+  connect(ui->room_list, &QListView::activated, [this](const QModelIndex &){
       std::unordered_set<ChatWindow *> windows;
-      for(auto item : ui->room_list->selectedItems()) {
-        auto &room = *reinterpret_cast<matrix::Room *>(item->data(Qt::UserRole).value<void*>());
-        ChatWindow *window = nullptr;
-        auto &i = rooms_.at(room.id());
-        if(i.window) {
-          window = i.window;   // Focus in existing window
-        } else if(last_focused_) {
-          window = last_focused_; // Add to most recently used window
-        } else {
-          // Select arbitrary window
-          for(auto &j : rooms_) {
-            if(j.second.window) {
-              window = j.second.window;
-              break;
-            }
-          }
-          if(!window) {
+      for(auto index : ui->room_list->selectionModel()->selectedIndexes()) {
+        auto &room = *session_.room_from_id(matrix::RoomID{rooms_.data(index, JoinedRoomListModel::IDRole).toString()});
+        auto it = windows_.find(room.id());
+        ChatWindow *window = it != windows_.end() ? it->second : nullptr;
+        if(!window) {
+          if(last_focused_) {
+            window = last_focused_; // Add to most recently used window
+          } else if(!windows_.empty()) {
+            // Select arbitrary window
+            window = windows_.begin()->second;
+          } else {
             // Create first window
             window = spawn_chat_window();
           }
@@ -109,6 +102,7 @@ MainWindow::MainWindow(matrix::Session &session)
         window->activateWindow();
       }
     });
+  ui->room_list->setModel(&rooms_);
 
   connect(&thumbnail_cache_, &ThumbnailCache::needs, [this](const matrix::Thumbnail &t) {
       auto fetch = session_.get_thumbnail(t);
@@ -128,15 +122,12 @@ MainWindow::MainWindow(matrix::Session &session)
     });
 
   sync_progress(0, -1);
-  for(auto room : session_.rooms()) {
-    joined(*room);
-  }
 }
 
 MainWindow::~MainWindow() {
   std::unordered_set<ChatWindow *> windows;
-  for(auto &room : rooms_) {
-    windows.insert(room.second.window);
+  for(auto &window : windows_) {
+    windows.insert(window.second);
   }
   for(auto window : windows) {
     delete window;
@@ -144,57 +135,13 @@ MainWindow::~MainWindow() {
   delete ui;
 }
 
-void MainWindow::joined(matrix::Room &room) {
-  auto &i = rooms_.emplace(
-    std::piecewise_construct,
-    std::forward_as_tuple(room.id()),
-    std::forward_as_tuple()).first->second;
-  i.item = new QListWidgetItem;
-  i.item->setData(Qt::UserRole, QVariant::fromValue(reinterpret_cast<void*>(&room)));
-  // TODO: Sorting
-  ui->room_list->addItem(i.item);
-  i.display_name = room.pretty_name_highlights();
-  i.highlight_count = room.highlight_count() + room.notification_count();
-  i.has_unread = room.has_unread();
-  update_room(i);
-
-  connect(&room, &matrix::Room::highlight_count_changed, [this, &room](uint64_t old) {
-      update_room(room);
-      if(old <= room.highlight_count()) {
-        highlight(room.id());
-      }
-    });
-  connect(&room, &matrix::Room::notification_count_changed, [this, &room](uint64_t old) {
-      update_room(room);
-      if(old <= room.notification_count()) {
-        highlight(room.id());
-      }
-    });
-  connect(&room, &matrix::Room::sync_complete, [this, &room]() { update_room(room); });
-}
-
 void MainWindow::highlight(const matrix::RoomID &room) {
-  QWidget *window = rooms_.at(room).window;
+  QWidget *window = windows_.at(room);
   if(!window) {
     window = this;
   }
   window->show();
   QApplication::alert(window);
-}
-
-void MainWindow::update_room(matrix::Room &room) {
-  auto &i = rooms_.at(room.id());
-  i.display_name = room.pretty_name_highlights();
-  i.highlight_count = room.highlight_count() + room.notification_count();
-  i.has_unread = room.has_unread();
-  update_room(i);
-}
-
-void MainWindow::update_room(RoomInfo &info) {
-  info.item->setText(info.display_name);
-  auto f = font();
-  f.setBold(info.highlight_count != 0 || info.has_unread);
-  info.item->setFont(f);
 }
 
 void MainWindow::sync_progress(qint64 received, qint64 total) {
@@ -229,11 +176,11 @@ ChatWindow *MainWindow::spawn_chat_window() {
       last_focused_ = window;
     });
   connect(window, &ChatWindow::claimed, [this, window](const matrix::RoomID &r) {
-      rooms_.at(r).window = window;
+      windows_[r] = window;
       new RoomWindowBridge(*session_.room_from_id(r), *window);
     });
   connect(window, &ChatWindow::released, [this](const matrix::RoomID &rid) {
-      rooms_.at(rid).window = nullptr;
+      windows_.erase(rid);
     });
   connect(window, &ChatWindow::pop_out, [this](const matrix::RoomID &r, RoomView *v) {
       auto w = spawn_chat_window();

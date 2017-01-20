@@ -37,6 +37,7 @@ add_executable(nachat WIN32
   MessageBox.cpp
   EventSourceView.cpp
   ContentCache.cpp
+  JoinedRoomListModel.cpp
   ${UI_HEADERS}
   )
 

@@ -28,15 +28,15 @@
      <number>0</number>
     </property>
     <item>
-     <widget class="QListWidget" name="room_list">
+     <widget class="QListView" name="room_list">
       <property name="selectionMode">
        <enum>QAbstractItemView::ExtendedSelection</enum>
       </property>
       <property name="verticalScrollMode">
        <enum>QAbstractItemView::ScrollPerPixel</enum>
       </property>
-      <property name="horizontalScrollMode">
-       <enum>QAbstractItemView::ScrollPerPixel</enum>
+      <property name="uniformItemSizes">
+       <bool>true</bool>
       </property>
      </widget>
     </item>
@@ -48,7 +48,7 @@
      <x>0</x>
      <y>0</y>
      <width>400</width>
-     <height>15</height>
+     <height>22</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_matrix">
@@ -84,7 +84,8 @@
   </action>
   <action name="action_join">
    <property name="icon">
-    <iconset theme="list-add"/>
+    <iconset theme="list-add">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>&amp;Join room...</string>
