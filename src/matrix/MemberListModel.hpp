@@ -27,9 +27,9 @@ private:
   struct Info {
     UserID id;
     event::room::MemberContent content;
-    QString disambiguation;
+    std::experimental::optional<QString> disambiguation;
 
-    Info(const Room &, UserID, event::room::MemberContent);
+    Info(UserID, event::room::MemberContent, std::experimental::optional<QString>);
   };
 
   Room &room_;

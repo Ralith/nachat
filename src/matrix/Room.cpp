@@ -100,9 +100,10 @@ optional<QString> RoomState::member_disambiguation(const UserID &member_id) cons
   }
 }
 
-optional<QString> RoomState::nonmember_disambiguation(const UserID &id, const QString &displayname) const {
-  if(members_by_id_.find(UserID{displayname}) != members_by_id_.end()
-     || members_by_displayname_.find(displayname) != members_by_displayname_.end()) {
+optional<QString> RoomState::nonmember_disambiguation(const UserID &id, const optional<QString> &displayname) const {
+  if(!displayname) return {};
+  if(members_by_id_.find(UserID{*displayname}) != members_by_id_.end()
+     || members_by_displayname_.find(*displayname) != members_by_displayname_.end()) {
     return id.value();
   }
   return {};
@@ -149,9 +150,6 @@ void RoomState::forget_displayname(const UserID &id, const QString &old_name_in,
   assert(before - vec.size() == 1);
   if(vec.empty()) {
     members_by_displayname_.erase(old_name);
-  }
-  if(other_member) {
-    
   }
 }
 

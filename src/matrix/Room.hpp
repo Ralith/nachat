@@ -62,7 +62,7 @@ public:
   // Matrix r0.1.0 11.2.2.5 ish (like vector-web)
 
   std::experimental::optional<QString> member_disambiguation(const UserID &member) const;
-  std::experimental::optional<QString> nonmember_disambiguation(const UserID &id, const QString &displayname) const;
+  std::experimental::optional<QString> nonmember_disambiguation(const UserID &id, const std::experimental::optional<QString> &displayname) const;
   QString member_name(const UserID &member) const;
   // Matrix r0.1.0 11.2.2.3
 
@@ -181,8 +181,8 @@ public:
   bool has_unread() const;
 
 signals:
-  void member_changed(const UserID &, const event::room::MemberContent &old, const event::room::MemberContent &current);
-  void member_disambiguation_changed(const UserID &, const std::experimental::optional<QString> &old, const std::experimental::optional<QString> &current);
+  void member_changed(const UserID &, const event::room::MemberContent &current, const event::room::MemberContent &next);
+  void member_disambiguation_changed(const UserID &, const std::experimental::optional<QString> &current, const std::experimental::optional<QString> &next);
   void state_changed();
   void highlight_count_changed(uint64_t old);
   void notification_count_changed(uint64_t old);

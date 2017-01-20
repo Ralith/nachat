@@ -8,8 +8,8 @@ using std::experimental::optional;
 
 namespace matrix {
 
-MemberListModel::Info::Info(const Room &room, UserID id, event::room::MemberContent content) :
-  id{id}, content{content}, disambiguation{room.state().member_disambiguation(id).value_or(QString())}
+MemberListModel::Info::Info(UserID id, event::room::MemberContent content, optional<QString> disambiguation) :
+  id{id}, content{content}, disambiguation{disambiguation}
 {}
 
 MemberListModel::MemberListModel(Room &room, QObject *parent) : QAbstractListModel{parent}, room_{room} {
@@ -21,7 +21,7 @@ MemberListModel::MemberListModel(Room &room, QObject *parent) : QAbstractListMod
   members_.reserve(members.size());
   for(auto member: members) {
     index_.emplace(member->first, members_.size());
-    members_.emplace_back(room, member->first, member->second);
+    members_.emplace_back(member->first, member->second, room_.state().member_disambiguation(member->first));
   }
   endInsertRows();
 }
@@ -68,7 +68,7 @@ void MemberListModel::member_changed(const UserID &id, const event::room::Member
     case Membership::INVITE:
       beginInsertRows(QModelIndex(), members_.size(), members_.size());
       index_.emplace(id, members_.size());
-      members_.emplace_back(room_, id, current);
+      members_.emplace_back(id, current, room_.state().nonmember_disambiguation(id, current.displayname()));
       endInsertRows();
       break;
 
@@ -114,7 +114,7 @@ void MemberListModel::member_changed(const UserID &id, const event::room::Member
 void MemberListModel::member_disambiguation_changed(const UserID &id, const optional<QString> &old, const optional<QString> &current) {
   (void)old;
   std::size_t i = index_.at(id);
-  members_[i].disambiguation = current.value_or(QString());
+  members_[i].disambiguation = current;
   dataChanged(index(i), index(i));
 }
 
