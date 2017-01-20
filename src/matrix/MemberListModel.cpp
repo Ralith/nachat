@@ -12,65 +12,9 @@ MemberListModel::Info::Info(const Room &room, UserID id, event::room::MemberCont
   id{id}, content{content}, disambiguation{room.state().member_disambiguation(id).value_or(QString())}
 {}
 
-MemberListModel::MemberListModel(Room &room, QObject *parent) : QAbstractListModel{parent} {
-  connect(&room, &Room::member_changed, [this, &room](const UserID &id, const event::room::MemberContent &old, const event::room::MemberContent &current) {
-      switch(old.membership()) {
-      case Membership::LEAVE:
-      case Membership::BAN:
-        switch(current.membership()) {
-        case Membership::JOIN:
-        case Membership::INVITE:
-          beginInsertRows(QModelIndex(), members_.size(), members_.size());
-          index_.emplace(id, members_.size());
-          members_.emplace_back(room, id, current);
-          endInsertRows();
-          break;
-
-        case Membership::LEAVE:
-        case Membership::BAN:
-          break;
-        }
-        break;
-
-      case Membership::JOIN:
-      case Membership::INVITE:
-        switch(current.membership()) {
-        case Membership::LEAVE:
-        case Membership::BAN: {
-          auto it = index_.find(id);
-          beginRemoveRows(QModelIndex(), it->second, it->second);
-          if(it->second != members_.size() - 1) {
-            layoutAboutToBeChanged();
-            auto &swap_target = members_[it->second];
-            std::swap(swap_target, members_.back());
-            std::swap(index_.at(swap_target.id), it->second);
-            changePersistentIndex(index(members_.size()-1), index(it->second));
-            layoutChanged();
-          }
-          members_.pop_back();
-          index_.erase(it);
-          endRemoveRows();
-          break;
-        }
-
-        case Membership::JOIN:
-        case Membership::INVITE: {
-          std::size_t i = index_.at(id);
-          members_[i].content = current;
-          dataChanged(index(i), index(i));
-          break;
-        }
-        }
-        break;
-      }
-    });
-
-  connect(&room, &Room::member_disambiguation_changed, [this, &room](const UserID &id, const optional<QString> &old, const optional<QString> &current) {
-      (void)old;
-      std::size_t i = index_.at(id);
-      members_[i].disambiguation = current.value_or(QString());
-      dataChanged(index(i), index(i));
-    });
+MemberListModel::MemberListModel(Room &room, QObject *parent) : QAbstractListModel{parent}, room_{room} {
+  connect(&room, &Room::member_changed, this, &MemberListModel::member_changed);
+  connect(&room, &Room::member_disambiguation_changed, this, &MemberListModel::member_disambiguation_changed);
 
   auto members = room.state().members();
   beginInsertRows(QModelIndex(), 0, members.size()-1);
@@ -113,6 +57,65 @@ QVariant MemberListModel::headerData(int section, Qt::Orientation orientation, i
   }
 
   return QVariant();
+}
+
+void MemberListModel::member_changed(const UserID &id, const event::room::MemberContent &old, const event::room::MemberContent &current) {
+  switch(old.membership()) {
+  case Membership::LEAVE:
+  case Membership::BAN:
+    switch(current.membership()) {
+    case Membership::JOIN:
+    case Membership::INVITE:
+      beginInsertRows(QModelIndex(), members_.size(), members_.size());
+      index_.emplace(id, members_.size());
+      members_.emplace_back(room_, id, current);
+      endInsertRows();
+      break;
+
+    case Membership::LEAVE:
+    case Membership::BAN:
+      break;
+    }
+    break;
+
+  case Membership::JOIN:
+  case Membership::INVITE:
+    switch(current.membership()) {
+    case Membership::LEAVE:
+    case Membership::BAN: {
+      auto it = index_.find(id);
+      beginRemoveRows(QModelIndex(), it->second, it->second);
+      if(it->second != members_.size() - 1) {
+        layoutAboutToBeChanged();
+        auto &swap_target = members_[it->second];
+        std::swap(swap_target, members_.back());
+        std::swap(index_.at(swap_target.id), it->second);
+        changePersistentIndex(index(members_.size()-1), index(it->second));
+        layoutChanged();
+      }
+      members_.pop_back();
+      index_.erase(it);
+      endRemoveRows();
+      break;
+    }
+
+    case Membership::JOIN:
+    case Membership::INVITE: {
+      std::size_t i = index_.at(id);
+      members_[i].content = current;
+      dataChanged(index(i), index(i));
+      break;
+    }
+    }
+    break;
+  }
+}
+
+void MemberListModel::member_disambiguation_changed(const UserID &id, const optional<QString> &old, const optional<QString> &current) {
+  (void)old;
+  std::size_t i = index_.at(id);
+  members_[i].disambiguation = current.value_or(QString());
+  dataChanged(index(i), index(i));
 }
 
 }

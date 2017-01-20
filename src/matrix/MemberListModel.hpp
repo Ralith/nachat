@@ -32,8 +32,12 @@ private:
     Info(const Room &, UserID, event::room::MemberContent);
   };
 
+  Room &room_;
   std::vector<Info> members_;
   std::unordered_map<UserID, std::size_t> index_;
+
+  void member_changed(const UserID &id, const event::room::MemberContent &old, const event::room::MemberContent &current);
+  void member_disambiguation_changed(const UserID &id, const std::experimental::optional<QString> &old, const std::experimental::optional<QString> &current);
 };
 
 }
