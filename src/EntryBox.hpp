@@ -35,6 +35,7 @@ private:
   QCompleter *completer_;
 
   void text_changed();
+  void after_completion(int);
 };
 
 #endif

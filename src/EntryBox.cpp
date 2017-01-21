@@ -29,6 +29,7 @@ EntryBox::EntryBox(QAbstractListModel *members, QWidget *parent)
       tc.select(QTextCursor::WordUnderCursor);
       tc.insertText(completion);
       setTextCursor(tc);
+      after_completion(completion.size());
     });
 }
 
@@ -113,7 +114,9 @@ void EntryBox::keyPressEvent(QKeyEvent *event) {
       completer_->setCompletionPrefix(word);
     }
     if(completer_->completionCount() == 1) {
-      tc.insertText(completer_->currentCompletion());
+      QString completion = completer_->currentCompletion();
+      tc.insertText(completion);
+      after_completion(completion.size());
     } else {
       QRect cr = cursorRect();
       cr.setWidth(completer_->popup()->sizeHintForColumn(0)
@@ -155,4 +158,12 @@ void EntryBox::send() {
   }
 
   clear();
+}
+
+void EntryBox::after_completion(int completion_size) {
+  QTextCursor tc = textCursor();
+  if(tc.position() == completion_size) {
+    // Completion is the first thing in the message
+    tc.insertText(": ");
+  }
 }
