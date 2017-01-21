@@ -14,7 +14,7 @@ using std::experimental::optional;
 namespace matrix {
 
 MemberListModel::Info::Info(UserID id, event::room::MemberContent content, optional<QString> disambiguation) :
-  id{id}, content{content}, disambiguation{disambiguation}, avatar_generation{0}
+  id{id}, content{content}, disambiguation{disambiguation}
 {}
 
 MemberListModel::MemberListModel(Room &room, QSize icon_size, qreal device_pixel_ratio, QObject *parent) : QAbstractListModel{parent}, room_{room}, icon_size_{icon_size}, device_pixel_ratio_{device_pixel_ratio} {
@@ -27,7 +27,7 @@ MemberListModel::MemberListModel(Room &room, QSize icon_size, qreal device_pixel
   for(auto member: members) {
     index_.emplace(member->first, members_.size());
     members_.emplace_back(member->first, member->second, room_.state().member_disambiguation(member->first));
-    fetch_avatar(members_.back());
+    queue_fetch(members_.back());
   }
   endInsertRows();
 }
@@ -119,7 +119,7 @@ void MemberListModel::member_changed(const UserID &id, const event::room::Member
       members_[i].disambiguation = room_.state().member_disambiguation(id);
       dataChanged(index(i), index(i));
       if(update_avatar) {
-        fetch_avatar(members_[i]);
+        queue_fetch(members_[i]);
       }
       break;
     }
@@ -135,22 +135,32 @@ void MemberListModel::member_disambiguation_changed(const UserID &id, const opti
   dataChanged(index(i), index(i));
 }
 
-void MemberListModel::fetch_avatar(Info &info) {
+// TODO: Replace queue with view-dependent fetching
+void MemberListModel::queue_fetch(const Info &info) {
   QUrl url(info.content.avatar_url().value_or(QString()), QUrl::StrictMode);
   if(!url.isValid()) return;
+
+  bool first_fetch = avatar_fetch_queue_.empty();
+  avatar_fetch_queue_[info.id] = url;
+  if(first_fetch) do_fetch();
+}
+
+void MemberListModel::do_fetch() {
+  auto it = avatar_fetch_queue_.begin();
+  UserID id = it->first;
+  QUrl url = it->second;
+  qDebug() << "fetching" << id.value() << url;
+
   try {
-    info.avatar_generation += 1;
-    auto generation = info.avatar_generation;
     auto thumbnail = matrix::Thumbnail{matrix::Content{url}, icon_size_ * device_pixel_ratio_, matrix::ThumbnailMethod::SCALE};
     auto fetch = room_.session().get_thumbnail(thumbnail);
     QPointer<MemberListModel> self(this);
-    UserID id = info.id;
     connect(fetch, &matrix::ContentFetch::finished, [=](const QString &type, const QString &disposition, const QByteArray &data) {
         (void)disposition;
         if(!self) return;
 
         auto it = self->index_.find(id);
-        if(it == self->index_.end() || self->members_[it->second].avatar_generation != generation) return;
+        if(it == self->index_.end()) return;
         
         QPixmap pixmap = decode(type, data);
 
@@ -160,9 +170,26 @@ void MemberListModel::fetch_avatar(Info &info) {
 
         self->members_[it->second].avatar = std::move(pixmap);
         self->dataChanged(index(it->second), index(it->second));
+        self->finish_fetch(id, url);
+      });
+    connect(fetch, &matrix::ContentFetch::error, [=](const QString &msg) {
+        qDebug() << "failed downloading" << url << "for" << id.value() << msg;
+        if(!self) return;
+        self->finish_fetch(id, url);
       });
   } catch(matrix::illegal_content_scheme &e) {
-    qDebug() << "ignoring avatar with illegal scheme for user" << pretty_name(info.id, info.content);
+    qDebug() << "ignoring avatar with illegal scheme for user" << id.value();
+  }
+}
+
+void MemberListModel::finish_fetch(UserID id, QUrl url) {
+  qDebug() << "done" << id.value() << url;
+  auto queue_it = avatar_fetch_queue_.find(id);
+  if(queue_it->second == url) {
+    avatar_fetch_queue_.erase(queue_it);
+  }
+  if(!avatar_fetch_queue_.empty()) {
+    do_fetch();
   }
 }
 

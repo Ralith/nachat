@@ -30,7 +30,6 @@ private:
     UserID id;
     event::room::MemberContent content;
     std::experimental::optional<QString> disambiguation;
-    std::size_t avatar_generation;
     std::experimental::optional<QPixmap> avatar;
 
     Info(UserID, event::room::MemberContent, std::experimental::optional<QString>);
@@ -41,10 +40,14 @@ private:
   std::unordered_map<UserID, std::size_t> index_;
   QSize icon_size_;
   qreal device_pixel_ratio_;
+  std::unordered_map<UserID, QUrl> avatar_fetch_queue_;
 
   void member_changed(const UserID &id, const event::room::MemberContent &old, const event::room::MemberContent &current);
   void member_disambiguation_changed(const UserID &id, const std::experimental::optional<QString> &old, const std::experimental::optional<QString> &current);
-  void fetch_avatar(Info &info);
+
+  void queue_fetch(const Info &info);
+  void do_fetch();
+  void finish_fetch(UserID id, QUrl url);
 };
 
 }
