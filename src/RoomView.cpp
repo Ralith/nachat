@@ -17,6 +17,7 @@
 #include "TimelineView.hpp"
 #include "EntryBox.hpp"
 #include "RoomMenu.hpp"
+#include "utils.hpp"
 
 using std::experimental::optional;
 
@@ -25,7 +26,7 @@ RoomView::RoomView(ThumbnailCache &cache, matrix::Room &room, QWidget *parent)
     timeline_view_(new TimelineView(room.session().homeserver(), cache, this)),
     entry_(new EntryBox(this)), room_(room),
     timeline_manager_{new matrix::TimelineManager(room, this)},
-    member_list_(new matrix::MemberListModel(room, this)){
+    member_list_(new matrix::MemberListModel(room, initial_icon_size(*this), devicePixelRatioF(), this)){
   ui->setupUi(this);
 
   connect(timeline_manager_, &matrix::TimelineManager::grew,

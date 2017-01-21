@@ -8,21 +8,22 @@
 #include <QLabel>
 #include <QSystemTrayIcon>
 #include <QDebug>
-#include <QMimeDatabase>
 
 #include "matrix/Room.hpp"
 #include "matrix/Session.hpp"
+#include "matrix/pixmaps.hpp"
 
 #include "sort.hpp"
 #include "RoomView.hpp"
 #include "ChatWindow.hpp"
 #include "JoinDialog.hpp"
 #include "MessageBox.hpp"
+#include "utils.hpp"
 
 MainWindow::MainWindow(matrix::Session &session)
     : ui(new Ui::MainWindow), session_(session),
       progress_(new QProgressBar(this)), sync_label_(new QLabel(this)),
-      thumbnail_cache_{devicePixelRatioF()}, rooms_{session} {
+      thumbnail_cache_{devicePixelRatioF()}, rooms_{session, initial_icon_size(*this), devicePixelRatioF()} {
   ui->setupUi(this);
 
   ui->status_bar->addPermanentWidget(sync_label_);
@@ -102,6 +103,7 @@ MainWindow::MainWindow(matrix::Session &session)
         window->activateWindow();
       }
     });
+  connect(ui->room_list, &QAbstractItemView::iconSizeChanged, &rooms_, &JoinedRoomListModel::icon_size_changed);
   ui->room_list->setModel(&rooms_);
 
   connect(&thumbnail_cache_, &ThumbnailCache::needs, [this](const matrix::Thumbnail &t) {
@@ -109,9 +111,8 @@ MainWindow::MainWindow(matrix::Session &session)
       QPointer<MainWindow> self(this);
       connect(fetch, &matrix::ContentFetch::finished, [=](const QString &type, const QString &disposition, const QByteArray &data) {
           (void)disposition;
-          QPixmap pixmap;
-          pixmap.loadFromData(data, QMimeDatabase().mimeTypeForName(type.toUtf8()).preferredSuffix().toUtf8().constData());
-          if(pixmap.isNull()) pixmap.loadFromData(data);
+          if(!self) return;
+          QPixmap pixmap = matrix::decode(type, data);
 
           if(pixmap.width() > t.size().width() || pixmap.height() > t.size().height())
             pixmap = pixmap.scaled(t.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);

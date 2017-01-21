@@ -11,6 +11,7 @@ add_library(matrix
   Event.cpp
   TimelineWindow.cpp
   MemberListModel.cpp
+  pixmaps.cpp
   )
 
 target_include_directories(matrix
@@ -20,5 +21,6 @@ target_include_directories(matrix
 
 target_link_libraries(matrix
   Qt5::Network
+  Qt5::Gui
   ${LMDB_LIBRARY}
   )

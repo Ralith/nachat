@@ -2,17 +2,22 @@
 
 #include <experimental/optional>
 
+#include <QPointer>
+#include <QDebug>
+
 #include "Room.hpp"
+#include "Session.hpp"
+#include "pixmaps.hpp"
 
 using std::experimental::optional;
 
 namespace matrix {
 
 MemberListModel::Info::Info(UserID id, event::room::MemberContent content, optional<QString> disambiguation) :
-  id{id}, content{content}, disambiguation{disambiguation}
+  id{id}, content{content}, disambiguation{disambiguation}, avatar_generation{0}
 {}
 
-MemberListModel::MemberListModel(Room &room, QObject *parent) : QAbstractListModel{parent}, room_{room} {
+MemberListModel::MemberListModel(Room &room, QSize icon_size, qreal device_pixel_ratio, QObject *parent) : QAbstractListModel{parent}, room_{room}, icon_size_{icon_size}, device_pixel_ratio_{device_pixel_ratio} {
   connect(&room, &Room::member_changed, this, &MemberListModel::member_changed);
   connect(&room, &Room::member_disambiguation_changed, this, &MemberListModel::member_disambiguation_changed);
 
@@ -22,6 +27,7 @@ MemberListModel::MemberListModel(Room &room, QObject *parent) : QAbstractListMod
   for(auto member: members) {
     index_.emplace(member->first, members_.size());
     members_.emplace_back(member->first, member->second, room_.state().member_disambiguation(member->first));
+    fetch_avatar(members_.back());
   }
   endInsertRows();
 }
@@ -42,6 +48,12 @@ QVariant MemberListModel::data(const QModelIndex &index, int role) const {
   case Qt::ToolTipRole:
   case IDRole:
     return info.id.value();
+  case Qt::DecorationRole: {
+    if(auto avatar = info.avatar) {
+      return *avatar;
+    }
+    return QVariant();
+  }
   default:
     return QVariant();
   }
@@ -59,16 +71,16 @@ QVariant MemberListModel::headerData(int section, Qt::Orientation orientation, i
   return QVariant();
 }
 
-void MemberListModel::member_changed(const UserID &id, const event::room::MemberContent &old, const event::room::MemberContent &current) {
-  switch(old.membership()) {
+void MemberListModel::member_changed(const UserID &id, const event::room::MemberContent &current, const event::room::MemberContent &next) {
+  switch(current.membership()) {
   case Membership::LEAVE:
   case Membership::BAN:
-    switch(current.membership()) {
+    switch(next.membership()) {
     case Membership::JOIN:
     case Membership::INVITE:
       beginInsertRows(QModelIndex(), members_.size(), members_.size());
       index_.emplace(id, members_.size());
-      members_.emplace_back(id, current, room_.state().nonmember_disambiguation(id, current.displayname()));
+      members_.emplace_back(id, next, room_.state().nonmember_disambiguation(id, next.displayname()));
       endInsertRows();
       break;
 
@@ -80,7 +92,7 @@ void MemberListModel::member_changed(const UserID &id, const event::room::Member
 
   case Membership::JOIN:
   case Membership::INVITE:
-    switch(current.membership()) {
+    switch(next.membership()) {
     case Membership::LEAVE:
     case Membership::BAN: {
       auto it = index_.find(id);
@@ -102,8 +114,13 @@ void MemberListModel::member_changed(const UserID &id, const event::room::Member
     case Membership::JOIN:
     case Membership::INVITE: {
       std::size_t i = index_.at(id);
-      members_[i].content = current;
+      bool update_avatar = members_[i].content.avatar_url() != next.avatar_url();
+      members_[i].content = next;
+      members_[i].disambiguation = room_.state().member_disambiguation(id);
       dataChanged(index(i), index(i));
+      if(update_avatar) {
+        fetch_avatar(members_[i]);
+      }
       break;
     }
     }
@@ -116,6 +133,37 @@ void MemberListModel::member_disambiguation_changed(const UserID &id, const opti
   std::size_t i = index_.at(id);
   members_[i].disambiguation = current;
   dataChanged(index(i), index(i));
+}
+
+void MemberListModel::fetch_avatar(Info &info) {
+  QUrl url(info.content.avatar_url().value_or(QString()), QUrl::StrictMode);
+  if(!url.isValid()) return;
+  try {
+    info.avatar_generation += 1;
+    auto generation = info.avatar_generation;
+    auto thumbnail = matrix::Thumbnail{matrix::Content{url}, icon_size_ * device_pixel_ratio_, matrix::ThumbnailMethod::SCALE};
+    auto fetch = room_.session().get_thumbnail(thumbnail);
+    QPointer<MemberListModel> self(this);
+    UserID id = info.id;
+    connect(fetch, &matrix::ContentFetch::finished, [=](const QString &type, const QString &disposition, const QByteArray &data) {
+        (void)disposition;
+        if(!self) return;
+
+        auto it = self->index_.find(id);
+        if(it == self->index_.end() || self->members_[it->second].avatar_generation != generation) return;
+        
+        QPixmap pixmap = decode(type, data);
+
+        if(pixmap.width() > thumbnail.size().width() || pixmap.height() > thumbnail.size().height())
+          pixmap = pixmap.scaled(thumbnail.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        pixmap.setDevicePixelRatio(self->device_pixel_ratio_);
+
+        self->members_[it->second].avatar = std::move(pixmap);
+        self->dataChanged(index(it->second), index(it->second));
+      });
+  } catch(matrix::illegal_content_scheme &e) {
+    qDebug() << "ignoring avatar with illegal scheme for user" << pretty_name(info.id, info.content);
+  }
 }
 
 }

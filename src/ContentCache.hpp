@@ -20,7 +20,7 @@ public:
 
   const std::experimental::optional<QPixmap> &get(const matrix::Thumbnail &) const;
   void set(const matrix::Thumbnail &, QPixmap);
-  
+
 signals:
   void needs(const matrix::Thumbnail &);
   void updated();
