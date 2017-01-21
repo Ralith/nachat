@@ -434,7 +434,7 @@ bool RoomState::dispatch(const event::room::State &state, Room *room) {
   if(state.type() == event::room::Avatar::tag()) {
     event::room::Avatar a(state);
     auto old = std::move(avatar_);
-    avatar_ = QUrl(a.avatar());
+    avatar_ = QUrl(a.avatar(), QUrl::StrictMode);
     if(room && avatar_ != old) room->avatar_changed();
     return true;
   }
@@ -472,7 +472,7 @@ void RoomState::revert(const event::room::State &state) {
   if(state.type() == event::room::Avatar::tag()) {
     event::room::Avatar avatar(state);
     if(avatar.prev_avatar())
-      avatar_ = QUrl(*avatar.prev_avatar());
+      avatar_ = QUrl(*avatar.prev_avatar(), QUrl::StrictMode);
     else
       avatar_ = QUrl();
     return;
