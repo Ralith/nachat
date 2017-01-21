@@ -350,6 +350,7 @@ ContentFetch *Session::get(const Content &content) {
   auto reply = get("media/r0/download/" % content.host() % "/" % content.id());
   auto result = new ContentFetch(reply);
   connect(reply, &QNetworkReply::finished, [reply, result]() {
+      result->deleteLater();
       if(reply->error()) {
         result->error(reply->errorString());
       } else {
@@ -370,6 +371,7 @@ ContentFetch *Session::get_thumbnail(const Thumbnail &t) {
   auto reply = get("media/r0/thumbnail/" % t.content().host() % "/" % t.content().id(), query);
   auto result = new ContentFetch(reply);
   connect(reply, &QNetworkReply::finished, [reply, result]() {
+      result->deleteLater();
       if(reply->error()) {
         result->error(reply->errorString());
       } else {
