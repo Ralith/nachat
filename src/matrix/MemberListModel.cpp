@@ -149,7 +149,6 @@ void MemberListModel::do_fetch() {
   auto it = avatar_fetch_queue_.begin();
   UserID id = it->first;
   QUrl url = it->second;
-  qDebug() << "fetching" << id.value() << url;
 
   try {
     auto thumbnail = matrix::Thumbnail{matrix::Content{url}, icon_size_ * device_pixel_ratio_, matrix::ThumbnailMethod::SCALE};
@@ -173,7 +172,6 @@ void MemberListModel::do_fetch() {
         self->finish_fetch(id, url);
       });
     connect(fetch, &matrix::ContentFetch::error, [=](const QString &msg) {
-        qDebug() << "failed downloading" << url << "for" << id.value() << msg;
         if(!self) return;
         self->finish_fetch(id, url);
       });
@@ -183,7 +181,6 @@ void MemberListModel::do_fetch() {
 }
 
 void MemberListModel::finish_fetch(UserID id, QUrl url) {
-  qDebug() << "done" << id.value() << url;
   auto queue_it = avatar_fetch_queue_.find(id);
   if(queue_it->second == url) {
     avatar_fetch_queue_.erase(queue_it);
