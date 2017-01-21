@@ -10,13 +10,23 @@
 #include "MessageBox.hpp"
 
 RoomMenu::RoomMenu(matrix::Room &room, QWidget *parent) : QMenu(parent), room_(room) {
-  auto file_dialog = new QFileDialog(parent);
-  auto upload = addAction(QIcon::fromTheme("document-open"), tr("Upload &file..."));
-  connect(upload, &QAction::triggered, file_dialog, &QDialog::open);
-  connect(file_dialog, &QFileDialog::fileSelected, this, &RoomMenu::upload_file);
+  {
+    auto info = addAction(QIcon::fromTheme("emblem-information"), tr("&Info..."));
+  }
+
+  {
+    auto upload = addAction(QIcon::fromTheme("document-open"), tr("Upload &file..."));
+    auto file_dialog = new QFileDialog(parent);
+    connect(upload, &QAction::triggered, file_dialog, &QDialog::open);
+    connect(file_dialog, &QFileDialog::fileSelected, this, &RoomMenu::upload_file);
+  }
+
   addSeparator();
-  auto leave = addAction(QIcon::fromTheme("system-log-out"), tr("Leave"));
-  connect(leave, &QAction::triggered, &room_, &matrix::Room::leave);
+
+  {
+    auto leave = addAction(QIcon::fromTheme("system-log-out"), tr("Leave"));
+    connect(leave, &QAction::triggered, &room_, &matrix::Room::leave);
+  }
 }
 
 void RoomMenu::upload_file(const QString &path) {

@@ -5,11 +5,14 @@
 
 #include <QTextEdit>
 
+class QCompleter;
+class QAbstractListModel;
+
 class EntryBox : public QTextEdit {
   Q_OBJECT
 
 public:
-  EntryBox(QWidget *parent = nullptr);
+  EntryBox(QAbstractListModel *members, QWidget *parent = nullptr);
 
   QSize sizeHint() const override;
   QSize minimumSizeHint() const override;
@@ -29,6 +32,7 @@ protected:
 private:
   std::deque<QString> true_history_, working_history_;
   size_t history_index_;
+  QCompleter *completer_;
 
   void text_changed();
 };

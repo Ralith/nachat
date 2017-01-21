@@ -44,6 +44,7 @@ QVariant MemberListModel::data(const QModelIndex &index, int role) const {
   const auto &info = members_[index.row()];
   switch(role) {
   case Qt::DisplayRole:
+  case Qt::EditRole:
     return pretty_name(info.id, info.content);
   case Qt::ToolTipRole:
   case IDRole:

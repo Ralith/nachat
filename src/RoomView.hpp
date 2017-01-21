@@ -52,10 +52,10 @@ public:
 private:
   Ui::RoomView *ui;
   TimelineView *timeline_view_;
-  EntryBox *entry_;
   matrix::Room &room_;
   matrix::TimelineManager *timeline_manager_;
   matrix::MemberListModel *member_list_;
+  EntryBox *entry_;
 
   void topic_changed();
   void command(const QString &name, const QString &args);

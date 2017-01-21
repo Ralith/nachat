@@ -3,10 +3,14 @@
 #include <QDebug>
 #include <QAbstractTextDocumentLayout>
 #include <QGuiApplication>
+#include <QCompleter>
+#include <QAbstractItemView>
+#include <QScrollBar>
 
 static constexpr size_t INPUT_HISTORY_SIZE = 127;
 
-EntryBox::EntryBox(QWidget *parent) : QTextEdit(parent), true_history_(INPUT_HISTORY_SIZE), working_history_(1), history_index_(0) {
+EntryBox::EntryBox(QAbstractListModel *members, QWidget *parent)
+  : QTextEdit(parent), true_history_(INPUT_HISTORY_SIZE), working_history_(1), history_index_(0), completer_{new QCompleter{members, this}} {
   connect(document()->documentLayout(), &QAbstractTextDocumentLayout::documentSizeChanged, this, &EntryBox::updateGeometry);
   QSizePolicy policy(QSizePolicy::Ignored, QSizePolicy::Maximum);
   policy.setHorizontalStretch(1);
@@ -16,6 +20,16 @@ EntryBox::EntryBox(QWidget *parent) : QTextEdit(parent), true_history_(INPUT_HIS
   document()->setDocumentMargin(2);
   working_history_.push_back("");
   connect(this, &QTextEdit::textChanged, this, &EntryBox::text_changed);
+
+  completer_->setWidget(this);
+  completer_->setCaseSensitivity(Qt::CaseInsensitive);
+  completer_->setCompletionMode(QCompleter::PopupCompletion);
+  connect(completer_, static_cast<void(QCompleter::*)(const QString &)>(&QCompleter::activated), [this](const QString& completion) {
+      QTextCursor tc = textCursor();
+      tc.select(QTextCursor::WordUnderCursor);
+      tc.insertText(completion);
+      setTextCursor(tc);
+    });
 }
 
 QSize EntryBox::sizeHint() const {
@@ -40,8 +54,22 @@ QSize EntryBox::minimumSizeHint() const {
 void EntryBox::keyPressEvent(QKeyEvent *event) {
   activity();
 
+  if(completer_->popup()->isVisible()) {
+    switch (event->key()) {
+    case Qt::Key_Enter:
+    case Qt::Key_Return:
+    case Qt::Key_Escape:
+    case Qt::Key_Tab:
+    case Qt::Key_Backtab:
+      event->ignore();
+      return; // let the completer do default behavior
+    default:
+      completer_->popup()->hide();
+      break;
+    }
+  }
+
   auto modifiers = QGuiApplication::keyboardModifiers();
-  // TODO: Autocomplete
   switch(event->key()) {
   case Qt::Key_Return:
   case Qt::Key_Enter:
@@ -74,6 +102,23 @@ void EntryBox::keyPressEvent(QKeyEvent *event) {
       --history_index_;
       setPlainText(working_history_[history_index_]);
       moveCursor(QTextCursor::End);
+    }
+    break;
+  }
+  case Qt::Key_Tab: {
+    QTextCursor tc = textCursor();
+    tc.select(QTextCursor::WordUnderCursor);
+    const QString word = tc.selectedText();
+    if(word != completer_->completionPrefix()) {
+      completer_->setCompletionPrefix(word);
+    }
+    if(completer_->completionCount() == 1) {
+      tc.insertText(completer_->currentCompletion());
+    } else {
+      QRect cr = cursorRect();
+      cr.setWidth(completer_->popup()->sizeHintForColumn(0)
+                  + completer_->popup()->verticalScrollBar()->sizeHint().width());
+      completer_->complete(cr);
     }
     break;
   }

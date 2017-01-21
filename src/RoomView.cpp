@@ -24,9 +24,10 @@ using std::experimental::optional;
 RoomView::RoomView(ThumbnailCache &cache, matrix::Room &room, QWidget *parent)
   : QWidget(parent), ui(new Ui::RoomView),
     timeline_view_(new TimelineView(room.session().homeserver(), cache, this)),
-    entry_(new EntryBox(this)), room_(room),
+    room_(room),
     timeline_manager_{new matrix::TimelineManager(room, this)},
-    member_list_(new matrix::MemberListModel(room, initial_icon_size(*this), devicePixelRatioF(), this)){
+    member_list_(new matrix::MemberListModel(room, initial_icon_size(*this), devicePixelRatioF(), this)),
+    entry_(new EntryBox{member_list_, this}) {
   ui->setupUi(this);
 
   connect(timeline_manager_, &matrix::TimelineManager::grew,
