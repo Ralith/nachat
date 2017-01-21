@@ -7,6 +7,7 @@
 
 #include <QAbstractListModel>
 #include <QPixmap>
+#include <QUrl>
 
 #include "ID.hpp"
 #include "Event.hpp"
