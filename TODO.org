@@ -1,36 +1,30 @@
 * High
   - Buffer and retry failed sends inside lib
-  - Tab completion
-  - Redaction
   - User feedback for connection/input/permissions errors
   - Sort user list by activity, then power, then name
     https://github.com/matrix-org/matrix-react-sdk/blob/507f5e2ca19156a2afd3470fc9b17fb5e65cdf9b/src/components/views/rooms/MemberList.js#L383
   - Fix history pages being downloaded from past pruned batches
+  - Fix kicks being displayed as bans
 
 * Medium
   - Desktop notifications
-  - Display room avatars
   - Track member/room power levels
-  - Un-break room view header layout
   - Clickable URLs in topics
-  - Emphasize display of rooms with unread messages
-  - Correct selection behavior on double and triple click
   - Test on windows
   - Outlines or tinted bg instead of bolding for highlight/disambig?
   - Display read receipts?
   - Package icon theme on non-linux
   - Clickable MXIDs/room IDs/aliases
   - Creating rooms
-  - User list in main window, separate from room list
   - Per-mxid storage of last transaction ID and open windows+rooms in a non-cache lmdb
   - Large avatars in user profile views
   - Room info dialog containing aliases, ID in selectable labels
-  - Travis CI
   - Only open URLs on mouse release if the mouse was on the same item when originally clicked
   - Spec-compliant logins with compatibility checking and browser fallback
   - Check HS's advertised API version support before attempting login
   - Include date in timestamps >24h ago
   - Factor out reusable custom widgets into a lib
+  - Rewrite timeline view to improved model/view
 
 * Low
   - Fix duplication of first message loaded from cache(?) by first message pulled from backlog
@@ -47,14 +41,11 @@
   - Persist arbitrary room state?
   - Fix flickering sync status
   - Save/restore open rooms
-  - Spellcheck in entry box
+  - Spellcheck in entry box?
   - Configuration dialog
     - Event font
     - Maximum scrollback size
     - Timeline cache size
     - Timeline rendering parameters?
   - Clickable email addresses
-  - Consider moving buffer management entirely into matrix lib
   - matrix::Room::send_now(event)
-  - Global (refcounted? LRU?) content cache for avatars (and other inline content?)
-  - Clickable user names in membership event display
