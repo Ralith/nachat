@@ -59,6 +59,8 @@ constexpr inline bool membership_displayable(Membership m) {
   return m == Membership::JOIN || m == Membership::INVITE;
 }
 
+QString to_qstring(Membership m);
+
 namespace event {
 
 class Content {

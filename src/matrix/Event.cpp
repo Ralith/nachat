@@ -1,7 +1,6 @@
 #include "Event.hpp"
 
 #include <utility>
-
 #include <initializer_list>
 
 namespace matrix {
@@ -19,7 +18,7 @@ static Membership parse_membership(const QString &m) {
   throw malformed_event("unrecognized membership value");
 }
 
-static QString to_qstring(Membership m) {
+QString to_qstring(Membership m) {
   switch(m) {
   case Membership::INVITE: return "invite";
   case Membership::JOIN: return "join";
