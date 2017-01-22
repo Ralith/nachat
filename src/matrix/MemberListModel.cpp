@@ -177,7 +177,7 @@ void MemberListModel::do_fetch() {
         self->finish_fetch(id, url);
       });
   } catch(matrix::illegal_content_scheme &e) {
-    qDebug() << "ignoring avatar with illegal scheme for user" << id.value();
+    qDebug() << "ignoring avatar with illegal scheme" << url.scheme() << "for user" << id.value();
   }
 }
 
