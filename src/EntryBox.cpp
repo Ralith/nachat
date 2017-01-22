@@ -26,7 +26,7 @@ EntryBox::EntryBox(QAbstractListModel *members, QWidget *parent)
   completer_->setCompletionMode(QCompleter::PopupCompletion);
   connect(completer_, static_cast<void(QCompleter::*)(const QString &)>(&QCompleter::activated), [this](const QString& completion) {
       QTextCursor tc = textCursor();
-      tc.select(QTextCursor::WordUnderCursor);
+      tc.movePosition(QTextCursor::StartOfWord, QTextCursor::KeepAnchor);
       tc.insertText(completion);
       setTextCursor(tc);
       after_completion(completion.size());
@@ -108,7 +108,7 @@ void EntryBox::keyPressEvent(QKeyEvent *event) {
   }
   case Qt::Key_Tab: {
     QTextCursor tc = textCursor();
-    tc.select(QTextCursor::WordUnderCursor);
+    tc.movePosition(QTextCursor::StartOfWord, QTextCursor::KeepAnchor);
     const QString word = tc.selectedText();
     if(word != completer_->completionPrefix()) {
       completer_->setCompletionPrefix(word);
