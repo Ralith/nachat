@@ -825,7 +825,7 @@ EventBlock::Event::Event(const TimelineView &view, const EventBlock &block, cons
         break;
       }
     } else {
-      const QString pretty_target = content.displayname().value_or(user.value()); // TODO: Clickable
+      const QString pretty_target = prev_content.displayname().value_or(content.displayname().value_or(user.value())); // TODO: Clickable
       switch(content.membership()) {
       case matrix::Membership::INVITE:
         text = tr("invited %1").arg(pretty_target);
