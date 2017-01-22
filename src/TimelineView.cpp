@@ -434,7 +434,7 @@ bool EventBlock::draw(QPainter &p, bool bottom_selected, const Selection &select
     p.save();
     if(event->type != matrix::event::room::Message::tag() || event->redacted) {
       // Style such that user-controlled content can't be confused with this event's rendering
-      p.setPen(parent_.palette().color(QPalette::Dark));
+      p.setPen(parent_.palette().color(QPalette::Disabled, QPalette::Text));
     }
     size_t index = event->paragraphs.size();
     for(auto paragraph = event->paragraphs.rbegin(); paragraph != event->paragraphs.rend(); ++paragraph) {
@@ -451,7 +451,7 @@ bool EventBlock::draw(QPainter &p, bool bottom_selected, const Selection &select
 
   {
     p.save();
-    p.setPen(parent_.palette().color(QPalette::Dark));
+    p.setPen(parent_.palette().color(QPalette::Disabled, QPalette::Text));
     if(auto s = selection_for(events_.front().id, Cursor::Type::TIMESTAMP, timestamp_, bottom_selected, selection)) {
       selections.push_back(to_selection_format(s->affected, parent_.palette(), parent_.hasFocus()));
       bottom_selected = s->continues;
