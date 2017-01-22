@@ -849,6 +849,7 @@ EventBlock::Event::Event(const TimelineView &view, const EventBlock &block, cons
           text = tr("kicked %1").arg(pretty_target);
           break;
         }
+        break;
       case matrix::Membership::BAN:
         text = tr("banned %1").arg(pretty_target);
         break;
