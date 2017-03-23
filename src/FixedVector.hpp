@@ -83,6 +83,8 @@ public:
   size_type size() const noexcept { return size_; }
   size_type capacity() const noexcept { return capacity_; }
 
+  bool empty() const noexcept { return size() == 0; }
+
 private:
   size_type size_, capacity_;
   std::unique_ptr<storage_type[]> data_;
