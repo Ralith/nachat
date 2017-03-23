@@ -1318,7 +1318,7 @@ void TimelineView::rebuild_blocks() {
       try {
         block_events.emplace_back(&event);
       } catch(const matrix::malformed_event &e) {
-        qDebug() << "skipping malformed event with content " << event.content.json();
+        qDebug() << "skipping malformed event (" << e.what() << ") with content " << event.content.json();
       }
     }
   }
