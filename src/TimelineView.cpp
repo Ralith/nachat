@@ -1327,6 +1327,9 @@ void TimelineView::rebuild_blocks() {
       if(!block_events.empty() && block_border(*block_events.back(), event.event)) {
         new_blocks.emplace_back(*this, thumbnail_cache_, block_events);
         block_events.clear();
+        if(new_blocks.back().events().empty()) {
+          new_blocks.pop_back();
+        }
       }
       block_events.emplace_back(&event.event);
     }
