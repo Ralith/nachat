@@ -1315,7 +1315,11 @@ void TimelineView::rebuild_blocks() {
         new_blocks.emplace_back(*this, thumbnail_cache_, block_events);
         block_events.clear();
       }
-      block_events.emplace_back(&event);
+      try {
+        block_events.emplace_back(&event);
+      } catch(const matrix::malformed_event &e) {
+        qDebug() << "skipping malformed event with content " << event.content.json();
+      }
     }
   }
   if(at_bottom_) {
