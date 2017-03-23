@@ -1328,6 +1328,7 @@ void TimelineView::rebuild_blocks() {
         new_blocks.emplace_back(*this, thumbnail_cache_, block_events);
         block_events.clear();
         if(new_blocks.back().events().empty()) {
+          // This can happen if the block consisted entirely of malformed events.
           new_blocks.pop_back();
         }
       }
@@ -1336,6 +1337,10 @@ void TimelineView::rebuild_blocks() {
   }
   if(!block_events.empty()) {
     new_blocks.emplace_back(*this, thumbnail_cache_, block_events);
+    if(new_blocks.back().events().empty()) {
+      // This can happen if the block consisted entirely of malformed events.
+      new_blocks.pop_back();
+    }
     block_events.clear();
   }
   visible_blocks_.clear();
