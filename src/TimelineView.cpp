@@ -259,7 +259,11 @@ EventBlock::EventBlock(TimelineView &parent, ThumbnailCache &thumbnail_cache, gs
   }
 
   for(std::size_t i = 0; i < static_cast<size_t>(events.size()); ++i) {
-    events_.emplace_back(parent, *this, *events[i]);
+    try {
+      events_.emplace_back(parent, *this, *events[i]);
+    } catch(const matrix::malformed_event &e) {
+      qDebug() << "skipping malformed event (" << e.what() << ") with content " << events[i]->content.json();
+    }
   }
 }
 
@@ -1315,11 +1319,7 @@ void TimelineView::rebuild_blocks() {
         new_blocks.emplace_back(*this, thumbnail_cache_, block_events);
         block_events.clear();
       }
-      try {
-        block_events.emplace_back(&event);
-      } catch(const matrix::malformed_event &e) {
-        qDebug() << "skipping malformed event (" << e.what() << ") with content " << event.content.json();
-      }
+      block_events.emplace_back(&event);
     }
   }
   if(at_bottom_) {
