@@ -37,6 +37,12 @@ git submodule update --init
 ** Using Nix
    ~nix-env -f . -i~ will add ~nachat~ to your path. Development takes place on the ~nixos-unstable~ channel, so
    building on ~nixos-16.03~ may require some tweaking of ~default.nix~.
+   
+** Windows
+   Extract nachat.zip then run nachat.exe. There is no installer package at this time.
+
+   For SSL connections you will need to have the OpenSSL libraries available to the application.
+   [[https://wiki.openssl.org/index.php/Binaries][Binaries]] are avialable from 3rd parties or you can [[https://wiki.openssl.org/index.php/Compilation_and_Installation][compile]] yourself. Place the DLLs in the application directory or in your %PATH%.
 
 * Run-time data
 ** Linux
